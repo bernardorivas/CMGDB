@@ -1,4 +1,4 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.2
 Name: CMGDB
 Version: 1.2.0
 Summary: CMGDB (Conley Morse Graph Database) Python Extension
@@ -10,6 +10,13 @@ License-File: LICENSE
 Requires-Dist: numpy>=1.19
 Requires-Dist: matplotlib>=3.3
 Requires-Dist: graphviz>=0.16
+Dynamic: author
+Dynamic: author-email
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: requires-dist
+Dynamic: summary
 
 # CMGDB
 Conley Morse Graph Database
