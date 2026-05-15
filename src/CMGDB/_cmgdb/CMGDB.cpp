@@ -177,9 +177,11 @@ MorseGraph MorseGraphIntvalMap ( int phase_subdiv_min, int phase_subdiv_max,
                       SINGLECMG_COMPLEXITY_LIMIT,
                       output_file_name . c_str () );
 
+#ifdef CMG_VERBOSE
   std::cout << "Total Time for Finding Morse Sets ";
   std::cout << "and reachability relation: ";
   std::cout << ": ";
+#endif
 
   // Always output the Morse Graph
   // std::cout << "Creating graphviz .dot file...\n";
@@ -227,9 +229,11 @@ MorseGraph MorseGraphMap ( int phase_subdiv_min, int phase_subdiv_max,
                       SINGLECMG_COMPLEXITY_LIMIT,
                       output_file_name . c_str () );
 
+#ifdef CMG_VERBOSE
   std::cout << "Total Time for Finding Morse Sets ";
   std::cout << "and reachability relation: ";
   std::cout << ": ";
+#endif
 
   // Always output the Morse Graph
   // std::cout << "Creating graphviz .dot file...\n";
