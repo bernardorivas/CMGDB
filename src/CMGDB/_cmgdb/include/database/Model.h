@@ -142,6 +142,9 @@ class Model {
   ///   to parameter p
   void setmap ( std::shared_ptr<Parameter> p );
 
+  void set_batch_map (
+    std::function<std::vector<std::vector<double>>(std::vector<std::vector<double>>)> const& F_batch );
+
   /// map
   ///   return a shared ptr to a map function object corresponding to 
   ///   parameter p
@@ -527,6 +530,17 @@ Model::setmap ( std::shared_ptr<Parameter> p ) {
   map_ . reset ( new ModelMap ( p ) );
 }
 
+inline void
+Model::set_batch_map (
+    std::function<std::vector<std::vector<double>>(std::vector<std::vector<double>>)> const& F_batch ) {
+  std::shared_ptr<ModelMapF> model_map_f =
+    std::dynamic_pointer_cast<ModelMapF> ( map_ );
+  if ( not model_map_f ) {
+    throw std::logic_error ( "Model.set_batch_map requires a Python rectangle map" );
+  }
+  model_map_f -> set_batch_map ( F_batch );
+}
+
 // inline std::shared_ptr < const Map >
 // Model::map ( std::function<std::vector<double>(std::vector<double>)> const& F ) const { 
 //   return std::shared_ptr < Map > ( new ModelMapF ( command_line_parameter_, F ) );
@@ -568,6 +582,7 @@ Model::annotate( MorseGraph * mg_in ) const {
 /// Python Bindings
 
 #include <pybind11/pybind11.h>
+#include <pybind11/functional.h>
 #include <pybind11/stl.h>
 namespace py = pybind11;
 
@@ -599,6 +614,7 @@ ModelBinding(py::module &m) {
     .def("parameterSpace", &Model::parameterSpace)
     .def("phaseSpace", &Model::phaseSpace)
     .def("setmap", &Model::setmap)
+    .def("set_batch_map", &Model::set_batch_map)
     .def("param_dim", &Model::param_dim)
     .def("phase_dim", &Model::phase_dim)
     .def("phase_subdiv_min", &Model::phase_subdiv_min)
