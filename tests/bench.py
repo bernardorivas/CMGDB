@@ -550,7 +550,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 3
         return 0
 
-    selected = [scenario for scenario in all_scenarios if scenario.default]
+    selected = [
+        scenario
+        for scenario in all_scenarios
+        if scenario.default or (args.heavy and "heavy" in scenario.tags)
+    ]
     if args.scenarios:
         wanted = set(args.scenarios.split(","))
         selected = [scenario for scenario in all_scenarios if scenario.name in wanted]

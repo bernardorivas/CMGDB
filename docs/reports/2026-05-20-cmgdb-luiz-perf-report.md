@@ -381,6 +381,32 @@ Decision: keep this change. It is compiler-gated, correctness-preserving in
 the test suite, and neutral-to-slightly faster in the benchmark that exercises
 more than 64 Morse sets.
 
+### Task 7: Parallel Cache And SCC Trim Decision
+
+Status: complete; deferred.
+
+Fixed the benchmark harness so `--heavy` includes heavy-tagged scenarios in
+addition to the default quick scenarios.
+
+Post-CSR heavy run:
+
+```text
+scenario          verts    build min  build med    compute min  compute med  compute stdev
+------------------------------------------------------------------------------------------
+py_small              4         0.2ms       0.2ms           2.6ms         2.6ms           0.0ms
+py_medium             4         0.2ms       0.2ms           4.2ms         4.2ms           0.0ms
+uniform_2d           25         0.3ms       0.3ms          22.2ms        22.2ms           0.0ms
+conley_2d             4         0.4ms       0.4ms           3.6ms         3.6ms           0.0ms
+py_3d                27         0.2ms       0.2ms       39406.7ms     39406.7ms           0.0ms
+py_4d               225         0.4ms       0.4ms       17261.0ms     17261.0ms           0.0ms
+conley_3d             2         0.2ms       0.2ms       45738.6ms     45738.6ms           0.0ms
+```
+
+Decision: defer the parallel cache builder and SCC trim. The heavy numbers
+are already comparable to Luiz's optimized report, and porting the parallel
+features would add concurrency and GIL complexity without a fresh profile
+showing that those specific paths are still dominant in this branch.
+
 ## Expected Performance Impact
 
 The largest likely gain for our actual workflow is:
