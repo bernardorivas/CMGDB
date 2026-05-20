@@ -14,6 +14,22 @@
 
 #define DEBUGPRINT if(0)
 
+namespace cmgdb_detail {
+
+template <class Graph, class V>
+inline auto graph_adjacencies(const Graph &G, const V &v, int)
+    -> decltype(G.adjacencies_view(v)) {
+  return G.adjacencies_view(v);
+}
+
+template <class Graph, class V>
+inline auto graph_adjacencies(const Graph &G, const V &v, long)
+    -> decltype(G.adjacencies(v)) {
+  return G.adjacencies(v);
+}
+
+} // namespace cmgdb_detail
+
 #ifdef MEMORYBOOKKEEPING
 uint64_t max_scc_memory_internal = 0;
 uint64_t max_scc_memory_external = 0;
@@ -118,7 +134,7 @@ void computeStrongComponents (std::vector<std::deque<typename Graph::Vertex> > *
             preorder [ u ] = n;
             int64_t low = n;
             ++ n;
-            std::vector<Vertex> W =  G . adjacencies ( u );
+            auto W = cmgdb_detail::graph_adjacencies ( G, u, 0 );
 #ifdef MEMORYBOOKKEEPING
             graph_memory += sizeof(Vertex) * (1 + W . size ());
 #endif
@@ -274,7 +290,7 @@ void computeReachability ( std::vector < std::vector < unsigned int > > * output
       }
 #endif
       size_type v = topological_sort [ vi ];
-      std::vector < size_type > children = G . adjacencies ( v ); // previously const &
+      auto children = cmgdb_detail::graph_adjacencies ( G, v, 0 );
       if ( morse_paint [ v ] != number_of_morse_sets ) {
         morse_code [ v ] |= condensed_code [ morse_paint [ v ] ];
       }

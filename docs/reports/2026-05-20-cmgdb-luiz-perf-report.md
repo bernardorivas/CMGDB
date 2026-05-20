@@ -228,6 +228,83 @@ uniform_2d           25         0.1ms       0.1ms          20.9ms        20.9ms 
 conley_2d             4         0.1ms       0.1ms           3.2ms         3.2ms           0.0ms
 ```
 
+### Task 2: Batched Precomputed Box-Map API
+
+Status: complete.
+
+Changed `make_precomputed_box_map(...)` to return a callable object with:
+
+- `__call__(rect)`: preserves the existing CMGDB model callback behavior.
+- `batch(rects)`: evaluates a sequence of rectangles and returns the same
+  values as calling the object one rectangle at a time.
+
+Validation:
+
+```text
+tests/test_precomputed_box_map.py: 10 passed
+```
+
+One compatibility detail: the class remains internal to the
+`CMGDB.PrecomputedBoxMap` module and is not star-exported from `CMGDB`.
+That avoids shadowing the existing `import CMGDB.PrecomputedBoxMap as precomputed`
+module import style used by tests and downstream code.
+
+### Task 3: Python Batch Callback Hook
+
+Status: complete.
+
+Added a virtual `Map::batch_map(...)` fallback, optional `ModelMapF` batch
+callback storage, and Python-visible `Model.set_batch_map(...)`.
+
+Validation:
+
+```text
+tests/test_batch_model_map.py tests/test_basic.py: 3 passed
+```
+
+Build note: reinstalling the editable package reports that
+`latentdynamics 0.1.0` pins `CMGDB==1.3.2` while this fork is now `1.3.3`.
+That packaging pin should be updated in latent-dynamics after this CMGDB
+branch is pushed.
+
+### Task 4: Serial CSR Adjacency Cache
+
+Status: complete.
+
+Added serial eager adjacency caching in `MapGraph` with CSR storage:
+
+- `csr_offsets_`: one offset per vertex plus a sentinel.
+- `csr_edges_`: flat concatenation of all adjacency lists.
+- `adjacencies(v)`: preserves the public vector-returning behavior.
+- `adjacencies_view(v)`: returns a non-owning span for graph algorithms.
+
+`GraphTheory.hpp` now prefers `adjacencies_view(v)` when available, falling
+back to the old `adjacencies(v)` API for other graph-like objects.
+
+Baseline before CSR:
+
+```text
+scenario          verts    build min  build med    compute min  compute med  compute stdev
+------------------------------------------------------------------------------------------
+py_medium             4         0.1ms       0.1ms           3.3ms         3.4ms           0.1ms
+uniform_2d           25         0.1ms       0.2ms          19.5ms        19.7ms           0.2ms
+```
+
+After serial CSR:
+
+```text
+scenario          verts    build min  build med    compute min  compute med  compute stdev
+------------------------------------------------------------------------------------------
+py_medium             4         0.1ms       0.1ms           3.2ms         3.2ms           0.0ms
+uniform_2d           25         0.1ms       0.1ms          19.8ms        19.8ms           0.1ms
+```
+
+Validation:
+
+```text
+tests: 13 passed
+```
+
 ## Expected Performance Impact
 
 The largest likely gain for our actual workflow is:

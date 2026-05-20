@@ -8,6 +8,7 @@
 #include <iterator>
 #include <iostream>
 #include <algorithm>
+#include <cstddef>
 // #include <unistd.h>
 
 #include "boost/unordered_map.hpp"
@@ -29,6 +30,18 @@ public:
   typedef Grid::size_type size_type;
   typedef Grid::GridElement Vertex;
 
+  struct AdjacencyView {
+    typedef const Vertex *iterator;
+    typedef const Vertex *const_iterator;
+    const Vertex *begin_;
+    const Vertex *end_;
+    size_t size_;
+    const Vertex *begin() const { return begin_; }
+    const Vertex *end() const { return end_; }
+    size_t size() const { return size_; }
+    bool empty() const { return size_ == 0; }
+  };
+
   // Constructor. Requires Grid and Map.
   MapGraph ( std::shared_ptr<const Grid> grid,
              std::shared_ptr<const Map> f );
@@ -41,20 +54,30 @@ public:
   /// adjacencies
   ///   Return vector of Vertices which are out-edge adjacencies of input v
   std::vector<Vertex> adjacencies ( const Vertex & v ) const;
+
+  /// adjacencies_view
+  ///   Return a non-owning view over out-edge adjacencies. When the CSR
+  ///   cache is populated, this points directly into the flat edge buffer.
+  AdjacencyView adjacencies_view ( const Vertex & v ) const;
   
   /// num_vertices
   ///   Return number of vertices
   size_type num_vertices ( void ) const;
 
+  bool has_cache ( void ) const { return stored_graph; }
+
 private:
   // Private methods
   std::vector<size_type> compute_adjacencies ( const size_type & v ) const;
+  void build_csr_from_staging ( std::vector<std::vector<Vertex> > & staging );
   // Private data
   std::shared_ptr<const Grid> grid_;
   std::shared_ptr<const Map> f_;
   // Variables used if graph is stored in memory. (See CMDB_STORE_GRAPH define)
   bool stored_graph;
   std::vector<std::vector<Vertex> > adjacency_lists_;
+  std::vector<size_t> csr_offsets_;
+  std::vector<Vertex> csr_edges_;
 };
 
 inline
@@ -80,6 +103,32 @@ MapGraph::initialize ( void ) {
   if ( not f_ ) {
     throw std::logic_error ( "MapGraph::MapGraph. Unable to construct with uninitialized Map f\n");
   }
+
+  constexpr size_t VERTEX_CAP = 16000000;
+  constexpr size_t EDGE_BUDGET = 200000000;
+  constexpr size_t EDGE_BUDGET_STAGE = EDGE_BUDGET / 2;
+
+  if ( num_vertices () < VERTEX_CAP ) {
+    const size_t n = num_vertices ();
+    std::vector<std::vector<Vertex> > staging ( n );
+    size_t edge_count = 0;
+    for ( size_type source = 0; source < n; ++ source ) {
+      staging [ source ] = compute_adjacencies ( source );
+      edge_count += staging [ source ] . size ();
+      if ( edge_count > EDGE_BUDGET_STAGE ) {
+        stored_graph = false;
+        csr_offsets_ . clear ();
+        csr_edges_ . clear ();
+        return;
+      }
+    }
+    build_csr_from_staging ( staging );
+    stored_graph = true;
+    return;
+  }
+
+  stored_graph = false;
+  return;
 #ifdef CMDB_STORE_GRAPH
   
   // Determine whether it is efficient to use an MPI job to store the graph
@@ -120,10 +169,34 @@ MapGraph::initialize ( void ) {
 
 inline std::vector<MapGraph::Vertex>
 MapGraph::adjacencies ( const size_type & source ) const {
-  if ( stored_graph )
-    return adjacency_lists_ [ source ];
-  else
-    return compute_adjacencies ( source );
+  if ( stored_graph ) {
+    size_t begin = csr_offsets_ [ source ];
+    size_t end = csr_offsets_ [ source + 1 ];
+    return std::vector<Vertex> ( csr_edges_ . begin () + begin,
+                                 csr_edges_ . begin () + end );
+  }
+  return compute_adjacencies ( source );
+}
+
+inline MapGraph::AdjacencyView
+MapGraph::adjacencies_view ( const size_type & source ) const {
+  if ( stored_graph ) {
+    size_t begin = csr_offsets_ [ source ];
+    size_t end = csr_offsets_ [ source + 1 ];
+    if ( begin == end ) {
+      return { nullptr, nullptr, 0 };
+    }
+    const Vertex * base = csr_edges_ . data ();
+    return { base + begin, base + end, end - begin };
+  }
+  thread_local std::vector<Vertex> lazy_adjacencies;
+  lazy_adjacencies = compute_adjacencies ( source );
+  if ( lazy_adjacencies . empty () ) {
+    return { nullptr, nullptr, 0 };
+  }
+  return { lazy_adjacencies . data (),
+           lazy_adjacencies . data () + lazy_adjacencies . size (),
+           lazy_adjacencies . size () };
 }
 
 inline std::vector<MapGraph::Vertex>
@@ -131,6 +204,26 @@ MapGraph::compute_adjacencies ( const Vertex & source ) const {
   std::vector < Vertex > target = 
     grid_ -> cover ( (*f_) ( grid_ -> geometry ( source ) ) ); // here is the work
   return target;
+}
+
+inline void
+MapGraph::build_csr_from_staging ( std::vector<std::vector<Vertex> > & staging ) {
+  csr_offsets_ . clear ();
+  csr_edges_ . clear ();
+  csr_offsets_ . reserve ( staging . size () + 1 );
+  csr_offsets_ . push_back ( 0 );
+
+  size_t total_edges = 0;
+  for ( const auto & adj : staging ) {
+    total_edges += adj . size ();
+    csr_offsets_ . push_back ( total_edges );
+  }
+
+  csr_edges_ . reserve ( total_edges );
+  for ( auto & adj : staging ) {
+    csr_edges_ . insert ( csr_edges_ . end (), adj . begin (), adj . end () );
+    std::vector<Vertex> () . swap ( adj );
+  }
 }
 
 inline MapGraph::size_type
