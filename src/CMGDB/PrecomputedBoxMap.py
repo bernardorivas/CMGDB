@@ -35,6 +35,19 @@ __all__ = [
 ]
 
 
+class PrecomputedBoxMap:
+    """Callable box map with a batched rectangle helper."""
+
+    def __init__(self, lookup: Callable[[Any], list[float]]):
+        self._lookup = lookup
+
+    def __call__(self, rect: Any) -> list[float]:
+        return self._lookup(rect)
+
+    def batch(self, rects: Any) -> list[list[float]]:
+        return [self._lookup(rect) for rect in rects]
+
+
 def _import_torch(*, required: bool):
     try:
         import torch
@@ -341,7 +354,7 @@ def make_uniform_precomputed_box_map(
             out_upper = out_upper + box_size
         return np.concatenate([out_lower, out_upper]).tolist()
 
-    return box_map
+    return PrecomputedBoxMap(box_map)
 
 
 def make_adaptive_precomputed_box_map(
@@ -406,7 +419,7 @@ def make_adaptive_precomputed_box_map(
             out_upper = out_upper + box_size
         return np.concatenate([out_lower, out_upper]).tolist()
 
-    return box_map
+    return PrecomputedBoxMap(box_map)
 
 
 def make_precomputed_box_map(

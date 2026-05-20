@@ -76,6 +76,24 @@ def test_uniform_and_adaptive_precomputed_are_equal_for_divisible_uniform_grid()
     np.testing.assert_array_equal(adaptive(rect), uniform(rect))
 
 
+def test_precomputed_box_map_object_batches_rectangles_like_single_calls():
+    box_map = CMGDB.make_precomputed_box_map(
+        vector_map,
+        lower_bounds=[-1.0, -1.0],
+        upper_bounds=[1.0, 1.0],
+        subdiv_max=4,
+        mode="adaptive",
+        padding=False,
+    )
+    rects = [
+        [-0.5, 0.0, 0.0, 0.5],
+        [0.0, -0.5, 0.5, 0.0],
+    ]
+    expected = [box_map(rect) for rect in rects]
+    assert hasattr(box_map, "batch")
+    np.testing.assert_allclose(box_map.batch(rects), expected)
+
+
 def test_precompute_corner_grid_splits_evaluator_calls_into_bounded_chunks():
     sizes = []
 
