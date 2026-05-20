@@ -343,6 +343,44 @@ does not help this tiny benchmark. The expected payoff is for expensive
 Torch/NumPy callbacks where reducing Python call count dominates the extra
 batch orchestration cost.
 
+### Task 6: 128-Bit Reachability Mask
+
+Status: complete.
+
+Added optional `__uint128_t` reachability bitmasks for GCC/Clang builds,
+falling back to `uint64_t` elsewhere. This doubles each reachability group
+from 64 Morse sets to 128 Morse sets when the compiler supports it.
+
+Added optional benchmark scenario:
+
+- `reach_4d`: 4D adaptive Leslie-style map with 225 Morse vertices.
+
+Baseline before 128-bit reach mask:
+
+```text
+scenario          verts    build min  build med    compute min  compute med  compute stdev
+------------------------------------------------------------------------------------------
+reach_4d            225         0.2ms       0.2ms         353.7ms       362.3ms           6.3ms
+```
+
+After 128-bit reach mask:
+
+```text
+scenario          verts    build min  build med    compute min  compute med  compute stdev
+------------------------------------------------------------------------------------------
+reach_4d            225         0.1ms       0.2ms         350.9ms       351.4ms           8.9ms
+```
+
+Validation:
+
+```text
+tests: 15 passed
+```
+
+Decision: keep this change. It is compiler-gated, correctness-preserving in
+the test suite, and neutral-to-slightly faster in the benchmark that exercises
+more than 64 Morse sets.
+
 ## Expected Performance Impact
 
 The largest likely gain for our actual workflow is:

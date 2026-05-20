@@ -266,6 +266,28 @@ def scenarios(scale: float, include_heavy: bool, include_batch: bool) -> List[Sc
         )
     )
 
+    def _reach_4d(scale, offset):
+        return CMGDB.Model(
+            _shift(16, scale, offset),
+            _shift(18, scale, offset),
+            _shift(14, scale, offset),
+            10000,
+            [0.0] * 4,
+            [1.2] * 4,
+            make_box_map(leslie_like_4d),
+        )
+
+    s.append(
+        Scenario(
+            name="reach_4d",
+            description="4D adaptive case with >64 Morse sets for reachability",
+            build=_reach_4d,
+            validate=validate_vertices(225),
+            tags=["quick", "adaptive", "reachability", "4d"],
+            default=False,
+        )
+    )
+
     def _conley_2d(scale, offset):
         return CMGDB.Model(
             _shift(6, scale, offset),
