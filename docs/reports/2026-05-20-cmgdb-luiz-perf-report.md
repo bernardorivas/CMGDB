@@ -23,7 +23,7 @@ Recommended implementation order:
 Repository:
 
 - Remote: `https://github.com/bernardorivas/CMGDB.git`
-- Current pushed master after the first round: `08ec25171f528b9e5e07248d335b89a50155913f`
+- First-round pushed master before this performance integration: `08ec25171f528b9e5e07248d335b89a50155913f`
 - Local checkout: `archive/CMGDB`
 - Original upstream remote retained locally as `marcio`.
 
@@ -31,6 +31,11 @@ Implemented:
 
 - Added `CMGDB.make_precomputed_box_map(...)`.
 - Added `CMGDB.PrecomputedBoxMap` helper module.
+- Added callable-object `batch(rects)` support for precomputed maps.
+- Added Python-visible `Model.set_batch_map(...)`.
+- Added eager CSR adjacency caching in `MapGraph`.
+- Added compiler-gated 128-bit reachability masks.
+- Added `tests/bench.py` benchmark harness.
 - Supported `mode="adaptive"` and `mode="uniform"`.
 - Supported chunked finest-corner lattice precomputation with `batch_points`.
 - Supported framework-neutral batched NumPy-style callables.
@@ -43,14 +48,22 @@ Files added or modified:
 
 - `src/CMGDB/PrecomputedBoxMap.py`
 - `tests/test_precomputed_box_map.py`
+- `tests/test_batch_model_map.py`
+- `tests/bench.py`
+- `src/CMGDB/_cmgdb/include/database/Map.h`
+- `src/CMGDB/_cmgdb/include/database/Model.h`
+- `src/CMGDB/_cmgdb/include/database/ModelMapF.h`
+- `src/CMGDB/_cmgdb/include/database/MapGraph.h`
+- `src/CMGDB/_cmgdb/include/database/GraphTheory.hpp`
 - `src/CMGDB/__init__.py`
 - `README.md`
 - `setup.py`
 
 Validation performed:
 
-- `archive/CMGDB` package tests: `11 passed`
+- `archive/CMGDB` package tests before performance integration: `11 passed`
 - latent-dynamics Morse consumer tests: `50 passed`
+- `archive/CMGDB` package tests after performance integration: `15 passed`
 
 ## Current Precomputed Helper Semantics
 
@@ -407,6 +420,34 @@ are already comparable to Luiz's optimized report, and porting the parallel
 features would add concurrency and GIL complexity without a fresh profile
 showing that those specific paths are still dominant in this branch.
 
+### Task 8: Final Documentation And Verification
+
+Status: complete.
+
+Updated `README.md` to document:
+
+- `CMGDB.make_precomputed_box_map(...)`.
+- `box_map.batch(rects)`.
+- `Model.set_batch_map(...)`.
+- `python tests/bench.py`.
+
+Final test verification:
+
+```text
+tests: 15 passed
+```
+
+Final default benchmark:
+
+```text
+scenario          verts    build min  build med    compute min  compute med  compute stdev
+------------------------------------------------------------------------------------------
+py_small              4         0.2ms       0.2ms           2.2ms         2.3ms           0.1ms
+py_medium             4         0.2ms       0.2ms           3.5ms         3.6ms           0.2ms
+uniform_2d           25         0.2ms       0.2ms          21.6ms        21.6ms           0.0ms
+conley_2d             4         0.1ms       0.2ms           3.0ms         3.0ms           0.1ms
+```
+
 ## Expected Performance Impact
 
 The largest likely gain for our actual workflow is:
@@ -438,4 +479,14 @@ This should beat either optimization alone. The exact speedup is workload-depend
 
 ## Recommendation
 
-Proceed with the staged plan. Do not port the SCC trim or broad parallel features until after the benchmark harness and CSR cache are in place. The next concrete commit should be the benchmark harness, because it gives us correctness and timing evidence before we change core C++ behavior.
+Keep the staged integration that is now implemented here: benchmark harness,
+batched precomputed maps, `Model.set_batch_map(...)`, CSR adjacency caching,
+batch cache construction, and compiler-gated 128-bit reachability masks.
+
+Do not port the parallel cache builder or SCC trim in this branch. The heavy
+benchmark run is already comparable to Luiz's optimized report, and the
+parallel pieces add enough concurrency/GIL complexity that they should be
+handled only after a fresh profile shows a specific remaining bottleneck.
+
+After this CMGDB branch is pushed, update latent-dynamics' package pin from
+`CMGDB==1.3.2` to `CMGDB==1.3.3` or to a git reference for the Bernardo fork.

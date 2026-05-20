@@ -54,9 +54,31 @@ model = CMGDB.Model(
 )
 ```
 
+The returned object is still callable, and it also exposes `batch(rects)`.
+When a batched rectangle callback is available, install it on the model so
+CMGDB can build cached adjacencies with fewer Python calls:
+
+```python
+model.set_batch_map(box_map.batch)
+```
+
 Torch is not a required dependency. If Torch is installed and `f` is a
 `torch.nn.Module`, the helper evaluates it on `mps`, then `cuda`, then `cpu`
 when `device="auto"`.
+
+## Benchmarks
+
+This fork includes a correctness-validating benchmark harness:
+
+```bash
+python tests/bench.py
+python tests/bench.py --heavy
+python tests/bench.py --scenarios py_medium,reach_4d --repeats 5 --warmup 1
+```
+
+The harness validates expected Morse-graph outputs before reporting timings.
+It is useful for checking changes to `MapGraph`, reachability, and Python map
+callback paths.
 
 ## Installing from source and dependencies
 
