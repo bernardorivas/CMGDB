@@ -9,6 +9,7 @@
 #include <iostream>
 #include <algorithm>
 #include <cstddef>
+#include <stdexcept>
 // #include <unistd.h>
 
 #include "boost/unordered_map.hpp"
@@ -69,6 +70,8 @@ public:
 private:
   // Private methods
   std::vector<size_type> compute_adjacencies ( const size_type & v ) const;
+  std::vector<std::vector<size_type> > compute_adjacencies_batch (
+    const std::vector<size_type> & sources ) const;
   void build_csr_from_staging ( std::vector<std::vector<Vertex> > & staging );
   // Private data
   std::shared_ptr<const Grid> grid_;
@@ -112,6 +115,34 @@ MapGraph::initialize ( void ) {
     const size_t n = num_vertices ();
     std::vector<std::vector<Vertex> > staging ( n );
     size_t edge_count = 0;
+
+    if ( f_ -> has_optimized_batch () ) {
+      constexpr size_t BATCH_CHUNK = 100000;
+      for ( size_t start = 0; start < n; start += BATCH_CHUNK ) {
+        size_t end = std::min ( start + BATCH_CHUNK, n );
+        std::vector<Vertex> sources;
+        sources.reserve ( end - start );
+        for ( size_t source = start; source < end; ++ source ) {
+          sources.push_back ( source );
+        }
+        std::vector<std::vector<Vertex> > chunk_adjacencies =
+          compute_adjacencies_batch ( sources );
+        for ( size_t i = 0; i < chunk_adjacencies . size (); ++ i ) {
+          edge_count += chunk_adjacencies [ i ] . size ();
+          staging [ start + i ] = std::move ( chunk_adjacencies [ i ] );
+        }
+        if ( edge_count > EDGE_BUDGET_STAGE ) {
+          stored_graph = false;
+          csr_offsets_ . clear ();
+          csr_edges_ . clear ();
+          return;
+        }
+      }
+      build_csr_from_staging ( staging );
+      stored_graph = true;
+      return;
+    }
+
     for ( size_type source = 0; source < n; ++ source ) {
       staging [ source ] = compute_adjacencies ( source );
       edge_count += staging [ source ] . size ();
@@ -204,6 +235,27 @@ MapGraph::compute_adjacencies ( const Vertex & source ) const {
   std::vector < Vertex > target = 
     grid_ -> cover ( (*f_) ( grid_ -> geometry ( source ) ) ); // here is the work
   return target;
+}
+
+inline std::vector<std::vector<MapGraph::Vertex> >
+MapGraph::compute_adjacencies_batch ( const std::vector<size_type> & sources ) const {
+  std::vector<std::shared_ptr<Geo> > geos;
+  geos.reserve ( sources . size () );
+  for ( const size_type & source : sources ) {
+    geos.push_back ( grid_ -> geometry ( source ) );
+  }
+
+  std::vector<std::shared_ptr<Geo> > image_geos = f_ -> batch_map ( geos );
+  if ( image_geos . size () != sources . size () ) {
+    throw std::runtime_error ( "MapGraph::compute_adjacencies_batch received the wrong number of images" );
+  }
+
+  std::vector<std::vector<Vertex> > result;
+  result.reserve ( sources . size () );
+  for ( const auto & image_geo : image_geos ) {
+    result.push_back ( grid_ -> cover ( image_geo ) );
+  }
+  return result;
 }
 
 inline void

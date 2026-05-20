@@ -305,6 +305,44 @@ Validation:
 tests: 13 passed
 ```
 
+### Task 5: Batched Cache Construction
+
+Status: complete.
+
+Added chunked batch construction to `MapGraph::initialize(...)` when
+`f_->has_optimized_batch()` is true. The current chunk size is 100,000
+source rectangles per batch callback. The batch path converts source grid
+cells to geometries, calls `Map::batch_map(...)`, then covers each returned
+image rectangle into the CSR staging buffer.
+
+Additional tests:
+
+- `test_precomputed_box_map_batch_can_be_installed_on_model`
+- `test_map_graph_cache_uses_batch_map_callback`
+
+The second test verifies that `ComputeMorseGraph(...)` actually calls the
+Python batch callback while building the cached map graph.
+
+Validation:
+
+```text
+tests: 15 passed
+```
+
+Benchmark after batch wiring:
+
+```text
+scenario          verts    build min  build med    compute min  compute med  compute stdev
+------------------------------------------------------------------------------------------
+batch_medium          4         0.1ms       0.1ms           3.5ms         3.7ms           0.2ms
+uniform_2d           25         0.1ms       0.1ms          22.5ms        23.0ms           0.3ms
+```
+
+Interpretation: the batch path is now mechanically wired and tested, but it
+does not help this tiny benchmark. The expected payoff is for expensive
+Torch/NumPy callbacks where reducing Python call count dominates the extra
+batch orchestration cost.
+
 ## Expected Performance Impact
 
 The largest likely gain for our actual workflow is:

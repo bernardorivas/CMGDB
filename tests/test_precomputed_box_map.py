@@ -94,6 +94,21 @@ def test_precomputed_box_map_object_batches_rectangles_like_single_calls():
     np.testing.assert_allclose(box_map.batch(rects), expected)
 
 
+def test_precomputed_box_map_batch_can_be_installed_on_model():
+    box_map = CMGDB.make_precomputed_box_map(
+        vector_map,
+        lower_bounds=[-1.0, -1.0],
+        upper_bounds=[1.0, 1.0],
+        subdiv_max=4,
+        mode="uniform",
+        padding=False,
+    )
+    model = CMGDB.Model(4, 4, 4, 10000, [-1.0, -1.0], [1.0, 1.0], box_map)
+    model.set_batch_map(box_map.batch)
+    morse_graph, _ = CMGDB.ComputeMorseGraph(model)
+    assert morse_graph.num_vertices() >= 1
+
+
 def test_precompute_corner_grid_splits_evaluator_calls_into_bounded_chunks():
     sizes = []
 
