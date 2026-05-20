@@ -7,3 +7,4 @@ from CMGDB.LoadMorseSetFile import *
 from CMGDB.ComputeBoxMap import *
 from CMGDB.SaveMorseData import *
 from CMGDB.BoxMapData import *
+from CMGDB.PrecomputedBoxMap import *

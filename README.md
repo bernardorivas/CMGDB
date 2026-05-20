@@ -24,14 +24,48 @@ In particular the notebooks [Examples.ipynb](examples/Examples.ipynb), [Gaussian
 Here is an old [survey](http://chomp.rutgers.edu/Projects/survey/cmdbSurvey.pdf) and a
 [talk](http://chomp.rutgers.edu/Projects/Databases_for_the_Global_Dynamics/software/LorentzCenterAugust2014.pdf) that might be useful.
 
+## Precomputed box maps
+
+This fork includes optional Python helpers for maps that are expensive to
+evaluate one box at a time. `CMGDB.make_precomputed_box_map` evaluates a
+batched map on the finest corner lattice in bounded chunks, then returns a
+standard `box_map(rect)` callable for `CMGDB.Model`.
+
+```python
+box_map = CMGDB.make_precomputed_box_map(
+    f,  # batched NumPy callable or torch.nn.Module
+    lower_bounds,
+    upper_bounds,
+    subdiv_max=28,
+    mode="adaptive",  # or "uniform"
+    padding=False,
+    batch_points="auto",
+    device="auto",   # Torch only: mps, then cuda, then cpu
+)
+
+model = CMGDB.Model(
+    subdiv_min,
+    subdiv_max,
+    subdiv_init,
+    subdiv_limit,
+    lower_bounds,
+    upper_bounds,
+    box_map,
+)
+```
+
+Torch is not a required dependency. If Torch is installed and `f` is a
+`torch.nn.Module`, the helper evaluates it on `mps`, then `cuda`, then `cpu`
+when `device="auto"`.
+
 ## Installing from source and dependencies
 
 To install from source you need a C++ compiler and the following dependencies installed: [Boost](https://www.boost.org/), [GMP](https://gmplib.org/), and the [Succinct Data Structure Library (SDSL)](https://github.com/simongog/sdsl-lite). Assuming you have these dependencies installed in your system, you can install from source with the command:
 
-	pip install --force-reinstall --no-deps --no-cache-dir git+https://github.com/marciogameiro/CMGDB.git
+	pip install --force-reinstall --no-deps --no-cache-dir git+https://github.com/bernardorivas/CMGDB.git
 
 Alternatively, you can clone the GitHub repository and install with:
 
-	git clone https://github.com/marciogameiro/CMGDB.git
+	git clone https://github.com/bernardorivas/CMGDB.git
 	cd CMGDB
 	./install.sh

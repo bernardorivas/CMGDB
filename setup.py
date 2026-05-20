@@ -37,10 +37,14 @@ class CMakeBuild(build_ext):
         cmake_args = [
             "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={}".format(extdir),
             "-DPYTHON_EXECUTABLE={}".format(sys.executable),
+            "-DPython_EXECUTABLE={}".format(sys.executable),
             "-DEXAMPLE_VERSION_INFO={}".format(self.distribution.get_version()),
             "-DCMAKE_BUILD_TYPE={}".format(cfg),  # Not used on MSVC
             "-DUSER_INCLUDE_PATH=./src/CMGDB/_cmgdb/include"
         ]
+
+        if self.compiler.compiler_type != "msvc" and cfg == "Release":
+            cmake_args += ["-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG"]
 
         build_args = ['--config', cfg]
 
@@ -86,9 +90,11 @@ with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='CMGDB',
-    version='1.3.2',
+    version='1.3.3',
     author='Marcio Gameiro',
     author_email='marciogameiro@gmail.com',
+    maintainer='Bernardo Rivas',
+    maintainer_email='bernardo.apr@gmail.com',
     description='CMGDB (Conley Morse Graph Database) Python Extension',
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -98,7 +104,7 @@ setup(
     packages=['CMGDB'],
     cmdclass=dict(build_ext=CMakeBuild),
     zip_safe=False,
-    url = 'https://github.com/marciogameiro/CMGDB',
+    url = 'https://github.com/bernardorivas/CMGDB',
     include_package_data = True,
     install_requires=['numpy>=1.19', 'matplotlib>=3.3', 'graphviz>=0.16']
 )
