@@ -1,6 +1,5 @@
 """Smoke tests for morse_graph_parser and cmgdb_roa modules."""
 
-import dataclasses
 import tempfile
 from pathlib import Path
 
@@ -12,7 +11,6 @@ from CMGDB.cmgdb_roa import (
     ESCAPE,
     MULTI,
     CellROA,
-    LatentBounds,
     collapse_roa_to_lca,
     compute_exact_roa,
     load_exact_roa,
@@ -136,16 +134,15 @@ def test_compute_exact_roa():
         # Morse sets: node 1 owns cell 1, node 2 owns cell 2
         cmgdb_morse_graph = MockCMGDBMorseGraph({1: [1], 2: [2]})
 
-        bounds = LatentBounds(
-            lower=np.array([0.0, 0.0], dtype=np.float64),
-            upper=np.array([1.0, 1.0], dtype=np.float64),
-        )
+        lower_bounds = np.array([0.0, 0.0], dtype=np.float64)
+        upper_bounds = np.array([1.0, 1.0], dtype=np.float64)
 
         roa = compute_exact_roa(
             map_graph,
             cmgdb_morse_graph,
             morse_graph,
-            bounds=bounds,
+            lower_bounds=lower_bounds,
+            upper_bounds=upper_bounds,
             collapse_to_lca=True,
         )
 
@@ -175,17 +172,16 @@ def test_collapse_roa_to_lca():
         map_graph = MockMapGraph(3, adjacencies)
         cmgdb_morse_graph = MockCMGDBMorseGraph({1: [1], 2: [2]})
 
-        bounds = LatentBounds(
-            lower=np.array([0.0, 0.0], dtype=np.float64),
-            upper=np.array([1.0, 1.0], dtype=np.float64),
-        )
+        lower_bounds = np.array([0.0, 0.0], dtype=np.float64)
+        upper_bounds = np.array([1.0, 1.0], dtype=np.float64)
 
         # Compute without collapsing first
         roa_uncollapsed = compute_exact_roa(
             map_graph,
             cmgdb_morse_graph,
             morse_graph,
-            bounds=bounds,
+            lower_bounds=lower_bounds,
+            upper_bounds=upper_bounds,
             collapse_to_lca=False,
         )
 
@@ -208,16 +204,15 @@ def test_save_and_load_exact_roa():
         map_graph = MockMapGraph(3, adjacencies)
         cmgdb_morse_graph = MockCMGDBMorseGraph({1: [1], 2: [2]})
 
-        bounds = LatentBounds(
-            lower=np.array([0.0, 0.0], dtype=np.float64),
-            upper=np.array([1.0, 1.0], dtype=np.float64),
-        )
+        lower_bounds = np.array([0.0, 0.0], dtype=np.float64)
+        upper_bounds = np.array([1.0, 1.0], dtype=np.float64)
 
         roa = compute_exact_roa(
             map_graph,
             cmgdb_morse_graph,
             morse_graph,
-            bounds=bounds,
+            lower_bounds=lower_bounds,
+            upper_bounds=upper_bounds,
             collapse_to_lca=True,
         )
 
@@ -234,21 +229,6 @@ def test_save_and_load_exact_roa():
         assert np.array_equal(loaded_roa.bounds_upper, roa.bounds_upper)
 
 
-def test_latent_bounds_dataclass():
-    """Test the LatentBounds dataclass."""
-    lower = np.array([-1.0, -2.0], dtype=np.float64)
-    upper = np.array([1.0, 2.0], dtype=np.float64)
-    bounds = LatentBounds(lower=lower, upper=upper)
-
-    assert bounds.dim == 2
-    assert np.array_equal(bounds.lower, lower)
-    assert np.array_equal(bounds.upper, upper)
-
-    # Test immutability (frozen=True)
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        bounds.dim = 3  # type: ignore
-
-
 def test_collapse_roa_to_lca_stronger():
     """Test that collapse_roa_to_lca correctly assigns LCA labels to multi-label cells."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -260,17 +240,16 @@ def test_collapse_roa_to_lca_stronger():
         map_graph = MockMapGraph(3, adjacencies)
         cmgdb_morse_graph = MockCMGDBMorseGraph({1: [1], 2: [2]})
 
-        bounds = LatentBounds(
-            lower=np.array([0.0, 0.0], dtype=np.float64),
-            upper=np.array([1.0, 1.0], dtype=np.float64),
-        )
+        lower_bounds = np.array([0.0, 0.0], dtype=np.float64)
+        upper_bounds = np.array([1.0, 1.0], dtype=np.float64)
 
         # Compute without collapsing to get multi-label cells
         roa_uncollapsed = compute_exact_roa(
             map_graph,
             cmgdb_morse_graph,
             morse_graph,
-            bounds=bounds,
+            lower_bounds=lower_bounds,
+            upper_bounds=upper_bounds,
             collapse_to_lca=False,
         )
 
@@ -300,10 +279,8 @@ def test_compute_and_save_exact_roa_happy_path():
         map_graph = MockMapGraph(3, adjacencies)
         cmgdb_morse_graph = MockCMGDBMorseGraph({1: [1], 2: [2]})
 
-        bounds = LatentBounds(
-            lower=np.array([0.0, 0.0], dtype=np.float64),
-            upper=np.array([1.0, 1.0], dtype=np.float64),
-        )
+        lower_bounds = np.array([0.0, 0.0], dtype=np.float64)
+        upper_bounds = np.array([1.0, 1.0], dtype=np.float64)
 
         out_dir = Path(tmpdir) / "roa_output"
 
@@ -315,7 +292,8 @@ def test_compute_and_save_exact_roa_happy_path():
             cmgdb_morse_graph=cmgdb_morse_graph,
             morse_graph_dot=dot_path,
             out_dir=out_dir,
-            bounds=bounds,
+            lower_bounds=lower_bounds,
+            upper_bounds=upper_bounds,
             max_vertices=1_000_000,
             collapse_to_lca=True,
         )
@@ -339,10 +317,8 @@ def test_compute_and_save_exact_roa_max_vertices_guard():
         map_graph = MockMapGraph(3, adjacencies)
         cmgdb_morse_graph = MockCMGDBMorseGraph({1: [1], 2: [2]})
 
-        bounds = LatentBounds(
-            lower=np.array([0.0, 0.0], dtype=np.float64),
-            upper=np.array([1.0, 1.0], dtype=np.float64),
-        )
+        lower_bounds = np.array([0.0, 0.0], dtype=np.float64)
+        upper_bounds = np.array([1.0, 1.0], dtype=np.float64)
 
         out_dir = Path(tmpdir) / "roa_output"
 
@@ -355,7 +331,8 @@ def test_compute_and_save_exact_roa_max_vertices_guard():
                 cmgdb_morse_graph=cmgdb_morse_graph,
                 morse_graph_dot=dot_path,
                 out_dir=out_dir,
-                bounds=bounds,
+                lower_bounds=lower_bounds,
+                upper_bounds=upper_bounds,
                 max_vertices=1,  # Too small; should raise
                 collapse_to_lca=True,
             )

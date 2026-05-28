@@ -8,7 +8,6 @@ same CMGDB cell ids used by ``morse_graph.morse_set(node)``.
 from __future__ import annotations
 
 __all__ = [
-    "LatentBounds",
     "CellROA",
     "EXACT_ROA_FILENAME",
     "BOUNDARY",
@@ -32,18 +31,6 @@ from CMGDB.morse_graph_parser import MorseGraph
 
 if TYPE_CHECKING:
     pass
-
-
-@dataclass(frozen=True)
-class LatentBounds:
-    """Min/max extents of a bounding box in phase space, with an optional buffer."""
-
-    lower: NDArray[np.float64]
-    upper: NDArray[np.float64]
-
-    @property
-    def dim(self) -> int:
-        return int(self.lower.shape[0])
 
 
 EXACT_ROA_FILENAME = "regions_of_attraction_exact.npz"
@@ -195,7 +182,8 @@ def compute_exact_roa(
     cmgdb_morse_graph,
     morse_dag: "MorseGraph",
     *,
-    bounds: LatentBounds | None = None,
+    lower_bounds: NDArray[np.float64] | None = None,
+    upper_bounds: NDArray[np.float64] | None = None,
     max_box_geometry_vertices: int = 2_000_000,
     collapse_to_lca: bool = True,
 ) -> CellROA:
@@ -264,7 +252,7 @@ def compute_exact_roa(
     if collapse_to_lca:
         _collapse_multi(box_roa, reach_mask, minimal_sorted, morse_dag)
 
-    dim = int(bounds.dim) if bounds is not None else None
+    dim = len(lower_bounds) if lower_bounds is not None else None
     grid_shape = _infer_uniform_grid_shape(n_vertices, dim) if dim is not None else None
     boxes = None
     if grid_shape is None:
@@ -276,8 +264,8 @@ def compute_exact_roa(
 
     return CellROA(
         box_roa=box_roa,
-        bounds_lower=None if bounds is None else np.asarray(bounds.lower, dtype=np.float64),
-        bounds_upper=None if bounds is None else np.asarray(bounds.upper, dtype=np.float64),
+        bounds_lower=None if lower_bounds is None else np.asarray(lower_bounds, dtype=np.float64),
+        bounds_upper=None if upper_bounds is None else np.asarray(upper_bounds, dtype=np.float64),
         grid_shape=grid_shape,
         boxes=boxes,
         reach_mask=reach_mask,
@@ -359,7 +347,8 @@ def compute_and_save_exact_roa(
     cmgdb_morse_graph,
     morse_graph_dot: str | Path,
     out_dir: str | Path,
-    bounds: LatentBounds,
+    lower_bounds: NDArray[np.float64] | None = None,
+    upper_bounds: NDArray[np.float64] | None = None,
     max_vertices: int,
     collapse_to_lca: bool = True,
 ) -> Path:
@@ -374,7 +363,8 @@ def compute_and_save_exact_roa(
         map_graph,
         cmgdb_morse_graph,
         morse_dag,
-        bounds=bounds,
+        lower_bounds=lower_bounds,
+        upper_bounds=upper_bounds,
         max_box_geometry_vertices=max_vertices,
         collapse_to_lca=collapse_to_lca,
     )
