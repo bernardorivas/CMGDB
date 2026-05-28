@@ -235,7 +235,7 @@ def test_save_and_load_exact_roa():
 
 
 def test_latent_bounds_dataclass():
-    """Test the inlined LatentBounds dataclass."""
+    """Test the LatentBounds dataclass."""
     lower = np.array([-1.0, -2.0], dtype=np.float64)
     upper = np.array([1.0, 2.0], dtype=np.float64)
     bounds = LatentBounds(lower=lower, upper=upper)

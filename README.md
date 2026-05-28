@@ -1,35 +1,88 @@
 # CMGDB
-Conley Morse Graph Database
+
+Conley Morse Graph Database — combinatorial-topological computation of the
+global dynamics of discrete dynamical systems.
+
+> **This is a fork of [CMGDB](https://github.com/marciogameiro/CMGDB) by Marcio Gameiro.**
+> For the official, PyPI-released package, install upstream with `pip install CMGDB`.
+> This fork adds a few performance and analysis features (see
+> [What this fork adds](#what-this-fork-adds)) and is **installed from source**;
+> it is not published to PyPI. The mathematical output is unchanged from upstream.
 
 ## Overview
 
-This project uses combinatorial and topological methods to compute dynamics of discrete dynamical systems.
+CMGDB uses combinatorial and topological methods to compute the dynamics of
+discrete dynamical systems. Given a map and a phase space, it builds the Morse
+graph (the partial order of recurrent components) and computes the Conley index
+of each Morse set.
+
+## What this fork adds
+
+Relative to the upstream release, this fork adds the following. None of it
+changes the Morse graph, Conley indices, or subdivision semantics that upstream
+computes — these are additive helpers and a build-flag change.
+
+- **Precomputed / batched box maps** — `CMGDB.make_precomputed_box_map(...)`
+  evaluates an expensive map on the finest corner lattice in bounded chunks and
+  returns a standard `box_map(rect)` callable, amortizing the per-box evaluation
+  cost of maps that are slow to call one box at a time (e.g. neural-network or
+  GPU-resident maps).
+- **Batched adjacency construction** — `Model.set_batch_map(...)` plus a CSR
+  adjacency cache in `MapGraph` let CMGDB build the map graph with far fewer
+  Python calls.
+- **Regions of attraction** — `CMGDB.cmgdb_roa` and `CMGDB.morse_graph_parser`
+  provide exact region-of-attraction labels computed on the `MapGraph` returned
+  during the Morse stage, plus a standalone parser for CMGDB's DOT output.
+- **A correctness-validating benchmark harness** — `tests/bench.py` checks the
+  expected Morse-graph output before reporting timings.
+- **Quieter default output** — per-run progress prints are gated behind a
+  `CMG_VERBOSE` build flag (off by default).
 
 ## Installation
 
-Install the latest tagged version:
+This fork is not on PyPI and must be built from source. You need a C++ compiler
+and the following dependencies: [Boost](https://www.boost.org/),
+[GMP](https://gmplib.org/), and the
+[Succinct Data Structure Library (SDSL)](https://github.com/simongog/sdsl-lite).
 
-	pip install CMGDB
+Clone and install:
+
+	git clone https://github.com/bernardorivas/CMGDB.git
+	cd CMGDB
+	./install.sh
+
+Or install directly with pip:
+
+	pip install --force-reinstall --no-deps --no-cache-dir git+https://github.com/bernardorivas/CMGDB.git
 
 To uninstall:
 
 	pip uninstall CMGDB
 
+> This fork uses the same import name (`CMGDB`) as the upstream package, so it
+> replaces upstream in your environment rather than installing alongside it.
+
 ## Documentation and examples
 
-To get started on how to run the code see the examples in the Jupyter notebooks in the [examples](examples) folder.
+To get started, see the Jupyter notebooks in the [examples](examples) folder.
+[Examples.ipynb](examples/Examples.ipynb),
+[Gaussian_Process_Example.ipynb](examples/Gaussian_Process_Example.ipynb), and
+[Conley_Index_Examples.ipynb](examples/Conley_Index_Examples.ipynb) cover the
+basic workflow and are a good starting point.
+[Precomputed_vs_OnDemand_BoxMap.ipynb](examples/Precomputed_vs_OnDemand_BoxMap.ipynb)
+and [Regions_of_Attraction.ipynb](examples/Regions_of_Attraction.ipynb)
+demonstrate the fork-specific features.
 
-In particular the notebooks [Examples.ipynb](examples/Examples.ipynb), [Gaussian\_Process\_Example.ipynb](examples/Gaussian_Process_Example.ipynb), and [Conley\_Index\_Examples.ipynb](examples/Conley_Index_Examples.ipynb) present basic examples on how to run the code and are a good starting point.
-
-Here is an old [survey](http://chomp.rutgers.edu/Projects/survey/cmdbSurvey.pdf) and a
-[talk](http://chomp.rutgers.edu/Projects/Databases_for_the_Global_Dynamics/software/LorentzCenterAugust2014.pdf) that might be useful.
+For background, see this
+[survey](http://chomp.rutgers.edu/Projects/survey/cmdbSurvey.pdf) and
+[talk](http://chomp.rutgers.edu/Projects/Databases_for_the_Global_Dynamics/software/LorentzCenterAugust2014.pdf).
 
 ## Precomputed box maps
 
-This fork includes optional Python helpers for maps that are expensive to
-evaluate one box at a time. `CMGDB.make_precomputed_box_map` evaluates a
-batched map on the finest corner lattice in bounded chunks, then returns a
-standard `box_map(rect)` callable for `CMGDB.Model`.
+For maps that are expensive to evaluate one box at a time,
+`CMGDB.make_precomputed_box_map` evaluates a batched map on the finest corner
+lattice in bounded chunks, then returns a standard `box_map(rect)` callable for
+`CMGDB.Model`.
 
 ```python
 box_map = CMGDB.make_precomputed_box_map(
@@ -54,9 +107,9 @@ model = CMGDB.Model(
 )
 ```
 
-The returned object is still callable, and it also exposes `batch(rects)`.
-When a batched rectangle callback is available, install it on the model so
-CMGDB can build cached adjacencies with fewer Python calls:
+The returned object is still callable, and it also exposes `batch(rects)`. When
+a batched rectangle callback is available, install it on the model so CMGDB can
+build cached adjacencies with fewer Python calls:
 
 ```python
 model.set_batch_map(box_map.batch)
@@ -68,7 +121,7 @@ when `device="auto"`.
 
 ## Benchmarks
 
-This fork includes a correctness-validating benchmark harness:
+The fork includes a correctness-validating benchmark harness:
 
 ```bash
 python tests/bench.py
@@ -76,18 +129,11 @@ python tests/bench.py --heavy
 python tests/bench.py --scenarios py_medium,reach_4d --repeats 5 --warmup 1
 ```
 
-The harness validates expected Morse-graph outputs before reporting timings.
-It is useful for checking changes to `MapGraph`, reachability, and Python map
+The harness validates expected Morse-graph outputs before reporting timings. It
+is useful for checking changes to `MapGraph`, reachability, and Python map
 callback paths.
 
-## Installing from source and dependencies
+## License
 
-To install from source you need a C++ compiler and the following dependencies installed: [Boost](https://www.boost.org/), [GMP](https://gmplib.org/), and the [Succinct Data Structure Library (SDSL)](https://github.com/simongog/sdsl-lite). Assuming you have these dependencies installed in your system, you can install from source with the command:
-
-	pip install --force-reinstall --no-deps --no-cache-dir git+https://github.com/bernardorivas/CMGDB.git
-
-Alternatively, you can clone the GitHub repository and install with:
-
-	git clone https://github.com/bernardorivas/CMGDB.git
-	cd CMGDB
-	./install.sh
+MIT, Copyright (c) 2020 Marcio Gameiro (see [LICENSE](LICENSE)). This fork is
+maintained by Bernardo Rivas and retains the upstream license.

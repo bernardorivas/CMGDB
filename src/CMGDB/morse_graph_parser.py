@@ -3,7 +3,7 @@
 This module provides the ``MorseGraph`` dataclass which parses CMGDB's DOT
 output and precomputes DAG reachability and least-common-ancestor (LCA)
 information. All logic operates on pure CMGDB types (node ids, edges, colors)
-and depends only on standard library (no pandas, no latentdynamics deps).
+and depends only on the Python standard library.
 """
 
 from __future__ import annotations

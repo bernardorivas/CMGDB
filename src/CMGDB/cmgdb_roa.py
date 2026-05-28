@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class LatentBounds:
-    """Min/max extents of a point cloud in latent space, with an optional buffer."""
+    """Min/max extents of a bounding box in phase space, with an optional buffer."""
 
     lower: NDArray[np.float64]
     upper: NDArray[np.float64]
@@ -104,7 +104,7 @@ def _build_reverse_csr(map_graph, n_vertices: int) -> tuple[np.ndarray, np.ndarr
 
     CMGDB's Python binding exposes outgoing adjacency only. Two passes avoid
     storing a Python list of arrays for every cell, which is too expensive at
-    the Leslie 2-D subdivision levels.
+    fine 2-D subdivision levels.
     """
     counts = np.zeros(n_vertices + 1, dtype=np.int64)
     for src in range(n_vertices):
@@ -367,7 +367,7 @@ def compute_and_save_exact_roa(
     if n_vertices > max_vertices:
         raise ValueError(
             f"exact RoA map graph has {n_vertices} vertices, exceeding "
-            f"cmgdb.roa_max_vertices={max_vertices}"
+            f"the max_vertices limit ({max_vertices})"
         )
     morse_dag = MorseGraph.from_dot(morse_graph_dot)
     roa = compute_exact_roa(
