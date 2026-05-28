@@ -7,6 +7,20 @@ same CMGDB cell ids used by ``morse_graph.morse_set(node)``.
 
 from __future__ import annotations
 
+__all__ = [
+    "LatentBounds",
+    "CellROA",
+    "EXACT_ROA_FILENAME",
+    "BOUNDARY",
+    "ESCAPE",
+    "MULTI",
+    "compute_exact_roa",
+    "collapse_roa_to_lca",
+    "save_exact_roa",
+    "load_exact_roa",
+    "compute_and_save_exact_roa",
+]
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -14,8 +28,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
+from CMGDB.morse_graph_parser import MorseGraph
+
 if TYPE_CHECKING:
-    from CMGDB.morse_graph_parser import MorseGraph
+    pass
 
 
 @dataclass(frozen=True)

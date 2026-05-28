@@ -1,5 +1,6 @@
 """Smoke tests for morse_graph_parser and cmgdb_roa modules."""
 
+import dataclasses
 import tempfile
 from pathlib import Path
 
@@ -244,5 +245,117 @@ def test_latent_bounds_dataclass():
     assert np.array_equal(bounds.upper, upper)
 
     # Test immutability (frozen=True)
-    with pytest.raises(Exception):  # frozen dataclass raises FrozenInstanceError
+    with pytest.raises(dataclasses.FrozenInstanceError):
         bounds.dim = 3  # type: ignore
+
+
+def test_collapse_roa_to_lca_stronger():
+    """Test that collapse_roa_to_lca correctly assigns LCA labels to multi-label cells."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dot_path = Path(tmpdir) / "morse_graph.dot"
+        create_minimal_morse_graph_dot(dot_path)
+        morse_graph = MorseGraph.from_dot(dot_path)
+
+        adjacencies = [[1, 2], [2], []]
+        map_graph = MockMapGraph(3, adjacencies)
+        cmgdb_morse_graph = MockCMGDBMorseGraph({1: [1], 2: [2]})
+
+        bounds = LatentBounds(
+            lower=np.array([0.0, 0.0], dtype=np.float64),
+            upper=np.array([1.0, 1.0], dtype=np.float64),
+        )
+
+        # Compute without collapsing to get multi-label cells
+        roa_uncollapsed = compute_exact_roa(
+            map_graph,
+            cmgdb_morse_graph,
+            morse_graph,
+            bounds=bounds,
+            collapse_to_lca=False,
+        )
+
+        # Collapse the RoA
+        collapsed_roa = collapse_roa_to_lca(roa_uncollapsed, morse_graph)
+
+        # Verify shape and dimensionality
+        assert collapsed_roa.ndim == 1
+        assert len(collapsed_roa) == 3
+
+        # Verify the actual collapsed labels:
+        # Cell 0 reaches both minimal nodes {1, 2}, so it should collapse to their LCA (node 0)
+        assert collapsed_roa[0] == 0
+        # Cell 1 reaches only minimal node 1
+        assert collapsed_roa[1] == 1
+        # Cell 2 reaches only minimal node 2
+        assert collapsed_roa[2] == 2
+
+
+def test_compute_and_save_exact_roa_happy_path():
+    """Test the orchestrating compute_and_save_exact_roa entry point."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dot_path = Path(tmpdir) / "morse_graph.dot"
+        create_minimal_morse_graph_dot(dot_path)
+
+        adjacencies = [[1, 2], [2], []]
+        map_graph = MockMapGraph(3, adjacencies)
+        cmgdb_morse_graph = MockCMGDBMorseGraph({1: [1], 2: [2]})
+
+        bounds = LatentBounds(
+            lower=np.array([0.0, 0.0], dtype=np.float64),
+            upper=np.array([1.0, 1.0], dtype=np.float64),
+        )
+
+        out_dir = Path(tmpdir) / "roa_output"
+
+        # Call compute_and_save_exact_roa
+        from CMGDB.cmgdb_roa import compute_and_save_exact_roa
+
+        save_path = compute_and_save_exact_roa(
+            map_graph=map_graph,
+            cmgdb_morse_graph=cmgdb_morse_graph,
+            morse_graph_dot=dot_path,
+            out_dir=out_dir,
+            bounds=bounds,
+            max_vertices=1_000_000,
+            collapse_to_lca=True,
+        )
+
+        # Verify the file was written
+        assert save_path.exists()
+
+        # Load it back and verify round-trip
+        loaded_roa = load_exact_roa(save_path)
+        assert loaded_roa.box_roa is not None
+        assert len(loaded_roa.box_roa) == 3
+
+
+def test_compute_and_save_exact_roa_max_vertices_guard():
+    """Test that compute_and_save_exact_roa raises when max_vertices is exceeded."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dot_path = Path(tmpdir) / "morse_graph.dot"
+        create_minimal_morse_graph_dot(dot_path)
+
+        adjacencies = [[1, 2], [2], []]
+        map_graph = MockMapGraph(3, adjacencies)
+        cmgdb_morse_graph = MockCMGDBMorseGraph({1: [1], 2: [2]})
+
+        bounds = LatentBounds(
+            lower=np.array([0.0, 0.0], dtype=np.float64),
+            upper=np.array([1.0, 1.0], dtype=np.float64),
+        )
+
+        out_dir = Path(tmpdir) / "roa_output"
+
+        from CMGDB.cmgdb_roa import compute_and_save_exact_roa
+
+        # Call with max_vertices=1 to trigger the guard (map has 3 vertices)
+        with pytest.raises(ValueError, match="exceeding"):
+            compute_and_save_exact_roa(
+                map_graph=map_graph,
+                cmgdb_morse_graph=cmgdb_morse_graph,
+                morse_graph_dot=dot_path,
+                out_dir=out_dir,
+                bounds=bounds,
+                max_vertices=1,  # Too small; should raise
+                collapse_to_lca=True,
+            )
