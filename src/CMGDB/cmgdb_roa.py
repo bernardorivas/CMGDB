@@ -18,6 +18,7 @@ __all__ = [
     "save_exact_roa",
     "load_exact_roa",
     "compute_and_save_exact_roa",
+    "attractor_cells",
 ]
 
 from dataclasses import dataclass
@@ -369,3 +370,25 @@ def compute_and_save_exact_roa(
         collapse_to_lca=collapse_to_lca,
     )
     return save_exact_roa(roa, out_dir)
+
+
+def attractor_cells(map_graph, cmgdb_morse_graph, attractor_nodes) -> set[int]:
+    """Forward-invariant cell set of an attractor.
+
+    Starts from the union of the Morse-set cells of ``attractor_nodes`` and
+    closes that set under the ``map_graph``'s forward adjacency. The result is
+    the attractor's own cells (forward-invariant set), not its basin of
+    attraction (which is the reverse-reachable set, see :func:`compute_exact_roa`).
+    """
+    cells: set[int] = set()
+    for node in attractor_nodes:
+        cells.update(int(c) for c in cmgdb_morse_graph.morse_set(node))
+    queue = list(cells)
+    while queue:
+        c = queue.pop()
+        for d in map_graph.adjacencies(c):
+            d = int(d)
+            if d not in cells:
+                cells.add(d)
+                queue.append(d)
+    return cells

@@ -71,7 +71,10 @@ To get started, see the Jupyter notebooks in the [examples](examples) folder.
 basic workflow and are a good starting point.
 [Precomputed_vs_OnDemand_BoxMap.ipynb](examples/Precomputed_vs_OnDemand_BoxMap.ipynb)
 and [Regions_of_Attraction.ipynb](examples/Regions_of_Attraction.ipynb)
-demonstrate the fork-specific features.
+demonstrate the fork-specific features, and
+[Lattice_and_Nontrivial_CMGraph.ipynb](examples/Lattice_and_Nontrivial_CMGraph.ipynb)
+and [Attractor_Cell_Sets.ipynb](examples/Attractor_Cell_Sets.ipynb) cover the
+Morse-graph lattice / nontrivial-graph / attractor-cell helpers.
 
 For background, see this
 [survey](http://chomp.rutgers.edu/Projects/survey/cmdbSurvey.pdf) and

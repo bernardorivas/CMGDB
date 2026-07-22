@@ -336,3 +336,17 @@ def test_compute_and_save_exact_roa_max_vertices_guard():
                 max_vertices=1,  # Too small; should raise
                 collapse_to_lca=True,
             )
+
+
+def test_attractor_cells_forward_invariant():
+    """attractor_cells returns the forward-invariant cell set of an attractor."""
+    from CMGDB.cmgdb_roa import attractor_cells
+
+    # 0 -> {1, 2}, 1 -> {2}, 2 -> {} ; Morse node n owns cell n.
+    map_graph = MockMapGraph(3, [[1, 2], [2], []])
+    cmgdb_morse_graph = MockCMGDBMorseGraph({1: [1], 2: [2]})
+
+    # Attractor {2}: cell 2 has no forward image -> just {2}.
+    assert attractor_cells(map_graph, cmgdb_morse_graph, [2]) == {2}
+    # Attractor {1}: cell 1 flows forward to cell 2 -> {1, 2}.
+    assert attractor_cells(map_graph, cmgdb_morse_graph, [1]) == {1, 2}

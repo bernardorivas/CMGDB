@@ -10,3 +10,4 @@ from CMGDB.BoxMapData import *
 from CMGDB.PrecomputedBoxMap import *
 from CMGDB.morse_graph_parser import *
 from CMGDB.cmgdb_roa import *
+from CMGDB.morse_lattice import *
