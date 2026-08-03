@@ -150,6 +150,24 @@ python ...
 
 The 1.2-billion-edge reserve is about 8.94 GiB, allocated once.
 
+For exact Marcio-style basin membership on selected cells, use the native CSR
+query:
+
+```python
+summary = CMGDB.MorseSingletonReachability(
+    map_graph, morse_graph, query_cell_ids
+)
+in_basin_a = summary == a
+```
+
+The returned C-contiguous `int32` array is the unique reachable Morse-node id
+when the complete reachable set is a singleton, `-1` when no Morse node is
+reachable, and `-2` when two or more Morse nodes are reachable. The routine
+requires a cached graph, never calls the map, and uses the existing forward CSR
+without constructing a reverse edge array. `MorseReachabilityMasks(...)`
+additionally returns exact all-node `uint64` masks when the Morse graph has at
+most 64 nodes.
+
 Torch is not a required dependency. If Torch is installed and `f` is a
 `torch.nn.Module`, the helper evaluates it on `mps`, then `cuda`, then `cpu`
 when `device="auto"`.
