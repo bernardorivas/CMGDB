@@ -19,8 +19,13 @@ def PlotMorseGraph(morse_graph, cmap=None, clist=None, shape=None, margin=None):
                      '#e7969c', '#17becf', '#7b4173', '#8ca252', '#ad494a', '#8c6d31', '#a55194', '#00cc49']
     # # Default colormap
     # default_cmap = matplotlib.cm.tab20
+    # Cache graph structure once. MorseGraph.adjacencies() reconstructs the
+    # complete transitive reduction on every call, which makes the historical
+    # per-vertex loops prohibitively expensive for large Morse graphs.
+    vertices = list(morse_graph.vertices())
+    edges = list(morse_graph.edges())
     # Number of vertices
-    num_verts = len(morse_graph.vertices())
+    num_verts = len(vertices)
     # Set defaults for unset values
     if shape == None:
         shape = 'ellipse'
@@ -45,13 +50,12 @@ def PlotMorseGraph(morse_graph, cmap=None, clist=None, shape=None, margin=None):
         # Normalization for color map
         cmap_norm = matplotlib.colors.Normalize(vmin=0, vmax=num_verts-1)
     # Get list of attractors (nodes without children)
-    attractors = [v for v in morse_graph.vertices() if len(morse_graph.adjacencies(v)) == 0]
+    non_attractors = {u for u, _ in edges}
+    attractors = [v for v in vertices if v not in non_attractors]
     # Get set of children nodes (nodes with a parent)
-    children_nodes = set()
-    for v in morse_graph.vertices():
-        children_nodes.update(morse_graph.adjacencies(v))
+    children_nodes = {v for _, v in edges}
     # Get list of repellers (nodes without parents)
-    repellers = list(set(morse_graph.vertices()).difference(children_nodes))
+    repellers = list(set(vertices).difference(children_nodes))
 
     def graphviz_string(graph):
         # Return graphviz string describing the graph
@@ -71,7 +75,7 @@ def PlotMorseGraph(morse_graph, cmap=None, clist=None, shape=None, margin=None):
 
         # Make graphviz string
         gv = 'digraph {\n'
-        for v in graph.vertices():
+        for v in vertices:
             gv += str(v) + ' [label="' + vertex_label(v) + '"' + (
                 ', shape=' + shape + ', style=filled, fillcolor="' + vertex_color(v) +
                 '", margin="' + margin + '"];\n')
@@ -89,9 +93,8 @@ def PlotMorseGraph(morse_graph, cmap=None, clist=None, shape=None, margin=None):
         gv += '}; \n'
 
         # Set the graph edges
-        for u in graph.vertices():
-            for v in graph.adjacencies(u):
-                gv += str(u) + ' -> ' + str(v) + ';\n'
+        for u, v in edges:
+            gv += str(u) + ' -> ' + str(v) + ';\n'
 
         gv += '}\n' # Close bracket
         return gv
