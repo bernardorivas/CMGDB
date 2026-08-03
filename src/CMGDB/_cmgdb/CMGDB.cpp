@@ -20,6 +20,7 @@
 #include "MorseGraph.h"
 #include "Compute_Morse_Graph.h"
 #include "RectGeo.h"
+#include "MorseSetReachability.h"
 
 #include "SingleOutput.h"
 #include "simple_interval.h"
@@ -716,6 +717,7 @@ PYBIND11_MODULE(_cmgdb, m) {
   GridBinding(m);
   MapGraphBinding(m);
   MorseGraphBinding(m);
+  MorseSetReachabilityBinding(m);
 
   m.doc() = "Conley Morse Graph Database Module";
 

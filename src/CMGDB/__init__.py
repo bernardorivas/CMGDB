@@ -1,6 +1,11 @@
 ### __init__.py
 
 from CMGDB._cmgdb import *
+from CMGDB._cmgdb import (
+    _BuildTestMorseGraph,
+    _ComputeMorseSetReachabilityCoreInMemory,
+)
+from CMGDB.MorseSetReachabilityStudy import *
 from CMGDB.PlotMorseGraph import *
 from CMGDB.PlotMorseSets import *
 from CMGDB.LoadMorseSetFile import *

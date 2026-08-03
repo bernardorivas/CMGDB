@@ -37,6 +37,21 @@ computes — these are additive helpers and a build-flag change.
   expected Morse-graph output before reporting timings.
 - **Quieter default output** — per-run progress prints are gated behind a
   `CMG_VERBOSE` build flag (off by default).
+- **Fixed-subdivision Morse-set reachability verification** —
+  `CMGDB.ComputeMorseSetReachability(model, morse_graph, phase_subdiv=s, ...)`
+  independently verifies the reachability relation of an adaptive
+  `MorseGraph` on the conceptual uniform grid at a fixed subdivision depth,
+  without materializing a complete `TreeGrid` or `MapGraph`. Each Morse
+  set's forward closure is exhausted independently; every ordered pair is
+  classified `REACHABLE` / `NOT_REACHABLE` / `INCOMPLETE`, and
+  `absent_adaptive_edges()` lists exactly the adaptive edges certified
+  absent at the tested subdivision. The result reports mutual-reachability
+  (coalescing) groups and non-transitivity witnesses instead of silently
+  reducing an invalid relation, supports per-source resource limits with
+  resumable checkpoints, and carries a versioned provenance record.
+  `CMGDB.ComputeMorseSetReachabilityStudy(...)` repeats the verification at
+  several subdivisions and classifies pairs as agreeing, unstable, or
+  unresolved. The input `MorseGraph` is never mutated.
 
 ## Installation
 
