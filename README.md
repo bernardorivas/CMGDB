@@ -118,6 +118,38 @@ build cached adjacencies with fewer Python calls:
 model.set_batch_map(box_map.batch)
 ```
 
+The eager CSR cache is bounded by two process-level environment variables:
+
+- `CMGDB_MAPGRAPH_MAX_VERTICES` defaults to `16777216` (`2^24`), inclusive.
+- `CMGDB_MAPGRAPH_MAX_EDGES` defaults to `200000000`.
+- `CMGDB_MAPGRAPH_RESERVE_EDGES` is unset by default. Set it to a positive
+  value no larger than `CMGDB_MAPGRAPH_MAX_EDGES` to allocate the final edge
+  buffer once and avoid a transient capacity-growth peak.
+- `CMGDB_MAPGRAPH_RESERVE_MIN_VERTICES` defaults to `16777216`; the explicit
+  edge reserve is used only for graphs at least this large, avoiding a
+  multi-gigabyte allocation for every coarse intermediate MapGraph.
+
+Both values must be positive base-10 integers. A model with an installed batch
+map fails with a clear error when either limit is exceeded instead of silently
+falling back to one Python callback per cell. Increase the limits explicitly
+for a larger run only after budgeting memory: offsets use approximately
+`8 * (vertices + 1)` bytes and cached edges use `8 * edges` bytes, excluding
+temporary batch objects and `std::vector` growth overhead. For example, a
+`2^24`-cell graph needs about 128 MiB for offsets; 64 edges per cell would add
+8 GiB of final edge storage.
+
+For the measured 3-D level-24 graph (~1.096 billion edges), a bounded
+48-GiB-host launch can use:
+
+```bash
+CMGDB_MAPGRAPH_MAX_VERTICES=16777216 \
+CMGDB_MAPGRAPH_MAX_EDGES=1200000000 \
+CMGDB_MAPGRAPH_RESERVE_EDGES=1200000000 \
+python ...
+```
+
+The 1.2-billion-edge reserve is about 8.94 GiB, allocated once.
+
 Torch is not a required dependency. If Torch is installed and `f` is a
 `torch.nn.Module`, the helper evaluates it on `mps`, then `cuda`, then `cpu`
 when `device="auto"`.

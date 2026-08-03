@@ -8,7 +8,11 @@
 #include <iterator>
 #include <iostream>
 #include <algorithm>
+#include <cerrno>
 #include <cstddef>
+#include <cstdlib>
+#include <limits>
+#include <sstream>
 #include <stdexcept>
 // #include <unistd.h>
 
@@ -66,6 +70,9 @@ public:
   size_type num_vertices ( void ) const;
 
   bool has_cache ( void ) const { return stored_graph; }
+  size_t num_cached_edges ( void ) const {
+    return stored_graph ? csr_edges_ . size () : 0;
+  }
 
 private:
   // Private methods
@@ -82,6 +89,69 @@ private:
   std::vector<size_t> csr_offsets_;
   std::vector<Vertex> csr_edges_;
 };
+
+namespace cmgdb_detail {
+
+inline size_t
+map_graph_limit_from_env ( const char * name, size_t default_value ) {
+  const char * raw = std::getenv ( name );
+  if ( raw == nullptr or raw [ 0 ] == '\0' ) {
+    return default_value;
+  }
+
+  for ( const char * digit = raw; *digit != '\0'; ++ digit ) {
+    if ( *digit < '0' or *digit > '9' ) {
+      std::ostringstream message;
+      message << name << " must be a positive base-10 integer; got '" << raw << "'";
+      throw std::invalid_argument ( message . str () );
+    }
+  }
+
+  errno = 0;
+  char * end = nullptr;
+  const unsigned long long parsed = std::strtoull ( raw, &end, 10 );
+  if ( errno == ERANGE or end == raw or *end != '\0' or parsed == 0 or
+       parsed > std::numeric_limits<size_t>::max () ) {
+    std::ostringstream message;
+    message << name << " must be a positive base-10 integer; got '" << raw << "'";
+    throw std::invalid_argument ( message . str () );
+  }
+  return static_cast<size_t> ( parsed );
+}
+
+inline size_t
+map_graph_optional_limit_from_env ( const char * name ) {
+  const char * raw = std::getenv ( name );
+  if ( raw == nullptr or raw [ 0 ] == '\0' ) {
+    return 0;
+  }
+  return map_graph_limit_from_env ( name, 0 );
+}
+
+inline std::runtime_error
+map_graph_vertex_limit_error ( size_t vertices, size_t limit ) {
+  std::ostringstream message;
+  message
+    << "MapGraph optimized batch cache requires " << vertices
+    << " vertices, exceeding CMGDB_MAPGRAPH_MAX_VERTICES=" << limit
+    << ". Increase CMGDB_MAPGRAPH_MAX_VERTICES explicitly; refusing to "
+       "fall back to per-cell map callbacks.";
+  return std::runtime_error ( message . str () );
+}
+
+inline std::runtime_error
+map_graph_edge_limit_error ( size_t observed_edges, size_t limit ) {
+  std::ostringstream message;
+  message
+    << "MapGraph optimized batch cache produced at least " << observed_edges
+    << " edges, exceeding CMGDB_MAPGRAPH_MAX_EDGES=" << limit
+    << ". Increase CMGDB_MAPGRAPH_MAX_EDGES explicitly (each cached edge "
+       "uses " << sizeof ( MapGraph::Vertex )
+    << " bytes); refusing to fall back to per-cell map callbacks.";
+  return std::runtime_error ( message . str () );
+}
+
+} // namespace cmgdb_detail
 
 inline
 MapGraph::MapGraph ( std::shared_ptr<const Grid> grid,
@@ -107,59 +177,108 @@ MapGraph::initialize ( void ) {
     throw std::logic_error ( "MapGraph::MapGraph. Unable to construct with uninitialized Map f\n");
   }
 
-  constexpr size_t VERTEX_CAP = 16000000;
-  constexpr size_t EDGE_BUDGET = 200000000;
-  constexpr size_t EDGE_BUDGET_STAGE = EDGE_BUDGET / 2;
+  constexpr size_t DEFAULT_VERTEX_LIMIT = size_t ( 1 ) << 24;
+  constexpr size_t DEFAULT_EDGE_LIMIT = 200000000;
+  constexpr size_t BATCH_CHUNK = 100000;
+  const size_t vertex_limit = cmgdb_detail::map_graph_limit_from_env (
+    "CMGDB_MAPGRAPH_MAX_VERTICES", DEFAULT_VERTEX_LIMIT );
+  const size_t edge_limit = cmgdb_detail::map_graph_limit_from_env (
+    "CMGDB_MAPGRAPH_MAX_EDGES", DEFAULT_EDGE_LIMIT );
+  const size_t edge_reserve = cmgdb_detail::map_graph_optional_limit_from_env (
+    "CMGDB_MAPGRAPH_RESERVE_EDGES" );
+  const size_t reserve_min_vertices = cmgdb_detail::map_graph_limit_from_env (
+    "CMGDB_MAPGRAPH_RESERVE_MIN_VERTICES", DEFAULT_VERTEX_LIMIT );
+  if ( edge_reserve > edge_limit ) {
+    std::ostringstream message;
+    message
+      << "CMGDB_MAPGRAPH_RESERVE_EDGES=" << edge_reserve
+      << " exceeds CMGDB_MAPGRAPH_MAX_EDGES=" << edge_limit;
+    throw std::invalid_argument ( message . str () );
+  }
+  const size_t n = num_vertices ();
 
-  if ( num_vertices () < VERTEX_CAP ) {
-    const size_t n = num_vertices ();
-    std::vector<std::vector<Vertex> > staging ( n );
+  if ( n > vertex_limit ) {
+    if ( f_ -> has_optimized_batch () ) {
+      throw cmgdb_detail::map_graph_vertex_limit_error ( n, vertex_limit );
+    }
+    stored_graph = false;
+    return;
+  }
+
+  if ( f_ -> has_optimized_batch () ) {
+    // Append each batch directly to CSR. The old full-size
+    // vector<vector<Vertex>> staging area alone cost 384 MiB at 2^24
+    // vertices, then duplicated all edge storage while flattening.
+    csr_offsets_ . clear ();
+    csr_edges_ . clear ();
+    csr_offsets_ . reserve ( n + 1 );
+    if ( edge_reserve > 0 and n >= reserve_min_vertices ) {
+      csr_edges_ . reserve ( edge_reserve );
+    }
+    csr_offsets_ . push_back ( 0 );
     size_t edge_count = 0;
 
-    if ( f_ -> has_optimized_batch () ) {
-      constexpr size_t BATCH_CHUNK = 100000;
-      for ( size_t start = 0; start < n; start += BATCH_CHUNK ) {
-        size_t end = std::min ( start + BATCH_CHUNK, n );
-        std::vector<Vertex> sources;
-        sources.reserve ( end - start );
-        for ( size_t source = start; source < end; ++ source ) {
-          sources.push_back ( source );
-        }
-        std::vector<std::vector<Vertex> > chunk_adjacencies =
-          compute_adjacencies_batch ( sources );
-        for ( size_t i = 0; i < chunk_adjacencies . size (); ++ i ) {
-          edge_count += chunk_adjacencies [ i ] . size ();
-          staging [ start + i ] = std::move ( chunk_adjacencies [ i ] );
-        }
-        if ( edge_count > EDGE_BUDGET_STAGE ) {
-          stored_graph = false;
-          csr_offsets_ . clear ();
-          csr_edges_ . clear ();
-          return;
-        }
+    for ( size_t start = 0; start < n; start += BATCH_CHUNK ) {
+      const size_t end = std::min ( start + BATCH_CHUNK, n );
+      std::vector<Vertex> sources;
+      sources.reserve ( end - start );
+      for ( size_t source = start; source < end; ++ source ) {
+        sources.push_back ( source );
       }
-      build_csr_from_staging ( staging );
-      stored_graph = true;
-      return;
-    }
+      std::vector<std::vector<Vertex> > chunk_adjacencies =
+        compute_adjacencies_batch ( sources );
+      size_t chunk_edge_count = 0;
+      for ( const auto & adjacency : chunk_adjacencies ) {
+        if ( adjacency . size () >
+             edge_limit - edge_count - chunk_edge_count ) {
+          const size_t observed_edges =
+            edge_limit == std::numeric_limits<size_t>::max ()
+              ? edge_limit
+              : edge_limit + 1;
+          throw cmgdb_detail::map_graph_edge_limit_error (
+            observed_edges, edge_limit );
+        }
+        chunk_edge_count += adjacency . size ();
+      }
 
+      const size_t required_capacity = edge_count + chunk_edge_count;
+      if ( required_capacity > csr_edges_ . capacity () ) {
+        const size_t old_capacity = csr_edges_ . capacity ();
+        const size_t available_growth = edge_limit - old_capacity;
+        const size_t growth = std::min (
+          available_growth, std::max ( old_capacity, BATCH_CHUNK ) );
+        const size_t grown_capacity = old_capacity + growth;
+        csr_edges_ . reserve ( std::max ( required_capacity, grown_capacity ) );
+      }
+
+      for ( auto & adjacency : chunk_adjacencies ) {
+        csr_edges_ . insert (
+          csr_edges_ . end (), adjacency . begin (), adjacency . end () );
+        edge_count += adjacency . size ();
+        csr_offsets_ . push_back ( edge_count );
+      }
+    }
+    stored_graph = true;
+    return;
+  }
+
+  {
+    std::vector<std::vector<Vertex> > staging ( n );
+    size_t edge_count = 0;
     for ( size_type source = 0; source < n; ++ source ) {
       staging [ source ] = compute_adjacencies ( source );
-      edge_count += staging [ source ] . size ();
-      if ( edge_count > EDGE_BUDGET_STAGE ) {
+      if ( staging [ source ] . size () > edge_limit - edge_count ) {
         stored_graph = false;
         csr_offsets_ . clear ();
         csr_edges_ . clear ();
         return;
       }
+      edge_count += staging [ source ] . size ();
     }
     build_csr_from_staging ( staging );
     stored_graph = true;
     return;
   }
-
-  stored_graph = false;
-  return;
 #ifdef CMDB_STORE_GRAPH
   
   // Determine whether it is efficient to use an MPI job to store the graph
@@ -295,6 +414,8 @@ MapGraphBinding(py::module &m) {
     .def(py::init<std::shared_ptr<const Grid>, std::shared_ptr<const Map>>())
     // .def(py::init<std::shared_ptr<const Grid>, std::shared_ptr<const Model>>())
     .def("num_vertices", &MapGraph::num_vertices)
+    .def("has_cache", &MapGraph::has_cache)
+    .def("num_cached_edges", &MapGraph::num_cached_edges)
     .def("adjacencies", &MapGraph::adjacencies);
 }
 
