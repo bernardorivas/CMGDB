@@ -2,6 +2,31 @@
 requires = [
     "setuptools>=42",
     "wheel",
-    "cmake>=3.12",
+    # CMakeLists.txt does find_package(pybind11 CONFIG REQUIRED), which an
+    # isolated build (pip's default) cannot satisfy unless pybind11 is here.
+    "pybind11>=2.12",
+    # CMake 3.30 deprecates the classic FindBoost module that
+    # find_package(Boost COMPONENTS ...) relies on; Boost < 1.70 ships no
+    # BoostConfig.cmake replacement.
+    "cmake>=3.15,<3.30",
 ]
 build-backend = "setuptools.build_meta"
+
+[tool.cibuildwheel]
+# Colab runs CPython 3.12 today; 3.11 and 3.13 are headroom in both directions.
+build = "cp311-* cp312-* cp313-*"
+skip = "*-musllinux_*"
+build-verbosity = 1
+test-command = "python {project}/tools/wheel_smoke_test.py"
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64"]
+before-all = "bash {project}/tools/cibw_before_all_linux.sh"
+# The default manylinux_2_28 image (AlmaLinux 8) carries Boost 1.66; the older
+# manylinux2014 image is stuck on 1.53, which predates the serialization
+# headers this project includes.
+manylinux-x86_64-image = "manylinux_2_28"
+# Link libstdc++ statically: the build image's compiler is much newer than the
+# libstdc++ on the distributions these wheels target, and an unresolved
+# GLIBCXX_3.4.3x reference only shows up at the reader's import.
+environment = { CXXFLAGS = "-static-libstdc++ -static-libgcc", LDFLAGS = "-static-libstdc++ -static-libgcc" }

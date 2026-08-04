@@ -5,6 +5,11 @@ project(CMGDB)
 cmake_policy(SET CMP0054 NEW)
 cmake_policy(SET CMP0127 NEW)
 
+# SDSL v3 (xxsds, header-only) requires C++17; the sources themselves are
+# C++11-clean and compile unchanged at this standard.
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 # Visual Studio C++ does not support keywords such
 # as "and", "not", etc. Settting the /permissive-
 # flag for the compiler makes it support them.
@@ -19,7 +24,7 @@ if(MSVC)
 endif()
 
 if(APPLE)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -stdlib=libc++")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
 endif()
 
 set(PYBIND11_FINDPYTHON ON)
@@ -69,4 +74,15 @@ link_directories (
 
 pybind11_add_module(_cmgdb src/CMGDB/_cmgdb/CMGDB.cpp)
 
-target_link_libraries(_cmgdb PRIVATE Boost::chrono Boost::thread Boost::serialization sdsl)
+target_link_libraries(_cmgdb PRIVATE Boost::chrono Boost::thread Boost::serialization)
+
+# SDSL v3 (xxsds) is header-only, so there is nothing to link. SDSL v2
+# (simongog) ships a static libsdsl and must be linked when it is what the
+# build environment provides.
+find_library(SDSL_LIBRARY NAMES sdsl)
+if(SDSL_LIBRARY)
+  message(STATUS "SDSL: linking ${SDSL_LIBRARY} (v2)")
+  target_link_libraries(_cmgdb PRIVATE ${SDSL_LIBRARY})
+else()
+  message(STATUS "SDSL: header-only (v3)")
+endif()

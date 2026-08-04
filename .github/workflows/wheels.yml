@@ -1,0 +1,107 @@
+name: wheels
+
+on:
+  push:
+    tags: ["v*"]
+    # Build (without releasing) whenever the build inputs change, so the recipe
+    # can be iterated on without cutting a tag.
+    branches: [master, wheels-ci]
+    paths:
+      - "CMakeLists.txt"
+      - "setup.py"
+      - "pyproject.toml"
+      - "src/**"
+      - "tools/**"
+      - ".github/workflows/wheels.yml"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: >-
+          Publish the built wheels under this tag (e.g. v1.3.3). Creates the tag
+          if it does not exist. Leave empty to build without releasing.
+        required: false
+        default: ""
+
+concurrency:
+  group: wheels-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: wheels (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pypa/cibuildwheel@v4.1.1
+
+      - name: Report wheel tags and libstdc++ requirements
+        # The wheels are meant to run on distributions older than the build
+        # image (Google Colab currently ships libstdc++ 12.3, i.e. GLIBCXX up to
+        # 3.4.30). Static libstdc++ should leave no versioned reference at all;
+        # fail here rather than at a reader's import.
+        run: |
+          python -m pip install --quiet packaging
+          for whl in wheelhouse/*.whl; do
+            echo "=== $whl"
+            rm -rf /tmp/unpack && mkdir /tmp/unpack
+            python -m zipfile -e "$whl" /tmp/unpack
+            for so in /tmp/unpack/CMGDB/*.so; do
+              echo "--- $so"
+              need=$(objdump -T "$so" | grep -o 'GLIBCXX_[0-9.]*' | sort -uV | tail -1 || true)
+              echo "max GLIBCXX required: ${need:-none}"
+              if [ -n "$need" ] && [ "$(printf '%s\nGLIBCXX_3.4.30\n' "$need" | sort -V | tail -1)" != "GLIBCXX_3.4.30" ]; then
+                echo "::error::$whl requires $need, newer than Colab's GLIBCXX_3.4.30"
+                exit 1
+              fi
+            done
+          done
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
+          if-no-files-found: error
+
+  release:
+    name: attach wheels to a release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          pattern: wheels-*
+          merge-multiple: true
+
+      - run: ls -l dist
+
+      - id: meta
+        run: |
+          tag="${{ inputs.release_tag || github.ref_name }}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          files: dist/*.whl
+          fail_on_unmatched_files: true
+          body: |
+            Prebuilt wheels for this fork of CMGDB, which is not on PyPI.
+
+            ```
+            pip install cmgdb==${{ steps.meta.outputs.version }} \
+              --find-links https://github.com/${{ github.repository }}/releases/expanded_assets/${{ steps.meta.outputs.tag }}
+            ```
+
+            No source distribution is attached on purpose: a missing wheel for
+            your interpreter should fail loudly rather than start a build that
+            needs Boost, GMP and a C++ toolchain.

@@ -1,5 +1,6 @@
 import os
 import re
+import shlex
 import sys
 import platform
 import subprocess
@@ -40,6 +41,20 @@ class CMakeBuild(build_ext):
             "-DCMAKE_BUILD_TYPE={}".format(cfg),  # Not used on MSVC
             "-DUSER_INCLUDE_PATH=./src/CMGDB/_cmgdb/include"
         ]
+
+        # pybind11 lives in the (possibly isolated) build environment, so point
+        # CMake straight at its config package instead of relying on CMake
+        # finding it through PATH.
+        try:
+            import pybind11
+        except ImportError:
+            pass
+        else:
+            cmake_args += ["-Dpybind11_DIR={}".format(pybind11.get_cmake_dir())]
+
+        # Let the caller inject configure-time options (toolchain files,
+        # CMAKE_PREFIX_PATH, standard selection) without patching this file.
+        cmake_args += shlex.split(os.environ.get("CMAKE_ARGS", ""))
 
         if self.compiler.compiler_type != "msvc" and cfg == "Release":
             cmake_args += ["-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG"]
