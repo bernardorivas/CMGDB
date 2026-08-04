@@ -33,13 +33,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, macos-14]
     steps:
       - uses: actions/checkout@v7
 
       - uses: pypa/cibuildwheel@v4.1.1
 
       - name: Report wheel tags and libstdc++ requirements
+        if: runner.os == 'Linux'
         # The wheels are meant to run on distributions older than the build
         # image (Google Colab currently ships libstdc++ 12.3, i.e. GLIBCXX up to
         # 3.4.30). Static libstdc++ should leave no versioned reference at all;

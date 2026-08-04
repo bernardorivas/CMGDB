@@ -76,13 +76,25 @@ pybind11_add_module(_cmgdb src/CMGDB/_cmgdb/CMGDB.cpp)
 
 target_link_libraries(_cmgdb PRIVATE Boost::chrono Boost::thread Boost::serialization)
 
-# SDSL v3 (xxsds) is header-only, so there is nothing to link. SDSL v2
-# (simongog) ships a static libsdsl and must be linked when it is what the
-# build environment provides.
-find_library(SDSL_LIBRARY NAMES sdsl)
-if(SDSL_LIBRARY)
-  message(STATUS "SDSL: linking ${SDSL_LIBRARY} (v2)")
-  target_link_libraries(_cmgdb PRIVATE ${SDSL_LIBRARY})
-else()
-  message(STATUS "SDSL: header-only (v3)")
+# SDSL v3 (xxsds) is header-only and BSD-3 licensed; v2 (simongog) is a GPLv3
+# static library whose symbols would make any redistributed binary a
+# GPL-combined work. v3 is therefore required, not merely preferred, and is
+# fetched when the build environment does not already provide it.
+# sdsl/cereal.hpp exists only in v3, which is what tells the two apart.
+find_path(SDSL_INCLUDE_DIR sdsl/cereal.hpp)
+if(NOT SDSL_INCLUDE_DIR)
+  message(STATUS "SDSL v3 not found; fetching the pinned release")
+  include(FetchContent)
+  FetchContent_Declare(sdsl_lite
+    URL https://github.com/xxsds/sdsl-lite/archive/e6c417391f55476c6946c6fcf76c7315354e1af9.tar.gz
+    URL_HASH SHA256=5c4f5d5f9d7c4e46019711000eeaaea756d181389abe76e597931e6cb69ae785
+    # No CMakeLists.txt lives here, which keeps MakeAvailable from configuring
+    # SDSL's own test tree (it needs submodules we do not fetch).
+    SOURCE_SUBDIR headers-only)
+  FetchContent_MakeAvailable(sdsl_lite)
+  set(SDSL_INCLUDE_DIR ${sdsl_lite_SOURCE_DIR}/include)
 endif()
+message(STATUS "SDSL v3 headers: ${SDSL_INCLUDE_DIR}")
+# BEFORE, so that a v2 installation under a system prefix (Homebrew, say)
+# cannot shadow these headers.
+target_include_directories(_cmgdb BEFORE PRIVATE ${SDSL_INCLUDE_DIR})

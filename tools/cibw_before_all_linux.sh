@@ -16,7 +16,8 @@ set -euxo pipefail
 # only, so the wheel stays MIT rather than inheriting a copyleft obligation.
 SDSL_COMMIT=e6c417391f55476c6946c6fcf76c7315354e1af9
 
-dnf install -y boost-devel gmp-devel gmp-c++
+# graphviz supplies the `dot` binary that the plotting tests shell out to.
+dnf install -y boost-devel gmp-devel gmp-c++ graphviz
 
 tmp="$(mktemp -d)"
 curl -fsSL "https://github.com/xxsds/sdsl-lite/archive/${SDSL_COMMIT}.tar.gz" | tar xz -C "$tmp"
