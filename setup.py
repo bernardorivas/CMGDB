@@ -101,7 +101,15 @@ with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='CMGDB',
-    version='1.3.3',
+    # PEP 440 local version. It marks these artifacts as this fork's rather
+    # than upstream's, and it is the only pin that stays unambiguous if a
+    # release with the same public version ever appears on PyPI.
+    version='1.3.3+fork.1',
+    python_requires='>=3.11',
+    license='MIT',
+    # SDSL v3 is BSD-3, whose second clause requires the notice to travel with
+    # binary redistributions; the wheels statically inline its headers.
+    license_files=['LICENSE', 'licenses/sdsl-lite-xxsds-LICENSE'],
     author='Marcio Gameiro',
     author_email='marciogameiro@gmail.com',
     maintainer='Bernardo Rivas',

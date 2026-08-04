@@ -18,6 +18,9 @@ build = "cp311-* cp312-* cp313-*"
 skip = "*-musllinux_*"
 build-verbosity = 1
 test-command = "python {project}/tools/wheel_smoke_test.py"
+# recursive-include src * in MANIFEST.in would otherwise package a stale
+# extension or CMake cache left behind by a local build.
+before-build = "rm -rf {project}/build {project}/src/CMGDB.egg-info {project}/src/CMGDB/_cmgdb*.so"
 
 [tool.cibuildwheel.linux]
 archs = ["x86_64"]
