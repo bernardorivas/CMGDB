@@ -50,10 +50,21 @@ ComputeConleyIndex ( const std::vector < uint64_t > & X_cubes,
   return conleyIndexString ( conley_index );
 }
 
-std::pair<MorseGraph, MapGraph> ComputeConleyMorseGraph ( Model const& model ) {
+// Shared body of the four Compute*MorseGraph entry points.
+//
+// `initial_phase_space`, when non-null, receives the grid pointer captured
+// *before* the decomposition runs. That is deliberate and must not be replaced
+// by `morsegraph.phaseSpace()`: Compute_Morse_Graph reassigns the graph's own
+// phase space to a joined master grid, so after the call the two are different
+// objects, and the historical MapGraph construction uses the original.
+static MorseGraph ComputeMorseGraphCore (
+    Model const& model,
+    bool compute_conley_index,
+    std::shared_ptr < Grid > * initial_phase_space ) {
   std::shared_ptr<const Map> map = model . map ();
   MorseGraph morsegraph ( model . phaseSpace () );
   std::shared_ptr < Grid > phase_space = morsegraph . phaseSpace ();
+  if ( initial_phase_space ) * initial_phase_space = phase_space;
 
   int phase_subdiv_init = model . phase_subdiv_init ();
   int phase_subdiv_min = model . phase_subdiv_min ();
@@ -64,46 +75,60 @@ std::pair<MorseGraph, MapGraph> ComputeConleyMorseGraph ( Model const& model ) {
   Compute_Morse_Graph ( & morsegraph, phase_space, map, phase_subdiv_init,
                         phase_subdiv_min, phase_subdiv_max, phase_subdiv_limit );
 
-  std::shared_ptr < TreeGrid > phase_space_chomp =
-    std::dynamic_pointer_cast<TreeGrid> ( morsegraph . phaseSpace () );
+  if ( compute_conley_index ) {
+    std::shared_ptr < TreeGrid > phase_space_chomp =
+      std::dynamic_pointer_cast<TreeGrid> ( morsegraph . phaseSpace () );
 
-  if ( not phase_space_chomp ) {
-    throw std::runtime_error ( "Cannot interface with chomp for this grid type!" );
+    if ( not phase_space_chomp ) {
+      throw std::runtime_error ( "Cannot interface with chomp for this grid type!" );
+    }
+
+    typedef std::vector < Grid::GridElement > Subset;
+    for ( size_t v = 0; v < morsegraph . NumVertices (); ++ v) {
+      Subset subset = phase_space_chomp -> subset ( * morsegraph . grid ( v ) );
+      std::shared_ptr<chomp::ConleyIndex_t> conley ( new chomp::ConleyIndex_t );
+      morsegraph . conleyIndex ( v ) = conley;
+      ChompMap chomp_map ( map );
+      chomp::ConleyIndex ( conley . get (), *phase_space_chomp, subset, chomp_map );
+    }
   }
 
-  typedef std::vector < Grid::GridElement > Subset;
-  for ( size_t v = 0; v < morsegraph . NumVertices (); ++ v) {
-    Subset subset = phase_space_chomp -> subset ( * morsegraph . grid ( v ) );
-    std::shared_ptr<chomp::ConleyIndex_t> conley ( new chomp::ConleyIndex_t );
-    morsegraph . conleyIndex ( v ) = conley;
-    ChompMap chomp_map ( map );
-    chomp::ConleyIndex ( conley . get (), *phase_space_chomp, subset, chomp_map );
-  }
+  return morsegraph;
+}
+
+std::pair<MorseGraph, MapGraph> ComputeConleyMorseGraph ( Model const& model ) {
+  std::shared_ptr < Grid > phase_space;
+  MorseGraph morsegraph = ComputeMorseGraphCore ( model, true, & phase_space );
 
   // Compute multi-valued map digraph
-  MapGraph map_graph ( phase_space, map );
+  MapGraph map_graph ( phase_space, model . map () );
 
   return std::make_pair ( morsegraph, map_graph );
 }
 
+// As ComputeConleyMorseGraph, but without building the returned MapGraph.
+//
+// That MapGraph is a full extra pass of the box map over the entire phase
+// space, built after all Morse and Conley work is done. Callers that do not
+// need it (for instance, anything not computing regions of attraction) were
+// paying roughly half of all box-map evaluations for an object they discard.
+MorseGraph ComputeConleyMorseGraphOnly ( Model const& model ) {
+  return ComputeMorseGraphCore ( model, true, nullptr );
+}
+
 std::pair<MorseGraph, MapGraph> ComputeMorseGraph ( Model const& model ) {
-  std::shared_ptr<const Map> map = model . map ();
-  MorseGraph morsegraph ( model . phaseSpace () );
-  std::shared_ptr < Grid > phase_space = morsegraph . phaseSpace ();
-
-  int phase_subdiv_init = model . phase_subdiv_init ();
-  int phase_subdiv_min = model . phase_subdiv_min ();
-  int phase_subdiv_max = model . phase_subdiv_max ();
-  int phase_subdiv_limit = model . phase_subdiv_limit ();
-
-  // Compute Morse graph
-  Compute_Morse_Graph ( & morsegraph, phase_space, map, phase_subdiv_init,
-                        phase_subdiv_min, phase_subdiv_max, phase_subdiv_limit );
+  std::shared_ptr < Grid > phase_space;
+  MorseGraph morsegraph = ComputeMorseGraphCore ( model, false, & phase_space );
 
   // Compute multi-valued map digraph
-  MapGraph map_graph ( phase_space, map );
+  MapGraph map_graph ( phase_space, model . map () );
 
   return std::make_pair ( morsegraph, map_graph );
+}
+
+// As ComputeMorseGraph, but without building the returned MapGraph.
+MorseGraph ComputeMorseGraphOnly ( Model const& model ) {
+  return ComputeMorseGraphCore ( model, false, nullptr );
 }
 
 std::vector<uint64_t>
@@ -724,6 +749,12 @@ PYBIND11_MODULE(_cmgdb, m) {
   m.def("ComputeConleyIndex", &ComputeConleyIndex);
   m.def("ComputeConleyMorseGraph", &ComputeConleyMorseGraph);
   m.def("ComputeMorseGraph", &ComputeMorseGraph);
+  m.def("ComputeConleyMorseGraphOnly", &ComputeConleyMorseGraphOnly,
+        "Conley-Morse graph without the extra returned MapGraph. Skips a full "
+        "box-map pass over the phase space; use when the MapGraph is unused.");
+  m.def("ComputeMorseGraphOnly", &ComputeMorseGraphOnly,
+        "Morse graph without the extra returned MapGraph. Skips a full "
+        "box-map pass over the phase space; use when the MapGraph is unused.");
   m.def(
     "MorseDirectedPathCells",
     [] ( const MapGraph & map_graph,
