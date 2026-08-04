@@ -4,9 +4,20 @@ Run by cibuildwheel's test-command against the freshly built wheel, in a
 throwaway environment with no access to the source tree.
 """
 
+import faulthandler
 import math
+import sys
 
-import CMGDB
+# A crash in the extension is otherwise a bare exit code in the CI log.
+faulthandler.enable()
+
+
+def step(message):
+    print(f"[smoke] {message}", flush=True)
+
+
+step("importing CMGDB")
+import CMGDB  # noqa: E402
 
 # The pure-Python layer that consumers import must ship alongside the extension.
 from CMGDB.PrecomputedBoxMap import precompute_corner_grid  # noqa: F401
@@ -41,9 +52,15 @@ def box_map(rect):
     ]
 
 
+step(f"evaluating the box map: {box_map([1.0, 1.0, 2.0, 2.0])}")
+
+step("building the model")
 model = CMGDB.Model(14, 14, 14, 10000, [-0.001, -0.001], [90.0, 70.0], box_map)
+
+step("computing the Morse graph")
 morse_graph, _ = CMGDB.ComputeMorseGraph(model)
 
 n = morse_graph.num_vertices()
 assert n > 0, "Morse graph came back empty"
-print(f"{CMGDB.__file__}: Morse graph with {n} vertices")
+step(f"{CMGDB.__file__}: Morse graph with {n} vertices")
+sys.exit(0)

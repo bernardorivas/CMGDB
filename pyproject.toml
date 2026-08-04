@@ -26,7 +26,8 @@ before-all = "bash {project}/tools/cibw_before_all_linux.sh"
 # manylinux2014 image is stuck on 1.53, which predates the serialization
 # headers this project includes.
 manylinux-x86_64-image = "manylinux_2_28"
-# Link libstdc++ statically: the build image's compiler is much newer than the
-# libstdc++ on the distributions these wheels target, and an unresolved
-# GLIBCXX_3.4.3x reference only shows up at the reader's import.
-environment = { CXXFLAGS = "-static-libstdc++ -static-libgcc", LDFLAGS = "-static-libstdc++ -static-libgcc" }
+# libstdc++ is linked dynamically, as upstream's own wheels do. Linking it
+# statically puts a second C++ runtime in the process alongside the one
+# AlmaLinux's shared Boost libraries already use, which segfaults at the first
+# std::string crossing that boundary. The workflow gates on the resulting
+# GLIBCXX requirement instead.
