@@ -8,17 +8,17 @@ import matplotlib
 import matplotlib.pyplot as plt
 import graphviz
 
+# Default color list, shared with derived_graph_plot for exact color parity.
+_DEFAULT_CLIST = ['#1f77b4', '#e6550d', '#31a354', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f',
+                  '#bcbd22', '#80b1d3', '#ffffb3', '#fccde5', '#b3de69', '#fdae6b', '#6a3d9a', '#c49c94',
+                  '#fb8072', '#dbdb8d', '#bc80bd', '#ffed6f', '#637939', '#c5b0d5', '#636363', '#c7c7c7',
+                  '#8dd3c7', '#b15928', '#e8cb32', '#9e9ac8', '#74c476', '#ff7f0e', '#9edae5', '#90d743',
+                  '#e7969c', '#17becf', '#7b4173', '#8ca252', '#ad494a', '#8c6d31', '#a55194', '#00cc49']
+
 def PlotMorseGraph(morse_graph, cmap=None, clist=None, shape=None, margin=None):
     """Plot Morse graph using cmap as the colormap or clist
        as a list of colors to make a colormap."""
-    # Default color list
-    default_clist = ['#1f77b4', '#e6550d', '#31a354', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f',
-                     '#bcbd22', '#80b1d3', '#ffffb3', '#fccde5', '#b3de69', '#fdae6b', '#6a3d9a', '#c49c94',
-                     '#fb8072', '#dbdb8d', '#bc80bd', '#ffed6f', '#637939', '#c5b0d5', '#636363', '#c7c7c7',
-                     '#8dd3c7', '#b15928', '#e8cb32', '#9e9ac8', '#74c476', '#ff7f0e', '#9edae5', '#90d743',
-                     '#e7969c', '#17becf', '#7b4173', '#8ca252', '#ad494a', '#8c6d31', '#a55194', '#00cc49']
-    # # Default colormap
-    # default_cmap = matplotlib.cm.tab20
+    default_clist = _DEFAULT_CLIST
     # Cache graph structure once. MorseGraph.adjacencies() reconstructs the
     # complete transitive reduction on every call, which makes the historical
     # per-vertex loops prohibitively expensive for large Morse graphs.

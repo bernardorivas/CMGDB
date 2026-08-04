@@ -2,13 +2,15 @@
 
 import re
 import tempfile
+import warnings
 from pathlib import Path
 
 import matplotlib
+import pytest
 
 from CMGDB.morse_graph_parser import MorseGraph
-from CMGDB.morse_lattice import lattice_of_attractors, lattice_of_repellers, nontrivial_cmgraph
-from CMGDB.plot_derived_graph import _DEFAULT_CLIST, plot_derived_graph
+from CMGDB.morse_lattice import DerivedGraph, lattice_of_attractors, lattice_of_repellers, nontrivial_cmgraph
+from CMGDB.derived_graph_plot import _DEFAULT_CLIST, plot_derived_graph
 from CMGDB.PlotMorseGraph import PlotMorseGraph
 
 
@@ -50,6 +52,15 @@ TRIVIAL_CHAIN_DOT = """digraph G {
 2 [label="2 : (x - 1, 0, 0)"];
 0 -> 1;
 1 -> 2;
+}
+"""
+
+# A chain 0 -> 1 beside an isolated node 2, all nontrivial.
+ISOLATED_NODE_DOT = """digraph G {
+0 [label="0 : (0, x - 1, 0)"];
+1 [label="1 : (x - 1, 0, 0)"];
+2 [label="2 : (x - 1, 0, 0)"];
+0 -> 1;
 }
 """
 
@@ -115,19 +126,31 @@ def test_nontrivial_graph_colors_match_plot_morse_graph_output():
 def test_lattice_labels_and_edges_rendered():
     lattice = lattice_of_attractors(_mg(TWO_SINK_DOT))
     source = plot_derived_graph(lattice).source
-    assert 'label="0 : { }"' in source
+    assert 'label="0 : \\{ \\}"' in source
     for u in lattice.nodes:
         for v in lattice.edges.get(u, []):
             assert f"{u} -> {v};" in source
 
 
-def test_small_clist_cycles():
+def test_small_clist_cycles_with_warning():
     lattice = lattice_of_attractors(_mg(TWO_SINK_DOT))
-    colors = _fillcolors(plot_derived_graph(lattice, clist=["#ff0000", "#00ff00"]))
+    with pytest.warns(UserWarning, match="colors will repeat"):
+        source = plot_derived_graph(lattice, clist=["#ff0000", "#00ff00"])
+    colors = _fillcolors(source)
     by_set = {lattice.sets[v]: v for v in lattice.nodes}
     # Index 2 wraps to color 0, index 3 to color 1.
     assert colors[by_set[frozenset({2})]] == matplotlib.colors.to_hex("#ff0000", keep_alpha=True)
     assert colors[by_set[frozenset({1, 2})]] == matplotlib.colors.to_hex("#00ff00", keep_alpha=True)
+
+
+def test_default_palette_does_not_warn_when_cycling():
+    # 41 nodes force color indices past the 40-color default palette; only
+    # user-supplied palettes should warn on wrap.
+    lines = [f'{i} [label="{i}"];' for i in range(41)]
+    mg = _mg("digraph G {\n" + "\n".join(lines) + "\n}\n")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        plot_derived_graph(mg)
 
 
 def test_large_listed_cmap_spreads_indices():
@@ -152,3 +175,53 @@ def test_continuous_cmap_spreads_indices():
     colored = [c for c in colors.values() if c != "#cdcdcd"]
     assert len(set(colored)) == len(colored)
     assert matplotlib.colors.to_hex(matplotlib.cm.jet(1.0), keep_alpha=True) in colored
+
+
+def test_isolated_node_does_not_flatten_hierarchy():
+    # Node 2 is both sink and source; it must not appear in the source rank
+    # row, or dot merges the two ranks and flattens the chain 0 -> 1.
+    graph = nontrivial_cmgraph(_mg(ISOLATED_NODE_DOT))
+    assert set(graph.nodes) == {0, 1, 2}
+    plain = plot_derived_graph(graph).pipe(format="plain").decode()
+    ys = {
+        parts[1]: float(parts[3])
+        for parts in (line.split() for line in plain.splitlines())
+        if parts and parts[0] == "node"
+    }
+    assert ys["0"] != ys["1"]
+    # The isolated node sits on the sink row with the chain's attractor.
+    assert ys["2"] == ys["1"]
+
+
+def test_record_shape_renders():
+    lattice = lattice_of_attractors(_mg(TWO_SINK_DOT))
+    svg = plot_derived_graph(lattice, shape="record").pipe(format="svg").decode()
+    assert "{1, 2}" in svg
+
+
+def test_quote_and_backslash_labels_escaped():
+    graph = DerivedGraph(nodes=[0, 1], edges={0: [1]}, labels={0: 'say "hi"', 1: "end\\"}, sets=None)
+    svg = plot_derived_graph(graph).pipe(format="svg").decode()
+    assert "say" in svg
+
+
+def test_none_shape_and_margin_use_defaults():
+    lattice = lattice_of_attractors(_mg(TWO_SINK_DOT))
+    source = plot_derived_graph(lattice, shape=None, margin=None).source
+    assert "shape=ellipse" in source
+    assert 'margin="0.11, 0.055"' in source
+
+
+def test_parsed_morse_graph_input():
+    # A parsed MorseGraph plots directly: colored by node id, labels not double-prefixed.
+    mg = _mg(TRIVIAL_CHAIN_DOT)
+    source = plot_derived_graph(mg)
+    colors = _fillcolors(source)
+    assert colors == {0: _hex(0), 1: _hex(1), 2: _hex(2)}
+    assert 'label="0 : (x - 1, 0, 0)"' in source.source
+    assert "0 : 0" not in source.source
+
+
+def test_empty_clist_falls_back_to_default_palette():
+    lattice = lattice_of_attractors(_mg(TWO_SINK_DOT))
+    assert _fillcolors(plot_derived_graph(lattice, clist=[])) == _fillcolors(plot_derived_graph(lattice))
