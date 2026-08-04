@@ -55,10 +55,16 @@ computes — these are additive helpers and a build-flag change.
 
 ## Installation
 
-This fork is not on PyPI and must be built from source. You need a C++ compiler
-and the following dependencies: [Boost](https://www.boost.org/),
-[GMP](https://gmplib.org/), and the
-[Succinct Data Structure Library (SDSL)](https://github.com/simongog/sdsl-lite).
+This fork is not on PyPI, but every release carries prebuilt Linux wheels for
+CPython 3.11-3.13, so no compiler or dependency is needed to use it:
+
+	pip install cmgdb==1.3.3+fork.1 \
+	  --find-links https://github.com/bernardorivas/CMGDB/releases/expanded_assets/v1.3.3+fork.1
+
+The version pin is what selects this fork; `--find-links` only tells pip where
+to look. To build from source instead you need a C++ compiler and
+[Boost](https://www.boost.org/) (>= 1.56), [GMP](https://gmplib.org/), and
+[SDSL](https://github.com/xxsds/sdsl-lite) v3, which is header-only.
 
 Clone and install:
 
