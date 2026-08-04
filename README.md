@@ -58,8 +58,8 @@ computes — these are additive helpers and a build-flag change.
 This fork is not on PyPI, but every release carries prebuilt Linux wheels for
 CPython 3.11-3.13, so no compiler or dependency is needed to use it:
 
-	pip install cmgdb==1.3.3+fork.1 \
-	  --find-links https://github.com/bernardorivas/CMGDB/releases/expanded_assets/v1.3.3+fork.1
+	pip install cmgdb==1.3.3+fork.2 \
+	  --find-links https://github.com/bernardorivas/CMGDB/releases/expanded_assets/v1.3.3+fork.2
 
 The version pin is what selects this fork; `--find-links` only tells pip where
 to look. To build from source instead you need a C++ compiler and
