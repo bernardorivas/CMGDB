@@ -45,7 +45,6 @@ jobs:
         # 3.4.30). Static libstdc++ should leave no versioned reference at all;
         # fail here rather than at a reader's import.
         run: |
-          python -m pip install --quiet packaging
           for whl in wheelhouse/*.whl; do
             echo "=== $whl"
             rm -rf /tmp/unpack && mkdir /tmp/unpack
