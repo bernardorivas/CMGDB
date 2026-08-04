@@ -41,3 +41,7 @@ archs = ["arm64"]
 # SDSL is not packaged by Homebrew; CMake fetches the pinned header-only
 # release when it is absent, so only Boost and GMP come from the system.
 before-all = "brew install boost gmp graphviz"
+# CPython's own target is 11.0, but the Homebrew bottles this links are built
+# for the runner's macOS, so delocate refuses to vendor them into an 11.0
+# wheel. Match the runner instead.
+environment = { MACOSX_DEPLOYMENT_TARGET = "14.0" }
