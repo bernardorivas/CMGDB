@@ -55,8 +55,9 @@ computes — these are additive helpers and a build-flag change.
 
 ## Installation
 
-This fork is not on PyPI, but every release carries prebuilt Linux wheels for
-CPython 3.11-3.13, so no compiler or dependency is needed to use it:
+This fork is not on PyPI, but every release carries prebuilt wheels for
+CPython 3.11-3.13 on manylinux x86_64 and macOS arm64, so no compiler or
+dependency is needed to use it:
 
 	pip install cmgdb==1.3.3+fork.2 \
 	  --find-links https://github.com/bernardorivas/CMGDB/releases/expanded_assets/v1.3.3+fork.2
