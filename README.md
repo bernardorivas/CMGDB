@@ -105,8 +105,8 @@ For background, see this
 ## Precomputed box maps
 
 For maps that are expensive to evaluate one box at a time,
-`CMGDB.make_precomputed_box_map` evaluates a batched map on the finest corner
-lattice in bounded chunks, then returns a standard `box_map(rect)` callable for
+`CMGDB.make_precomputed_box_map` evaluates a batched map on the finest lattice
+in bounded chunks, then returns a standard `box_map(rect)` callable for
 `CMGDB.Model`.
 
 ```python
@@ -115,7 +115,8 @@ box_map = CMGDB.make_precomputed_box_map(
     lower_bounds,
     upper_bounds,
     subdiv_max=28,
-    mode="adaptive",  # or "uniform"
+    mode="adaptive",       # grid layout: adaptive | uniform
+    eval_mode="corners",   # sampling rule: corners | center | random
     padding=False,
     batch_points="auto",
     device="auto",   # Torch only: mps, then cuda, then cpu
@@ -140,37 +141,97 @@ build cached adjacencies with fewer Python calls:
 model.set_batch_map(box_map.batch)
 ```
 
-The eager CSR cache is bounded by two process-level environment variables:
+### Cache sizing
 
-- `CMGDB_MAPGRAPH_MAX_VERTICES` defaults to `16777216` (`2^24`), inclusive.
-- `CMGDB_MAPGRAPH_MAX_EDGES` defaults to `200000000`.
-- `CMGDB_MAPGRAPH_RESERVE_EDGES` is unset by default. Set it to a positive
-  value no larger than `CMGDB_MAPGRAPH_MAX_EDGES` to allocate the final edge
-  buffer once and avoid a transient capacity-growth peak.
-- `CMGDB_MAPGRAPH_RESERVE_MIN_VERTICES` defaults to `16777216`; the explicit
-  edge reserve is used only for graphs at least this large, avoiding a
-  multi-gigabyte allocation for every coarse intermediate MapGraph.
+The eager CSR cache has **no size ceiling**. A graph is built for whatever grid
+it is given; a run too large for the host fails where it actually runs out of
+memory, rather than being refused up front on a guess. Sizing the run is the
+caller's decision.
 
-Both values must be positive base-10 integers. A model with an installed batch
-map fails with a clear error when either limit is exceeded instead of silently
-falling back to one Python callback per cell. Increase the limits explicitly
-for a larger run only after budgeting memory: offsets use approximately
-`8 * (vertices + 1)` bytes and cached edges use `8 * edges` bytes, excluding
-temporary batch objects and `std::vector` growth overhead. For example, a
-`2^24`-cell graph needs about 128 MiB for offsets; 64 edges per cell would add
-8 GiB of final edge storage.
+Budgeting is still worth doing: offsets use approximately `8 * (vertices + 1)`
+bytes and cached edges use `8 * edges` bytes, excluding temporary batch objects
+and `std::vector` growth overhead. A `2^24`-cell graph needs about 128 MiB for
+offsets; 64 edges per cell would add 8 GiB of edge storage.
 
-For the measured 3-D level-24 graph (~1.096 billion edges), a bounded
-48-GiB-host launch can use:
+Two optional environment variables tune allocation. Neither refuses anything:
+
+- `CMGDB_MAPGRAPH_RESERVE_EDGES` is unset by default. Set it to allocate the
+  edge buffer once instead of growing it geometrically, avoiding a transient
+  capacity peak. A reserve smaller than the real edge count is not an error;
+  the buffer simply grows past it.
+- `CMGDB_MAPGRAPH_RESERVE_MIN_VERTICES` defaults to `16777216`. The explicit
+  reserve applies only to graphs at least this large, so coarse intermediate
+  MapGraphs do not each take a multi-gigabyte allocation.
+
+Both must be positive base-10 integers; a malformed value is an error rather
+than being silently ignored, since ignoring it would drop the hint you asked
+for.
+
+For the measured 3-D level-24 graph (~1.096 billion edges) on a 48-GiB host:
 
 ```bash
-CMGDB_MAPGRAPH_MAX_VERTICES=16777216 \
-CMGDB_MAPGRAPH_MAX_EDGES=1200000000 \
 CMGDB_MAPGRAPH_RESERVE_EDGES=1200000000 \
 python ...
 ```
 
 The 1.2-billion-edge reserve is about 8.94 GiB, allocated once.
+
+To trade speed for memory, disable the cache outright:
+
+```bash
+CMGDB_MAPGRAPH_CACHE=0 python ...
+```
+
+The lazy path recomputes adjacencies through the map on every query -- far
+slower, but it never materializes the edge array. This is the supported way to
+ask for a memory-lean run; earlier versions required setting an artificially
+low edge cap to provoke the same fallback, which also refused unrelated runs
+that would have fit. Accepted values are `0`/`1`, `off`/`on`, `false`/`true`.
+
+> Removed in this fork: `CMGDB_MAPGRAPH_MAX_VERTICES` and
+> `CMGDB_MAPGRAPH_MAX_EDGES`. They are read by nothing and setting them has no
+> effect. The Python `max_table_points` argument is likewise gone.
+
+### Evaluation modes
+
+`eval_mode` selects where inside each box the map is sampled, mirroring
+`CMGDB.ComputeBoxMap.BoxMap`. It is independent of `mode`, which selects the
+grid layout:
+
+```python
+box_map = CMGDB.make_precomputed_box_map(
+    f, lower_bounds, upper_bounds,
+    subdiv_max=28,
+    mode="adaptive",      # grid layout: adaptive | uniform
+    eval_mode="center",   # sampling rule: corners | center | random
+    num_pts=10,           # random only
+    sample_depth=4,       # random only
+    seed=0,               # random only
+)
+```
+
+Non-corner sampling needs a finer table. A box at depth `t` on an axis refined
+`T` times has its center at `(i + 1/2) * 2^(T - t)` in units of the finest
+corner spacing -- not an integer when `t == T`, so the centers of the finest
+boxes fall exactly between corner-lattice nodes. Refining the table by `d`
+extra levels per axis makes every offset `k / 2^d` a node, at every box depth
+at once, which is what lets boxes share evaluation points:
+
+| `eval_mode` | extra levels | table size factor |
+|---|---:|---|
+| `corners` | 0 | 1 |
+| `center` | 1 | `2^dim` |
+| `random` | `sample_depth` | `2^(dim * sample_depth)` |
+
+Two consequences worth knowing:
+
+- `center` forces `padding=True`, as upstream `BoxMap` does. One sample gives a
+  degenerate image box, which encloses nothing without padding.
+- `random` draws its offsets **once** and reuses them for every box, so sibling
+  boxes are probed at the same relative positions. Upstream instead calls
+  `np.random.uniform` afresh on each invocation, which makes its box map a
+  non-deterministic function of the rectangle and its Morse graphs
+  irreproducible. Fixed offsets are both precomputable and reproducible.
 
 For exact Marcio-style basin membership on selected cells, use the native CSR
 query:

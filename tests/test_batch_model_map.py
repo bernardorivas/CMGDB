@@ -39,7 +39,15 @@ def test_map_graph_cache_uses_batch_map_callback():
     assert map_graph.num_cached_edges() > 0
 
 
-def test_batch_cache_vertex_limit_is_inclusive(monkeypatch):
+def test_batch_cache_has_no_size_ceiling(monkeypatch):
+    """No vertex or edge cap: the cache is built for whatever grid it is given.
+
+    Earlier revisions refused, up front, any graph above
+    ``CMGDB_MAPGRAPH_MAX_VERTICES`` / ``CMGDB_MAPGRAPH_MAX_EDGES`` whenever a
+    batch map was installed -- while the same graph on the scalar path only
+    degraded silently. Both env vars are gone; a run that does not fit is left
+    to fail where it actually runs out of memory.
+    """
     calls = {"single": 0, "batch": 0}
 
     def identity(rect):
@@ -54,9 +62,12 @@ def test_batch_cache_vertex_limit_is_inclusive(monkeypatch):
             for rect in rects
         ]
 
-    # A fixed-depth-4 grid has exactly 2^4 = 16 cells. Equality must remain
-    # cache-eligible so the default 2^24 limit includes a level-24 grid.
-    monkeypatch.setenv("CMGDB_MAPGRAPH_MAX_VERTICES", "16")
+    for name in (
+        "CMGDB_MAPGRAPH_MAX_VERTICES",
+        "CMGDB_MAPGRAPH_MAX_EDGES",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
     model = CMGDB.Model(4, 4, 4, 10000, [0.0, 0.0], [1.0, 1.0], identity)
     model.set_batch_map(identity_batch)
 
@@ -68,19 +79,22 @@ def test_batch_cache_vertex_limit_is_inclusive(monkeypatch):
     assert calls["single"] == 0
 
 
-def test_batch_cache_refuses_scalar_fallback_above_vertex_limit(monkeypatch):
-    monkeypatch.setenv("CMGDB_MAPGRAPH_MAX_VERTICES", "15")
-    model = CMGDB.Model(4, 4, 4, 10000, [0.0, 0.0], [1.0, 1.0], f)
+def test_former_cap_env_vars_are_inert(monkeypatch):
+    """Setting the removed variables must not resurrect the old refusal."""
+    monkeypatch.setenv("CMGDB_MAPGRAPH_MAX_VERTICES", "1")
+    monkeypatch.setenv("CMGDB_MAPGRAPH_MAX_EDGES", "1")
+    model = CMGDB.Model(2, 2, 2, 10000, [0.0, 0.0], [1.0, 1.0], f)
     model.set_batch_map(f_batch)
 
-    with pytest.raises(RuntimeError, match="refusing to fall back to per-cell"):
-        CMGDB.ComputeMorseGraph(model)
+    _, map_graph = CMGDB.ComputeMorseGraph(model)
+
+    assert map_graph.has_cache()
+    assert map_graph.num_cached_edges() == 16
 
 
-def test_batch_cache_edge_limit_is_configurable_and_inclusive(monkeypatch):
-    # Identity on the four-cell fixed-depth-2 grid has exactly 16 cover edges.
-    monkeypatch.setenv("CMGDB_MAPGRAPH_MAX_EDGES", "16")
-    monkeypatch.setenv("CMGDB_MAPGRAPH_RESERVE_EDGES", "16")
+def test_reserve_edges_is_a_hint_not_a_ceiling(monkeypatch):
+    """A reserve smaller than the real edge count grows rather than failing."""
+    monkeypatch.setenv("CMGDB_MAPGRAPH_RESERVE_EDGES", "2")
     monkeypatch.setenv("CMGDB_MAPGRAPH_RESERVE_MIN_VERTICES", "1")
     model = CMGDB.Model(2, 2, 2, 10000, [0.0, 0.0], [1.0, 1.0], f)
     model.set_batch_map(f_batch)
@@ -91,36 +105,38 @@ def test_batch_cache_edge_limit_is_configurable_and_inclusive(monkeypatch):
     assert map_graph.num_cached_edges() == 16
 
 
-def test_batch_cache_refuses_scalar_fallback_above_edge_limit(monkeypatch):
-    monkeypatch.setenv("CMGDB_MAPGRAPH_MAX_EDGES", "15")
-    model = CMGDB.Model(2, 2, 2, 10000, [0.0, 0.0], [1.0, 1.0], f)
-    model.set_batch_map(f_batch)
-
-    with pytest.raises(RuntimeError, match="CMGDB_MAPGRAPH_MAX_EDGES=15"):
-        CMGDB.ComputeMorseGraph(model)
-
-
-def test_batch_cache_rejects_reserve_above_edge_limit(monkeypatch):
-    monkeypatch.setenv("CMGDB_MAPGRAPH_MAX_EDGES", "16")
-    monkeypatch.setenv("CMGDB_MAPGRAPH_RESERVE_EDGES", "17")
-    model = CMGDB.Model(2, 2, 2, 10000, [0.0, 0.0], [1.0, 1.0], f)
-    model.set_batch_map(f_batch)
-
-    with pytest.raises(ValueError, match="RESERVE_EDGES=17"):
-        CMGDB.ComputeMorseGraph(model)
-
-
-@pytest.mark.parametrize(
-    ("name", "value"),
-    [
-        ("CMGDB_MAPGRAPH_MAX_VERTICES", "0"),
-        ("CMGDB_MAPGRAPH_MAX_EDGES", "not-a-number"),
-    ],
-)
-def test_batch_cache_rejects_invalid_limits(monkeypatch, name, value):
-    monkeypatch.setenv(name, value)
+def test_reserve_hints_reject_malformed_values(monkeypatch):
+    """A typo in a sizing hint is still an error -- silently ignoring it would
+    drop the hint the caller asked for."""
+    monkeypatch.setenv("CMGDB_MAPGRAPH_RESERVE_EDGES", "not-a-number")
     model = CMGDB.Model(2, 2, 2, 10000, [0.0, 0.0], [1.0, 1.0], f)
     model.set_batch_map(f_batch)
 
     with pytest.raises(ValueError, match="positive base-10 integer"):
+        CMGDB.ComputeMorseGraph(model)
+
+
+def test_cache_can_be_disabled_explicitly(monkeypatch):
+    """CMGDB_MAPGRAPH_CACHE=0 selects the lazy, memory-lean path.
+
+    This is the supported way to ask for low memory. It replaces provoking the
+    same fallback with an artificially low edge cap, which also refused runs
+    that would have fit.
+    """
+    monkeypatch.setenv("CMGDB_MAPGRAPH_CACHE", "0")
+    model = CMGDB.Model(2, 2, 2, 10000, [0.0, 0.0], [1.0, 1.0], f)
+    model.set_batch_map(f_batch)
+
+    _, map_graph = CMGDB.ComputeMorseGraph(model)
+
+    assert not map_graph.has_cache()
+    assert map_graph.num_cached_edges() == 0
+
+
+def test_cache_toggle_rejects_unrecognized_values(monkeypatch):
+    monkeypatch.setenv("CMGDB_MAPGRAPH_CACHE", "maybe")
+    model = CMGDB.Model(2, 2, 2, 10000, [0.0, 0.0], [1.0, 1.0], f)
+    model.set_batch_map(f_batch)
+
+    with pytest.raises(ValueError, match="CMGDB_MAPGRAPH_CACHE"):
         CMGDB.ComputeMorseGraph(model)

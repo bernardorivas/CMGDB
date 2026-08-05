@@ -17,7 +17,15 @@ from typing import Any, Literal, Optional, Tuple, Union
 import numpy as np
 
 BatchPoints = Union[int, Literal["auto"]]
+#: Grid layout of the CMGDB box decomposition being served.
 Mode = Literal["adaptive", "uniform"]
+#: Where inside each box the map is evaluated, mirroring
+#: ``CMGDB.ComputeBoxMap.BoxMap``'s ``mode`` argument. Orthogonal to ``Mode``,
+#: which selects the *grid layout* rather than the sampling rule.
+EvalMode = Literal["corners", "center", "random"]
+
+_DEFAULT_NUM_PTS = 10
+_DEFAULT_SAMPLE_DEPTH = 4
 
 _AUTO_BATCH_MIN = 4096
 _AUTO_BATCH_MAX = 4 * 1024 * 1024
@@ -26,6 +34,7 @@ _MPS_PER_CHUNK_BUDGET_BYTES = 2 * 1024 * 1024 * 1024
 
 __all__ = [
     "as_batched_evaluator",
+    "evaluation_offsets",
     "make_adaptive_precomputed_box_map",
     "make_precomputed_box_map",
     "make_uniform_precomputed_box_map",
@@ -312,15 +321,87 @@ def precompute_corner_grid(
     return ys_flat.reshape(shape + (out_dim,)), out_dim
 
 
-def _check_table_size(table_points: int, max_table_points: int, mode: str, detail: str) -> None:
-    max_table_points = int(max_table_points)
-    if max_table_points < 1:
-        raise ValueError(f"max_table_points must be positive; got {max_table_points}")
-    if table_points > max_table_points:
-        raise ValueError(
-            f"{mode} precomputed table size ({table_points} corners) exceeds "
-            f"max_table_points ({max_table_points}). {detail}"
+def evaluation_offsets(
+    eval_mode: EvalMode,
+    dim: int,
+    *,
+    num_pts: int = _DEFAULT_NUM_PTS,
+    sample_depth: int = _DEFAULT_SAMPLE_DEPTH,
+    seed: Optional[int] = 0,
+) -> Tuple[np.ndarray, int]:
+    """Return ``(numerators, depth)`` describing where each box is evaluated.
+
+    Evaluation points are given as rational positions ``k / 2**depth`` along
+    each axis of a box, with ``k`` an integer in ``[0, 2**depth]``. The return
+    is the integer array of ``k`` values, shape ``(n_points, dim)``.
+
+    Restricting offsets to dyadic rationals is what makes non-corner sampling
+    precomputable at all. A box at depth ``t`` on an axis refined ``T`` times
+    spans ``2**(T - t)`` finest cells, so an offset ``k / 2**depth`` lands on
+    the lattice refined ``depth`` extra levels for *every* box depth at once.
+    An arbitrary real offset lands on no shared lattice, and the whole point of
+    precomputation is that boxes share their evaluation points.
+
+    ``depth`` is therefore also the number of extra refinement levels the
+    lookup table needs, which costs a factor of ``2**(dim * depth)`` in table
+    size. ``corners`` needs none.
+    """
+    dim = int(dim)
+    if dim < 1:
+        raise ValueError(f"dim must be positive; got {dim}")
+
+    if eval_mode == "corners":
+        # Box vertices: offsets 0 and 1, already on the corner lattice.
+        return np.array(list(itertools.product((0, 1), repeat=dim)), dtype=np.int64), 0
+
+    if eval_mode == "center":
+        # The midpoint needs exactly one extra level: at depth 1 the offset
+        # 1/2 is the integer 1, and a box spanning 2**(T - t + 1) nodes of the
+        # refined lattice has an integral midpoint for every t <= T.
+        return np.ones((1, dim), dtype=np.int64), 1
+
+    if eval_mode == "random":
+        num_pts = int(num_pts)
+        sample_depth = int(sample_depth)
+        if num_pts < 1:
+            raise ValueError(f"num_pts must be positive; got {num_pts}")
+        if sample_depth < 1:
+            raise ValueError(f"sample_depth must be positive; got {sample_depth}")
+        # Drawn once, then reused by every box at every depth. Upstream
+        # ``BoxMap(mode='random')`` instead calls ``np.random.uniform`` afresh
+        # on each invocation, which makes its box map a non-deterministic
+        # function of the rectangle and its Morse graphs unreproducible. Fixed
+        # offsets are both precomputable and reproducible; the cost is that
+        # sibling boxes are probed at the same relative positions.
+        rng = np.random.default_rng(seed)
+        return (
+            rng.integers(0, 2**sample_depth + 1, size=(num_pts, dim), dtype=np.int64),
+            sample_depth,
         )
+
+    raise ValueError(
+        f"eval_mode must be 'corners', 'center', or 'random'; got {eval_mode!r}"
+    )
+
+
+def _resolve_eval_mode(
+    eval_mode: EvalMode,
+    dim: int,
+    padding: bool,
+    *,
+    num_pts: int,
+    sample_depth: int,
+    seed: Optional[int],
+) -> Tuple[np.ndarray, int, bool]:
+    """Offsets plus the padding actually in force for ``eval_mode``."""
+    numerators, depth = evaluation_offsets(
+        eval_mode, dim, num_pts=num_pts, sample_depth=sample_depth, seed=seed
+    )
+    if eval_mode == "center" and not padding:
+        # One sample gives a degenerate image box, so an unpadded center map
+        # encloses nothing. Upstream ``BoxMap`` forces padding here too.
+        padding = True
+    return numerators, depth, padding
 
 
 def make_uniform_precomputed_box_map(
@@ -330,11 +411,19 @@ def make_uniform_precomputed_box_map(
     *,
     subdiv_max: int,
     padding: bool = True,
+    eval_mode: EvalMode = "corners",
+    num_pts: int = _DEFAULT_NUM_PTS,
+    sample_depth: int = _DEFAULT_SAMPLE_DEPTH,
+    seed: Optional[int] = 0,
     batch_points: BatchPoints = "auto",
-    max_table_points: int = 10_000_000,
     device: Any = "auto",
 ) -> Callable[[Any], list[float]]:
-    """Return a precomputed ``box_map`` for a uniform CMGDB grid."""
+    """Return a precomputed ``box_map`` for a uniform CMGDB grid.
+
+    ``eval_mode`` selects where inside each box the map is sampled, matching
+    ``CMGDB.ComputeBoxMap.BoxMap``. ``center`` and ``random`` refine the table
+    by ``2**(dim * depth)``; see :func:`evaluation_offsets`.
+    """
     lower, upper, dim = _validate_bounds(lower_bounds, upper_bounds)
     subdiv_max = int(subdiv_max)
     if subdiv_max < 1:
@@ -345,29 +434,29 @@ def make_uniform_precomputed_box_map(
             f"divisible by dimension ({dim}); got remainder {subdiv_max % dim}"
         )
 
-    n_per_axis = 2 ** (subdiv_max // dim)
-    corners_per_axis = n_per_axis + 1
-    table_points = corners_per_axis**dim
-    _check_table_size(
-        table_points,
-        max_table_points,
-        "uniform",
-        f"For dim={dim}, subdiv_max={subdiv_max} -> {table_points} corners.",
+    numerators, depth, padding = _resolve_eval_mode(
+        eval_mode,
+        dim,
+        padding,
+        num_pts=num_pts,
+        sample_depth=sample_depth,
+        seed=seed,
     )
+    scale = 1 << depth
+
+    n_per_axis = 2 ** (subdiv_max // dim)
+    # The table is refined ``depth`` extra levels so every evaluation offset is
+    # a node; ``depth == 0`` reproduces the plain corner lattice exactly.
+    nodes_per_axis = n_per_axis * scale + 1
 
     box_side = (upper - lower) / n_per_axis
     ys_grid, out_dim = precompute_corner_grid(
         f,
         lower_bounds=lower,
         upper_bounds=upper,
-        corners_per_axis=corners_per_axis,
+        corners_per_axis=nodes_per_axis,
         batch_points=batch_points,
         device=device,
-    )
-    # Corner offsets, hoisted out of the per-box work. Order is irrelevant
-    # because only min/max over the 2^dim corners is taken.
-    uniform_combos = np.array(
-        list(itertools.product(range(2), repeat=dim)), dtype=np.int64
     )
 
     def box_map(rect: Any) -> list[float]:
@@ -377,10 +466,11 @@ def make_uniform_precomputed_box_map(
         center = (rect_arr[:dim] + rect_arr[dim:]) / 2.0
         idx = np.floor((center - lower) / box_side).astype(np.int64)
         idx = np.clip(idx, 0, n_per_axis - 1)
-        slicer = tuple(slice(int(idx[i]), int(idx[i]) + 2) for i in range(dim))
-        corners = ys_grid[slicer].reshape(2**dim, out_dim)
-        out_lower = corners.min(axis=0)
-        out_upper = corners.max(axis=0)
+        # Every box is finest here, so it spans exactly ``scale`` table nodes.
+        point_indices = idx[None, :] * scale + numerators
+        samples = ys_grid[tuple(point_indices[:, k] for k in range(dim))]
+        out_lower = samples.min(axis=0)
+        out_upper = samples.max(axis=0)
         if padding:
             box_size = rect_arr[dim:] - rect_arr[:dim]
             out_lower = out_lower - box_size
@@ -395,10 +485,10 @@ def make_uniform_precomputed_box_map(
         center = (R[:, :dim] + R[:, dim:]) / 2.0
         idx = np.floor((center - lower) / box_side).astype(np.int64)
         np.clip(idx, 0, n_per_axis - 1, out=idx)
-        corner_indices = idx[:, None, :] + uniform_combos[None, :, :]
-        corners = ys_grid[tuple(corner_indices[..., k] for k in range(dim))]
-        out_lower_b = corners.min(axis=1)
-        out_upper_b = corners.max(axis=1)
+        point_indices = idx[:, None, :] * scale + numerators[None, :, :]
+        samples = ys_grid[tuple(point_indices[..., k] for k in range(dim))]
+        out_lower_b = samples.min(axis=1)
+        out_upper_b = samples.max(axis=1)
         if padding:
             box_size = R[:, dim:] - R[:, :dim]
             out_lower_b = out_lower_b - box_size
@@ -415,11 +505,20 @@ def make_adaptive_precomputed_box_map(
     *,
     subdiv_max: int,
     padding: bool = True,
+    eval_mode: EvalMode = "corners",
+    num_pts: int = _DEFAULT_NUM_PTS,
+    sample_depth: int = _DEFAULT_SAMPLE_DEPTH,
+    seed: Optional[int] = 0,
     batch_points: BatchPoints = "auto",
-    max_table_points: int = 10_000_000,
     device: Any = "auto",
 ) -> Callable[[Any], list[float]]:
-    """Return a precomputed ``box_map`` for CMGDB's adaptive subdivision tree."""
+    """Return a precomputed ``box_map`` for CMGDB's adaptive subdivision tree.
+
+    ``eval_mode`` selects where inside each box the map is sampled, matching
+    ``CMGDB.ComputeBoxMap.BoxMap``. Because the adaptive tree queries boxes at
+    every depth, non-corner offsets are exact only on a table refined by the
+    offsets' dyadic depth; see :func:`evaluation_offsets`.
+    """
     lower, upper, dim = _validate_bounds(lower_bounds, upper_bounds)
     subdiv_max = int(subdiv_max)
     if subdiv_max < 1:
@@ -434,31 +533,42 @@ def make_adaptive_precomputed_box_map(
     # finest box widths.
     axis_depths = [(subdiv_max - j + dim - 1) // dim for j in range(dim)]
     n_per_axis = np.array([2**t for t in axis_depths], dtype=np.int64)
-    corners_per_axis = n_per_axis + 1
-    table_points = 1
-    for c in corners_per_axis:
-        table_points *= int(c)
-    _check_table_size(
-        table_points,
-        max_table_points,
-        "adaptive",
-        (
-            f"For dim={dim}, subdiv_max={subdiv_max}, per-axis depths "
-            f"{axis_depths} -> {table_points} corners."
-        ),
+
+    numerators, depth, padding = _resolve_eval_mode(
+        eval_mode,
+        dim,
+        padding,
+        num_pts=num_pts,
+        sample_depth=sample_depth,
+        seed=seed,
     )
+    scale = 1 << depth
+    # ``depth`` extra levels per axis; ``depth == 0`` is the plain corner
+    # lattice, so corner mode pays nothing for the generalization.
+    nodes_per_axis = n_per_axis * scale + 1
 
     finest_box_side = (upper - lower) / n_per_axis
-    ys_grid, out_dim = precompute_corner_grid(
+    ys_grid, _out_dim = precompute_corner_grid(
         f,
         lower_bounds=lower,
         upper_bounds=upper,
-        corners_per_axis=corners_per_axis.tolist(),
+        corners_per_axis=nodes_per_axis.tolist(),
         batch_points=batch_points,
         device=device,
     )
-    combos = np.array(list(itertools.product(range(2), repeat=dim)), dtype=np.int64)
-    axis_idx = np.arange(dim, dtype=np.int64)
+
+    def _sample_indices(i_lower: np.ndarray, i_upper: np.ndarray) -> np.ndarray:
+        """Table indices of the evaluation points of one or many boxes.
+
+        A box spanning ``i_upper - i_lower`` finest cells spans ``scale`` times
+        as many table nodes, so offset ``k / scale`` sits ``k * (i_upper -
+        i_lower)`` nodes above the box's lower corner -- an integer at every
+        box depth, which is the whole reason the offsets are dyadic.
+        """
+        span = i_upper - i_lower
+        if i_lower.ndim == 1:
+            return i_lower[None, :] * scale + numerators * span[None, :]
+        return i_lower[:, None, :] * scale + numerators[None, :, :] * span[:, None, :]
 
     def box_map(rect: Any) -> list[float]:
         rect_arr = np.asarray(rect, dtype=np.float64)
@@ -468,11 +578,10 @@ def make_adaptive_precomputed_box_map(
         i_upper = np.round((rect_arr[dim:] - lower) / finest_box_side).astype(np.int64)
         np.clip(i_lower, 0, n_per_axis, out=i_lower)
         np.clip(i_upper, 0, n_per_axis, out=i_upper)
-        idx_per_axis = np.stack([i_lower, i_upper], axis=0)
-        corner_indices = idx_per_axis[combos, axis_idx]
-        corners = ys_grid[tuple(corner_indices.T)].reshape(2**dim, out_dim)
-        out_lower = corners.min(axis=0)
-        out_upper = corners.max(axis=0)
+        point_indices = _sample_indices(i_lower, i_upper)
+        samples = ys_grid[tuple(point_indices[:, k] for k in range(dim))]
+        out_lower = samples.min(axis=0)
+        out_upper = samples.max(axis=0)
         if padding:
             box_size = rect_arr[dim:] - rect_arr[:dim]
             out_lower = out_lower - box_size
@@ -488,11 +597,10 @@ def make_adaptive_precomputed_box_map(
         i_upper = np.round((R[:, dim:] - lower) / finest_box_side).astype(np.int64)
         np.clip(i_lower, 0, n_per_axis, out=i_lower)
         np.clip(i_upper, 0, n_per_axis, out=i_upper)
-        idx_per_axis = np.stack([i_lower, i_upper], axis=1)     # (m, 2, dim)
-        corner_indices = idx_per_axis[:, combos, axis_idx]      # (m, 2^dim, dim)
-        corners = ys_grid[tuple(corner_indices[..., k] for k in range(dim))]
-        out_lower_b = corners.min(axis=1)
-        out_upper_b = corners.max(axis=1)
+        point_indices = _sample_indices(i_lower, i_upper)     # (m, n_points, dim)
+        samples = ys_grid[tuple(point_indices[..., k] for k in range(dim))]
+        out_lower_b = samples.min(axis=1)
+        out_upper_b = samples.max(axis=1)
         if padding:
             box_size = R[:, dim:] - R[:, :dim]
             out_lower_b = out_lower_b - box_size
@@ -510,31 +618,41 @@ def make_precomputed_box_map(
     subdiv_max: int,
     mode: Mode = "adaptive",
     padding: bool = True,
+    eval_mode: EvalMode = "corners",
+    num_pts: int = _DEFAULT_NUM_PTS,
+    sample_depth: int = _DEFAULT_SAMPLE_DEPTH,
+    seed: Optional[int] = 0,
     batch_points: BatchPoints = "auto",
-    max_table_points: int = 10_000_000,
     device: Any = "auto",
 ) -> Callable[[Any], list[float]]:
-    """Return a CMGDB ``box_map`` using whole-lattice precomputation."""
+    """Return a CMGDB ``box_map`` using whole-lattice precomputation.
+
+    ``mode`` picks the grid layout being served (``adaptive`` or ``uniform``).
+    ``eval_mode`` picks where inside each box the map is sampled, mirroring
+    ``CMGDB.ComputeBoxMap.BoxMap``: ``corners``, ``center``, or ``random``.
+    The two are independent.
+
+    ``num_pts``, ``sample_depth``, and ``seed`` apply to ``eval_mode="random"``
+    only. Sampling costs table size: ``center`` refines the lattice one level
+    per axis and ``random`` refines it ``sample_depth`` levels, a factor of
+    ``2**dim`` and ``2**(dim * sample_depth)`` respectively.
+    """
+    common = dict(
+        subdiv_max=subdiv_max,
+        padding=padding,
+        eval_mode=eval_mode,
+        num_pts=num_pts,
+        sample_depth=sample_depth,
+        seed=seed,
+        batch_points=batch_points,
+        device=device,
+    )
     if mode == "adaptive":
         return make_adaptive_precomputed_box_map(
-            f,
-            lower_bounds,
-            upper_bounds,
-            subdiv_max=subdiv_max,
-            padding=padding,
-            batch_points=batch_points,
-            max_table_points=max_table_points,
-            device=device,
+            f, lower_bounds, upper_bounds, **common
         )
     if mode == "uniform":
         return make_uniform_precomputed_box_map(
-            f,
-            lower_bounds,
-            upper_bounds,
-            subdiv_max=subdiv_max,
-            padding=padding,
-            batch_points=batch_points,
-            max_table_points=max_table_points,
-            device=device,
+            f, lower_bounds, upper_bounds, **common
         )
     raise ValueError(f"mode must be 'adaptive' or 'uniform'; got {mode!r}")

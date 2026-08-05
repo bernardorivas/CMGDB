@@ -14,6 +14,7 @@
 #include <limits>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 // #include <unistd.h>
 
 #include "boost/unordered_map.hpp"
@@ -92,8 +93,13 @@ private:
 
 namespace cmgdb_detail {
 
+/// map_graph_size_from_env
+///   Read a positive base-10 size hint from the environment. These are
+///   allocation hints only: nothing here bounds what a run is allowed to
+///   attempt. A malformed value is still an error, because silently ignoring
+///   a typo would hide the hint rather than apply it.
 inline size_t
-map_graph_limit_from_env ( const char * name, size_t default_value ) {
+map_graph_size_from_env ( const char * name, size_t default_value ) {
   const char * raw = std::getenv ( name );
   if ( raw == nullptr or raw [ 0 ] == '\0' ) {
     return default_value;
@@ -119,36 +125,33 @@ map_graph_limit_from_env ( const char * name, size_t default_value ) {
   return static_cast<size_t> ( parsed );
 }
 
-inline size_t
-map_graph_optional_limit_from_env ( const char * name ) {
-  const char * raw = std::getenv ( name );
+/// map_graph_cache_enabled
+///   Whether to build the eager CSR adjacency cache. Defaults to enabled.
+///
+///   Setting CMGDB_MAPGRAPH_CACHE=0 selects the lazy path, which recomputes
+///   adjacencies through the map on every query: far slower, but it never
+///   materializes the edge array. This is the explicit way to ask for a
+///   memory-lean run. It replaces the old practice of setting an artificially
+///   low edge cap to provoke the same fallback -- a cap that also refused
+///   unrelated runs that would have fit.
+inline bool
+map_graph_cache_enabled ( void ) {
+  const char * raw = std::getenv ( "CMGDB_MAPGRAPH_CACHE" );
   if ( raw == nullptr or raw [ 0 ] == '\0' ) {
-    return 0;
+    return true;
   }
-  return map_graph_limit_from_env ( name, 0 );
-}
-
-inline std::runtime_error
-map_graph_vertex_limit_error ( size_t vertices, size_t limit ) {
+  const std::string value ( raw );
+  if ( value == "0" or value == "off" or value == "false" ) {
+    return false;
+  }
+  if ( value == "1" or value == "on" or value == "true" ) {
+    return true;
+  }
   std::ostringstream message;
   message
-    << "MapGraph optimized batch cache requires " << vertices
-    << " vertices, exceeding CMGDB_MAPGRAPH_MAX_VERTICES=" << limit
-    << ". Increase CMGDB_MAPGRAPH_MAX_VERTICES explicitly; refusing to "
-       "fall back to per-cell map callbacks.";
-  return std::runtime_error ( message . str () );
-}
-
-inline std::runtime_error
-map_graph_edge_limit_error ( size_t observed_edges, size_t limit ) {
-  std::ostringstream message;
-  message
-    << "MapGraph optimized batch cache produced at least " << observed_edges
-    << " edges, exceeding CMGDB_MAPGRAPH_MAX_EDGES=" << limit
-    << ". Increase CMGDB_MAPGRAPH_MAX_EDGES explicitly (each cached edge "
-       "uses " << sizeof ( MapGraph::Vertex )
-    << " bytes); refusing to fall back to per-cell map callbacks.";
-  return std::runtime_error ( message . str () );
+    << "CMGDB_MAPGRAPH_CACHE must be one of 0/1/on/off/true/false; got '"
+    << raw << "'";
+  throw std::invalid_argument ( message . str () );
 }
 
 } // namespace cmgdb_detail
@@ -177,33 +180,20 @@ MapGraph::initialize ( void ) {
     throw std::logic_error ( "MapGraph::MapGraph. Unable to construct with uninitialized Map f\n");
   }
 
-  constexpr size_t DEFAULT_VERTEX_LIMIT = size_t ( 1 ) << 24;
-  constexpr size_t DEFAULT_EDGE_LIMIT = 200000000;
-  constexpr size_t BATCH_CHUNK = 100000;
-  const size_t vertex_limit = cmgdb_detail::map_graph_limit_from_env (
-    "CMGDB_MAPGRAPH_MAX_VERTICES", DEFAULT_VERTEX_LIMIT );
-  const size_t edge_limit = cmgdb_detail::map_graph_limit_from_env (
-    "CMGDB_MAPGRAPH_MAX_EDGES", DEFAULT_EDGE_LIMIT );
-  const size_t edge_reserve = cmgdb_detail::map_graph_optional_limit_from_env (
-    "CMGDB_MAPGRAPH_RESERVE_EDGES" );
-  const size_t reserve_min_vertices = cmgdb_detail::map_graph_limit_from_env (
-    "CMGDB_MAPGRAPH_RESERVE_MIN_VERTICES", DEFAULT_VERTEX_LIMIT );
-  if ( edge_reserve > edge_limit ) {
-    std::ostringstream message;
-    message
-      << "CMGDB_MAPGRAPH_RESERVE_EDGES=" << edge_reserve
-      << " exceeds CMGDB_MAPGRAPH_MAX_EDGES=" << edge_limit;
-    throw std::invalid_argument ( message . str () );
-  }
-  const size_t n = num_vertices ();
-
-  if ( n > vertex_limit ) {
-    if ( f_ -> has_optimized_batch () ) {
-      throw cmgdb_detail::map_graph_vertex_limit_error ( n, vertex_limit );
-    }
+  if ( not cmgdb_detail::map_graph_cache_enabled () ) {
     stored_graph = false;
     return;
   }
+
+  constexpr size_t BATCH_CHUNK = 100000;
+  // Optional allocation hints. Neither bounds the graph: a run that does not
+  // fit is left to fail where it actually runs out of memory, rather than
+  // being refused up front on a guess about the host.
+  const size_t edge_reserve = cmgdb_detail::map_graph_size_from_env (
+    "CMGDB_MAPGRAPH_RESERVE_EDGES", 0 );
+  const size_t reserve_min_vertices = cmgdb_detail::map_graph_size_from_env (
+    "CMGDB_MAPGRAPH_RESERVE_MIN_VERTICES", size_t ( 1 ) << 24 );
+  const size_t n = num_vertices ();
 
   if ( f_ -> has_optimized_batch () ) {
     // Append each batch directly to CSR. The old full-size
@@ -229,25 +219,17 @@ MapGraph::initialize ( void ) {
         compute_adjacencies_batch ( sources );
       size_t chunk_edge_count = 0;
       for ( const auto & adjacency : chunk_adjacencies ) {
-        if ( adjacency . size () >
-             edge_limit - edge_count - chunk_edge_count ) {
-          const size_t observed_edges =
-            edge_limit == std::numeric_limits<size_t>::max ()
-              ? edge_limit
-              : edge_limit + 1;
-          throw cmgdb_detail::map_graph_edge_limit_error (
-            observed_edges, edge_limit );
-        }
         chunk_edge_count += adjacency . size ();
       }
 
+      // Grow geometrically rather than letting each chunk's insert reallocate
+      // on its own; doubling keeps the number of copies logarithmic without
+      // capping how large the buffer may become.
       const size_t required_capacity = edge_count + chunk_edge_count;
       if ( required_capacity > csr_edges_ . capacity () ) {
         const size_t old_capacity = csr_edges_ . capacity ();
-        const size_t available_growth = edge_limit - old_capacity;
-        const size_t growth = std::min (
-          available_growth, std::max ( old_capacity, BATCH_CHUNK ) );
-        const size_t grown_capacity = old_capacity + growth;
+        const size_t grown_capacity =
+          old_capacity + std::max ( old_capacity, BATCH_CHUNK );
         csr_edges_ . reserve ( std::max ( required_capacity, grown_capacity ) );
       }
 
@@ -264,16 +246,8 @@ MapGraph::initialize ( void ) {
 
   {
     std::vector<std::vector<Vertex> > staging ( n );
-    size_t edge_count = 0;
     for ( size_type source = 0; source < n; ++ source ) {
       staging [ source ] = compute_adjacencies ( source );
-      if ( staging [ source ] . size () > edge_limit - edge_count ) {
-        stored_graph = false;
-        csr_offsets_ . clear ();
-        csr_edges_ . clear ();
-        return;
-      }
-      edge_count += staging [ source ] . size ();
     }
     build_csr_from_staging ( staging );
     stored_graph = true;

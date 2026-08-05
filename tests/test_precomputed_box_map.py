@@ -150,21 +150,24 @@ def test_precompute_corner_grid_chunked_output_matches_one_shot():
     np.testing.assert_array_equal(chunked, one_shot)
 
 
-def test_precomputed_box_map_memory_cap_reports_budget_and_actual_size():
-    with pytest.raises(ValueError) as excinfo:
-        CMGDB.make_precomputed_box_map(
-            vector_map,
-            lower_bounds=[-1.0, -1.0],
-            upper_bounds=[1.0, 1.0],
-            subdiv_max=10,
-            mode="adaptive",
-            max_table_points=500,
-        )
+def test_precomputed_box_map_has_no_table_size_cap():
+    """No ``max_table_points``: a lattice is built, never pre-refused.
 
-    msg = str(excinfo.value)
-    assert "1089" in msg
-    assert "500" in msg
-    assert "max_table_points" in msg
+    subdiv_max=10 in 2-D is a 33x33 = 1089-corner table, which the old default
+    cap of 10_000_000 permitted but a lower configured cap refused. Sizing the
+    table is the caller's call; one that does not fit fails on allocation.
+    """
+    box_map = CMGDB.make_precomputed_box_map(
+        vector_map,
+        lower_bounds=[-1.0, -1.0],
+        upper_bounds=[1.0, 1.0],
+        subdiv_max=10,
+        mode="adaptive",
+    )
+
+    out = box_map([-1.0, -1.0, -0.5, -0.5])
+    assert len(out) == 4
+    assert out[0] <= out[2] and out[1] <= out[3]
 
 
 def test_uniform_mode_rejects_non_divisible_subdivision_depth():

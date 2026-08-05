@@ -159,15 +159,16 @@ def test_native_reachability_rejects_out_of_range_query():
 
 
 def test_native_reachability_requires_cached_graph(monkeypatch):
-    monkeypatch.setenv("CMGDB_MAPGRAPH_MAX_VERTICES", "1")
+    # CMGDB_MAPGRAPH_CACHE=0 is the explicit opt-in to the lazy path, which
+    # recomputes adjacencies through the map instead of materializing a CSR.
+    # Native reachability must reject such a graph rather than call identity
+    # once per adjacency.
+    monkeypatch.setenv("CMGDB_MAPGRAPH_CACHE", "0")
 
     def identity(rect):
         dim = len(rect) // 2
         return list(rect[:dim]) + list(rect[dim:])
 
-    # Without an optimized batch callback, the legacy path may return a lazy
-    # graph above the cap. Native reachability must reject it rather than call
-    # identity once per adjacency.
     model = CMGDB.Model(2, 2, 2, 10000, [0.0, 0.0], [1.0, 1.0], identity)
     morse_graph, map_graph = CMGDB.ComputeMorseGraph(model)
     assert not map_graph.has_cache()
