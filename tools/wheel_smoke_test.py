@@ -26,7 +26,11 @@ from CMGDB import cmgdb_roa, morse_graph_parser, morse_lattice  # noqa: F401
 for name in ("Model", "BoxMap", "ComputeMorseGraph", "ComputeConleyMorseGraph"):
     assert hasattr(CMGDB, name), f"missing upstream entry point {name}"
 
-for name in ("ComputeMorseSetReachability", "MorseDirectedPathCells"):
+for name in (
+    "ComputeMorseSetReachability",
+    "MorseDirectedPathCells",
+    "ComputeConleyIndexForCells",
+):
     assert hasattr(CMGDB, name), f"missing fork entry point {name}"
 
 

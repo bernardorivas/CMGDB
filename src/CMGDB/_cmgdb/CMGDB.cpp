@@ -50,6 +50,37 @@ ComputeConleyIndex ( const std::vector < uint64_t > & X_cubes,
   return conleyIndexString ( conley_index );
 }
 
+std::vector < std::string >
+ComputeConleyIndexForCells (
+    const Model & model,
+    MorseGraph & morse_graph,
+    std::vector < uint64_t > cells ) {
+  std::shared_ptr < TreeGrid > phase_space_chomp =
+    std::dynamic_pointer_cast<TreeGrid> ( morse_graph . phaseSpace () );
+  if ( not phase_space_chomp ) {
+    throw std::runtime_error (
+      "ComputeConleyIndexForCells requires a TreeGrid-backed Morse graph" );
+  }
+
+  std::sort ( cells . begin (), cells . end () );
+  cells . erase ( std::unique ( cells . begin (), cells . end () ), cells . end () );
+  for ( const uint64_t cell : cells ) {
+    if ( cell >= phase_space_chomp -> size () ) {
+      std::ostringstream message;
+      message
+        << "ComputeConleyIndexForCells cell " << cell
+        << " is outside [0, " << phase_space_chomp -> size () << ")";
+      throw std::out_of_range ( message . str () );
+    }
+  }
+
+  chomp::ConleyIndex_t conley_index;
+  ChompMap chomp_map ( model . map () );
+  chomp::ConleyIndex (
+    & conley_index, * phase_space_chomp, cells, chomp_map );
+  return conleyIndexString ( conley_index );
+}
+
 // Shared body of the four Compute*MorseGraph entry points.
 //
 // `initial_phase_space`, when non-null, receives the grid pointer captured
@@ -747,6 +778,23 @@ PYBIND11_MODULE(_cmgdb, m) {
   m.doc() = "Conley Morse Graph Database Module";
 
   m.def("ComputeConleyIndex", &ComputeConleyIndex);
+  m.def(
+    "ComputeConleyIndexForCells",
+    [] ( const Model & model,
+         MorseGraph & morse_graph,
+         std::vector<uint64_t> cells ) {
+      std::vector<std::string> result;
+      {
+        py::gil_scoped_release release;
+        result = ComputeConleyIndexForCells (
+          model, morse_graph, std::move ( cells ) );
+      }
+      return result;
+    },
+    py::arg ( "model" ),
+    py::arg ( "morse_graph" ),
+    py::arg ( "cells" ),
+    "Compute the Conley index of an arbitrary phase-space cell subset." );
   m.def("ComputeConleyMorseGraph", &ComputeConleyMorseGraph);
   m.def("ComputeMorseGraph", &ComputeMorseGraph);
   m.def("ComputeConleyMorseGraphOnly", &ComputeConleyMorseGraphOnly,

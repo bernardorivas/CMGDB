@@ -33,6 +33,12 @@ computes — these are additive helpers and a build-flag change.
 - **Regions of attraction** — `CMGDB.cmgdb_roa` and `CMGDB.morse_graph_parser`
   provide exact region-of-attraction labels computed on the `MapGraph` returned
   during the Morse stage, plus a standalone parser for CMGDB's DOT output.
+- **Conley indices for connection-complete cell sets** —
+  `CMGDB.ComputeConleyIndexForCells(model, morse_graph, cells)` applies the
+  same TreeGrid/CHOMP computation used for ordinary Morse-node annotations to
+  an arbitrary phase-space cell subset. This supports Conley-index
+  recomputation after collapsing an order-convex collection of Morse nodes and
+  adding the cells on connections internal to that quotient fiber.
 - **A correctness-validating benchmark harness** — `tests/bench.py` checks the
   expected Morse-graph output before reporting timings.
 - **Quieter default output** — per-run progress prints are gated behind a

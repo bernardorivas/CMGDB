@@ -66,6 +66,19 @@ def test_conley_only_returns_morse_graph_not_pair():
     assert hasattr(result, "vertices")
 
 
+def test_conley_index_for_cells_matches_node_annotations():
+    model = build_model()
+    morse_graph = CMGDB.ComputeConleyMorseGraphOnly(model)
+
+    for vertex in morse_graph.vertices():
+        recomputed = CMGDB.ComputeConleyIndexForCells(
+            model,
+            morse_graph,
+            morse_graph.morse_set(vertex),
+        )
+        assert tuple(recomputed) == tuple(morse_graph.annotations(vertex))
+
+
 @pytest.mark.parametrize(
     "paired_fn,only_fn",
     [
