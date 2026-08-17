@@ -6,8 +6,9 @@ global dynamics of discrete dynamical systems.
 > **This is a fork of [CMGDB](https://github.com/marciogameiro/CMGDB) by Marcio Gameiro.**
 > For the official, PyPI-released package, install upstream with `pip install CMGDB`.
 > This fork adds a few performance and analysis features (see
-> [What this fork adds](#what-this-fork-adds)) and is **installed from source**;
-> it is not published to PyPI. The mathematical output is unchanged from upstream.
+> [What this fork adds](#what-this-fork-adds)). It is not published to PyPI;
+> install its prebuilt release wheels as shown below. The mathematical output
+> is unchanged from upstream.
 
 ## Overview
 
@@ -65,8 +66,8 @@ This fork is not on PyPI, but every release carries prebuilt wheels for
 CPython 3.11-3.13 on manylinux x86_64 and macOS arm64, so no compiler or
 dependency is needed to use it:
 
-	pip install cmgdb==1.3.3+fork.2 \
-	  --find-links https://github.com/bernardorivas/CMGDB/releases/expanded_assets/v1.3.3+fork.2
+	pip install cmgdb==1.3.3+fork.3 \
+	  --find-links https://github.com/bernardorivas/CMGDB/releases/expanded_assets/v1.3.3%2Bfork.3
 
 The version pin is what selects this fork; `--find-links` only tells pip where
 to look. To build from source instead you need a C++ compiler and
