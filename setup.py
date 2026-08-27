@@ -104,7 +104,7 @@ setup(
     # PEP 440 local version. It marks these artifacts as this fork's rather
     # than upstream's, and it is the only pin that stays unambiguous if a
     # release with the same public version ever appears on PyPI.
-    version='1.3.3+fork.3',
+    version='1.3.3+fork.4.dev0',
     python_requires='>=3.11',
     license='MIT',
     # SDSL v3 is BSD-3, whose second clause requires the notice to travel with

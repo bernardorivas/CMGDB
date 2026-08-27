@@ -4,8 +4,12 @@
 #include <iostream>
 #include <cstdint>
 
+#include <algorithm>
 #include <fstream>
+#include <limits>
+#include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <cmath>
 #include <vector>
@@ -22,6 +26,28 @@
 #include "RankSelect.h"
 #include "Geo.h"
 #include "AtlasGeo.h"
+
+/** One equal-depth dyadic cell in a chart rectangle.
+ *
+ * `axis_depth` is the number of bisections in every coordinate and
+ * `coordinates[d]` is the dyadic index in coordinate `d`.  The corresponding
+ * interval is
+ *
+ *   [lower[d] + coordinates[d] * width[d] / 2^axis_depth,
+ *    lower[d] + (coordinates[d] + 1) * width[d] / 2^axis_depth].
+ *
+ * Different cells in one active family may have different axis depths, but
+ * they must be an antichain: duplicate cells are ignored and a cell may not
+ * contain another selected cell.
+ */
+struct AtlasDyadicCell {
+  uint64_t axis_depth;
+  std::vector<uint64_t> coordinates;
+
+  AtlasDyadicCell ( void ) : axis_depth ( 0 ) {}
+  AtlasDyadicCell ( uint64_t depth, std::vector<uint64_t> indices )
+    : axis_depth ( depth ), coordinates ( std::move ( indices ) ) {}
+};
 
 /// class Atlas
 ///   Grid data structure which stores other Grids as "charts"
@@ -88,10 +114,24 @@ public:
   void 
   add_chart ( size_type id, const RectGeo & rect);
 
+  /// add_chart with per-coordinate periodicity
+  void
+  add_chart ( size_type id, const RectGeo & rect,
+              const std::vector<bool> & periodic );
+
   /// add_chart
   ///   add a chart to the Atlas data structure
   void 
   add_chart ( size_type id, int dimension, const RectGeo & rect);
+
+  /// Replace one chart's active grid by a selected dyadic antichain.
+  ///
+  /// This constructs the compressed prefix tree directly; it does not first
+  /// allocate the complete rectangular grid at the requested depth.  An empty
+  /// vector makes the chart empty while retaining its chart id and bounds.
+  void
+  set_chart_active_dyadic_cells (
+      size_type id, const std::vector<AtlasDyadicCell> & cells );
 
   /// listCharts
   ///   Print chart information to std::cout
@@ -134,6 +174,123 @@ private:
   Atlas_to_Chart_GridElement_ ( GridElement const& atlas_ge ) const;
 
 };
+
+namespace cmgdb_atlas_active_detail {
+
+struct TrieNode {
+  bool terminal = false;
+  std::unique_ptr<TrieNode> child [ 2 ];
+};
+
+inline bool
+is_prefix ( const std::vector<bool> & prefix,
+            const std::vector<bool> & value ) {
+  return prefix . size () <= value . size () and
+    std::equal ( prefix . begin (), prefix . end (), value . begin () );
+}
+
+inline void
+emit_compressed_tree ( const TrieNode & node, CompressedTree * output ) {
+  if ( node . terminal ) {
+    output -> leaf_sequence . push_back ( false );
+    output -> valid_sequence . push_back ( true );
+    return;
+  }
+  output -> leaf_sequence . push_back ( true );
+  for ( int branch = 0; branch < 2; ++ branch ) {
+    if ( node . child [ branch ] ) {
+      emit_compressed_tree ( * node . child [ branch ], output );
+    } else {
+      output -> leaf_sequence . push_back ( false );
+      output -> valid_sequence . push_back ( false );
+    }
+  }
+}
+
+inline std::vector<bool>
+dyadic_path ( const AtlasDyadicCell & cell, size_t dimension ) {
+  if ( cell . coordinates . size () != dimension ) {
+    throw std::invalid_argument (
+      "Atlas dyadic cell needs one coordinate index per chart dimension" );
+  }
+  // A uint64_t coordinate can safely be range-checked against 2^depth only
+  // through depth 63.  This is already far beyond any realizable grid.
+  if ( cell . axis_depth > 63 ) {
+    throw std::invalid_argument (
+      "Atlas dyadic cell axis_depth must be at most 63" );
+  }
+  if ( dimension != 0 and
+       cell . axis_depth > std::numeric_limits<size_t>::max () / dimension ) {
+    throw std::invalid_argument ( "Atlas dyadic cell path is too deep" );
+  }
+  const uint64_t cells_per_axis = uint64_t ( 1 ) << cell . axis_depth;
+  for ( size_t d = 0; d < dimension; ++ d ) {
+    if ( cell . coordinates [ d ] >= cells_per_axis ) {
+      std::ostringstream message;
+      message << "Atlas dyadic coordinate " << cell . coordinates [ d ]
+              << " is outside [0," << cells_per_axis << ") at axis_depth "
+              << cell . axis_depth;
+      throw std::invalid_argument ( message . str () );
+    }
+  }
+
+  std::vector<bool> path;
+  path . reserve ( dimension * cell . axis_depth );
+  for ( uint64_t level = 0; level < cell . axis_depth; ++ level ) {
+    const uint64_t shift = cell . axis_depth - level - 1;
+    for ( size_t d = 0; d < dimension; ++ d ) {
+      path . push_back ( ( cell . coordinates [ d ] >> shift ) & 1U );
+    }
+  }
+  return path;
+}
+
+inline std::shared_ptr<CompressedTreeGrid>
+make_active_chart (
+    const RectGeo & bounds,
+    const std::vector<bool> & periodic,
+    const std::vector<AtlasDyadicCell> & cells ) {
+  std::shared_ptr<CompressedTreeGrid> result ( new CompressedTreeGrid );
+  result -> bounds () = bounds;
+  result -> periodicity () = periodic;
+
+  std::vector<std::vector<bool>> paths;
+  paths . reserve ( cells . size () );
+  for ( const AtlasDyadicCell & cell : cells ) {
+    paths . push_back ( dyadic_path ( cell, bounds . dimension () ) );
+  }
+  std::sort ( paths . begin (), paths . end () );
+  paths . erase ( std::unique ( paths . begin (), paths . end () ), paths . end () );
+  for ( size_t i = 1; i < paths . size (); ++ i ) {
+    if ( is_prefix ( paths [ i - 1 ], paths [ i ] ) ) {
+      throw std::invalid_argument (
+        "Atlas active dyadic cells must be an antichain (no selected cell may contain another)" );
+    }
+  }
+
+  if ( paths . empty () ) {
+    result -> tree () -> leaf_sequence . push_back ( false );
+    result -> tree () -> valid_sequence . push_back ( false );
+    return result;
+  }
+
+  TrieNode root;
+  for ( const std::vector<bool> & path : paths ) {
+    TrieNode * node = & root;
+    for ( bool bit : path ) {
+      const int branch = bit ? 1 : 0;
+      if ( not node -> child [ branch ] ) {
+        node -> child [ branch ] . reset ( new TrieNode );
+      }
+      node = node -> child [ branch ] . get ();
+    }
+    node -> terminal = true;
+  }
+  emit_compressed_tree ( root, result -> tree () . get () );
+  return result;
+}
+
+} // namespace cmgdb_atlas_active_detail
 
 inline Atlas * 
 Atlas::clone ( void ) const {
@@ -216,11 +373,37 @@ Atlas::add_chart ( size_type id, const RectGeo & rect ) {
   charts_ [ id ] -> initialize ( rect );
 }
 
+inline void
+Atlas::add_chart ( size_type id, const RectGeo & rect,
+                   const std::vector<bool> & periodic ) {
+  charts_ [ id ] = std::shared_ptr<TreeGrid> ( new PointerGrid );
+  charts_ [ id ] -> initialize ( rect, periodic );
+}
+
 inline void 
 Atlas::add_chart ( size_type id, int dimension, const RectGeo & rect ) {
   charts_ [ id ] = std::shared_ptr<TreeGrid> ( new PointerGrid );
   charts_ [ id ] -> initialize ( rect );
   charts_ [ id ] -> dimension  ( ) = dimension;
+}
+
+inline void
+Atlas::set_chart_active_dyadic_cells (
+    size_type id, const std::vector<AtlasDyadicCell> & cells ) {
+  auto chart_it = charts_ . find ( id );
+  if ( chart_it == charts_ . end () ) {
+    std::ostringstream message;
+    message << "Atlas has no chart " << id;
+    throw std::invalid_argument ( message . str () );
+  }
+  const RectGeo bounds = chart_it -> second -> bounds ();
+  const std::vector<bool> periodic = chart_it -> second -> periodicity ();
+  std::shared_ptr<CompressedTreeGrid> compressed =
+    cmgdb_atlas_active_detail::make_active_chart ( bounds, periodic, cells );
+  std::shared_ptr<PointerGrid> active ( new PointerGrid );
+  active -> assign ( compressed );
+  chart_it -> second = active;
+  finalize ();
 }
 
 inline void 
@@ -307,14 +490,22 @@ Atlas::finalize ( void ) {
   chart_id_to_index_ . clear ();
   chart_index_to_id_ . clear ();
   size_ = 0;
-  size_type chart_index = 0;
+  std::vector<size_type> nonempty_chart_ids;
   for ( IdChartPair const& pair : charts () ) {
-    size_type chart_id = pair . first; 
-    Chart const& chart = pair . second;   
-    size_type chart_size = chart -> size ();
-    if ( chart_size == 0 ) continue;
+    if ( pair . second -> size () != 0 ) {
+      nonempty_chart_ids . push_back ( pair . first );
+    }
+  }
+  // Stable cell numbering matters to downstream adjacency data and plots.
+  // unordered_map iteration order is not a reproducible chart order.
+  std::sort ( nonempty_chart_ids . begin (), nonempty_chart_ids . end () );
+  for ( size_type chart_index = 0;
+        chart_index < nonempty_chart_ids . size ();
+        ++ chart_index ) {
+    const size_type chart_id = nonempty_chart_ids [ chart_index ];
+    const size_type chart_size = charts_ [ chart_id ] -> size ();
     size_ += chart_size;
-    chart_id_to_index_ [ chart_id ] = chart_index ++;
+    chart_id_to_index_ [ chart_id ] = chart_index;
     chart_index_to_id_ . push_back ( chart_id );
   }
   std::vector<bool> bits ( size_ );

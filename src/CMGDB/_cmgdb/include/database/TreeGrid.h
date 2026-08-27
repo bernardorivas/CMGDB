@@ -433,6 +433,7 @@ CompressedTreeGrid *
 TreeGrid::join ( InputIterator start, InputIterator stop ) {
   CompressedTreeGrid * result = new CompressedTreeGrid;
 
+  const InputIterator metadata_source = start;
   std::shared_ptr<TreeGrid> start_ptr;
   for ( InputIterator it = start; it != stop; ++ it ) {
     std::shared_ptr<TreeGrid> ptr = 
@@ -442,7 +443,19 @@ TreeGrid::join ( InputIterator start, InputIterator stop ) {
   if ( start == stop ) { 
     // Return an empty tree.
     result -> tree () -> leaf_sequence . push_back ( false );
-    result -> tree () -> valid_sequence . push_back ( false );    
+    result -> tree () -> valid_sequence . push_back ( false );
+    // An all-empty join still represents the same ambient chart. Preserve
+    // its bounds and periodicity instead of silently turning it into a
+    // dimension-zero chart.
+    if ( metadata_source != stop ) {
+      std::shared_ptr<TreeGrid> metadata =
+        std::dynamic_pointer_cast<TreeGrid> ( * metadata_source );
+      if ( not metadata ) {
+        throw std::logic_error ( "TreeGrid::join received a non-TreeGrid input" );
+      }
+      result -> bounds () = metadata -> bounds ();
+      result -> periodicity () = metadata -> periodicity ();
+    }
     return result;
   }
   start_ptr = std::dynamic_pointer_cast<TreeGrid>(*start);

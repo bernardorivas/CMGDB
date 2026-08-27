@@ -69,7 +69,7 @@ conleyIndexString ( const chomp::ConleyIndex_t & ci,
 
     // use a thread to compute Frobenius Normal Form
     std::vector<Polynomial> invariant_factors;
-    bool computed;
+    bool computed = false;
     FrobeniusThread frobenius ( &invariant_factors, ci . data () [ i ], &computed );
     boost::thread t(frobenius);
     if ( not t . try_join_for ( boost::chrono::seconds( time_out ) ) ) {

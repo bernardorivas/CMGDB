@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <limits>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -75,6 +76,19 @@ public:
     return stored_graph ? csr_edges_ . size () : 0;
   }
 
+  /// validate_cached_csr
+  ///   Validate the invariants required by the read-only NumPy CSR view.
+  ///   Rows are canonical: targets are in range, strictly increasing, and
+  ///   therefore duplicate-free.  This does not evaluate the map.
+  void validate_cached_csr ( void ) const;
+
+  const size_t * csr_offsets_data ( void ) const {
+    return csr_offsets_ . data ();
+  }
+  const Vertex * csr_edges_data ( void ) const {
+    return csr_edges_ . data ();
+  }
+
 private:
   // Private methods
   std::vector<size_type> compute_adjacencies ( const size_type & v ) const;
@@ -120,6 +134,37 @@ map_graph_size_from_env ( const char * name, size_t default_value ) {
        parsed > std::numeric_limits<size_t>::max () ) {
     std::ostringstream message;
     message << name << " must be a positive base-10 integer; got '" << raw << "'";
+    throw std::invalid_argument ( message . str () );
+  }
+  return static_cast<size_t> ( parsed );
+}
+
+/// map_graph_hard_limit_from_env
+///   Read an opt-in nonnegative cache limit.  An unset variable means no
+///   application-level limit.  Unlike reserve hints, zero is meaningful: it
+///   permits only an empty corresponding payload.
+inline size_t
+map_graph_hard_limit_from_env ( const char * name ) {
+  const char * raw = std::getenv ( name );
+  if ( raw == nullptr or raw [ 0 ] == '\0' ) {
+    return std::numeric_limits<size_t>::max ();
+  }
+  for ( const char * digit = raw; *digit != '\0'; ++ digit ) {
+    if ( *digit < '0' or *digit > '9' ) {
+      std::ostringstream message;
+      message << name << " must be a nonnegative base-10 integer; got '"
+              << raw << "'";
+      throw std::invalid_argument ( message . str () );
+    }
+  }
+  errno = 0;
+  char * end = nullptr;
+  const unsigned long long parsed = std::strtoull ( raw, &end, 10 );
+  if ( errno == ERANGE or end == raw or *end != '\0' or
+       parsed > std::numeric_limits<size_t>::max () ) {
+    std::ostringstream message;
+    message << name << " must be a nonnegative base-10 integer; got '"
+            << raw << "'";
     throw std::invalid_argument ( message . str () );
   }
   return static_cast<size_t> ( parsed );
@@ -186,14 +231,86 @@ MapGraph::initialize ( void ) {
   }
 
   constexpr size_t BATCH_CHUNK = 100000;
-  // Optional allocation hints. Neither bounds the graph: a run that does not
-  // fit is left to fail where it actually runs out of memory, rather than
-  // being refused up front on a guess about the host.
+  // Optional allocation hints. Separate opt-in hard limits below remain
+  // disabled unless the caller explicitly sets them.
   const size_t edge_reserve = cmgdb_detail::map_graph_size_from_env (
     "CMGDB_MAPGRAPH_RESERVE_EDGES", 0 );
   const size_t reserve_min_vertices = cmgdb_detail::map_graph_size_from_env (
     "CMGDB_MAPGRAPH_RESERVE_MIN_VERTICES", size_t ( 1 ) << 24 );
   const size_t n = num_vertices ();
+  const size_t hard_max_vertices =
+    cmgdb_detail::map_graph_hard_limit_from_env (
+      "CMGDB_MAPGRAPH_HARD_MAX_VERTICES" );
+  const size_t hard_max_edges =
+    cmgdb_detail::map_graph_hard_limit_from_env (
+      "CMGDB_MAPGRAPH_HARD_MAX_EDGES" );
+  const size_t hard_max_cache_bytes =
+    cmgdb_detail::map_graph_hard_limit_from_env (
+      "CMGDB_MAPGRAPH_HARD_MAX_CACHE_BYTES" );
+  if ( n > hard_max_vertices ) {
+    std::ostringstream message;
+    message << "MapGraph vertex count " << n
+            << " exceeds CMGDB_MAPGRAPH_HARD_MAX_VERTICES="
+            << hard_max_vertices;
+    throw std::runtime_error ( message . str () );
+  }
+  if ( n == std::numeric_limits<size_t>::max () ) {
+    throw std::overflow_error ( "MapGraph vertex count cannot form V+1 offsets" );
+  }
+  const size_t offset_count = n + 1;
+  if ( offset_count > std::numeric_limits<size_t>::max () / sizeof ( size_t ) ) {
+    throw std::overflow_error ( "MapGraph CSR offset byte count overflows size_t" );
+  }
+  const size_t offset_bytes = offset_count * sizeof ( size_t );
+  if ( offset_bytes > hard_max_cache_bytes ) {
+    std::ostringstream message;
+    message << "MapGraph CSR offsets require " << offset_bytes
+            << " bytes, above CMGDB_MAPGRAPH_HARD_MAX_CACHE_BYTES="
+            << hard_max_cache_bytes;
+    throw std::runtime_error ( message . str () );
+  }
+  const size_t maximum_edges_by_bytes =
+    ( hard_max_cache_bytes - offset_bytes ) / sizeof ( Vertex );
+  const size_t maximum_edge_capacity =
+    std::min ( hard_max_edges, maximum_edges_by_bytes );
+
+  const auto reserve_edges_for_required =
+    [ & ] ( const size_t required_capacity ) {
+      if ( required_capacity > maximum_edge_capacity ) {
+        std::ostringstream message;
+        message << "MapGraph CSR needs at least " << required_capacity
+                << " edge slots, above the configured hard edge/cache-byte "
+                   "limit of " << maximum_edge_capacity;
+        throw std::runtime_error ( message . str () );
+      }
+      if ( required_capacity <= csr_edges_ . capacity () ) return;
+      const size_t old_capacity = csr_edges_ . capacity ();
+      size_t grown_capacity = required_capacity;
+      if ( old_capacity <= std::numeric_limits<size_t>::max () -
+                            std::max ( old_capacity, BATCH_CHUNK ) ) {
+        grown_capacity = std::max (
+          required_capacity,
+          old_capacity + std::max ( old_capacity, BATCH_CHUNK ) );
+      }
+      csr_edges_ . reserve (
+        std::min ( grown_capacity, maximum_edge_capacity ) );
+    };
+
+  const auto checked_required_edges =
+    [ & ] ( const size_t edge_count, const size_t additional_edges ) {
+      if ( edge_count > hard_max_edges or
+           additional_edges > hard_max_edges - edge_count ) {
+        std::ostringstream message;
+        message << "MapGraph edge count would exceed "
+                << "CMGDB_MAPGRAPH_HARD_MAX_EDGES=" << hard_max_edges;
+        throw std::runtime_error ( message . str () );
+      }
+      if ( additional_edges >
+             std::numeric_limits<size_t>::max () - edge_count ) {
+        throw std::overflow_error ( "MapGraph CSR edge count overflows size_t" );
+      }
+      return edge_count + additional_edges;
+    };
 
   if ( f_ -> has_optimized_batch () ) {
     // Append each batch directly to CSR. The old full-size
@@ -203,7 +320,8 @@ MapGraph::initialize ( void ) {
     csr_edges_ . clear ();
     csr_offsets_ . reserve ( n + 1 );
     if ( edge_reserve > 0 and n >= reserve_min_vertices ) {
-      csr_edges_ . reserve ( edge_reserve );
+      reserve_edges_for_required (
+        std::min ( edge_reserve, maximum_edge_capacity ) );
     }
     csr_offsets_ . push_back ( 0 );
     size_t edge_count = 0;
@@ -219,19 +337,15 @@ MapGraph::initialize ( void ) {
         compute_adjacencies_batch ( sources );
       size_t chunk_edge_count = 0;
       for ( const auto & adjacency : chunk_adjacencies ) {
-        chunk_edge_count += adjacency . size ();
+        chunk_edge_count =
+          checked_required_edges ( chunk_edge_count, adjacency . size () );
       }
 
       // Grow geometrically rather than letting each chunk's insert reallocate
-      // on its own; doubling keeps the number of copies logarithmic without
-      // capping how large the buffer may become.
-      const size_t required_capacity = edge_count + chunk_edge_count;
-      if ( required_capacity > csr_edges_ . capacity () ) {
-        const size_t old_capacity = csr_edges_ . capacity ();
-        const size_t grown_capacity =
-          old_capacity + std::max ( old_capacity, BATCH_CHUNK );
-        csr_edges_ . reserve ( std::max ( required_capacity, grown_capacity ) );
-      }
+      // on its own; an explicit hard limit, when present, clips that growth.
+      const size_t required_capacity =
+        checked_required_edges ( edge_count, chunk_edge_count );
+      reserve_edges_for_required ( required_capacity );
 
       for ( auto & adjacency : chunk_adjacencies ) {
         csr_edges_ . insert (
@@ -244,15 +358,32 @@ MapGraph::initialize ( void ) {
     return;
   }
 
-  {
-    std::vector<std::vector<Vertex> > staging ( n );
-    for ( size_type source = 0; source < n; ++ source ) {
-      staging [ source ] = compute_adjacencies ( source );
-    }
-    build_csr_from_staging ( staging );
-    stored_graph = true;
-    return;
+  // The scalar callback path used to retain a vector for every source and
+  // then copy the complete edge set into CSR.  Atlas callbacks currently use
+  // this path.  Append each completed row directly instead: the ordering and
+  // graph are identical, while peak memory no longer includes a second copy
+  // of every edge or a vector object for every vertex.
+  csr_offsets_ . clear ();
+  csr_edges_ . clear ();
+  csr_offsets_ . reserve ( n + 1 );
+  if ( edge_reserve > 0 and n >= reserve_min_vertices ) {
+    reserve_edges_for_required (
+      std::min ( edge_reserve, maximum_edge_capacity ) );
   }
+  csr_offsets_ . push_back ( 0 );
+  size_t edge_count = 0;
+  for ( size_type source = 0; source < n; ++ source ) {
+    std::vector<Vertex> adjacency = compute_adjacencies ( source );
+    const size_t required_capacity =
+      checked_required_edges ( edge_count, adjacency . size () );
+    reserve_edges_for_required ( required_capacity );
+    csr_edges_ . insert (
+      csr_edges_ . end (), adjacency . begin (), adjacency . end () );
+    edge_count += adjacency . size ();
+    csr_offsets_ . push_back ( edge_count );
+  }
+  stored_graph = true;
+  return;
 #ifdef CMDB_STORE_GRAPH
   
   // Determine whether it is efficient to use an MPI job to store the graph
@@ -371,6 +502,41 @@ MapGraph::build_csr_from_staging ( std::vector<std::vector<Vertex> > & staging )
   }
 }
 
+inline void
+MapGraph::validate_cached_csr ( void ) const {
+  if ( not stored_graph ) {
+    throw std::runtime_error (
+      "MapGraph CSR export requires CMGDB_MAPGRAPH_CACHE to be enabled" );
+  }
+  const size_t n = static_cast<size_t> ( num_vertices () );
+  if ( csr_offsets_ . size () != n + 1 or csr_offsets_ . empty () or
+       csr_offsets_ . front () != 0 or
+       csr_offsets_ . back () != csr_edges_ . size () ) {
+    throw std::logic_error ( "MapGraph cached CSR offsets are inconsistent" );
+  }
+  for ( size_t source = 0; source < n; ++ source ) {
+    const size_t begin = csr_offsets_ [ source ];
+    const size_t end = csr_offsets_ [ source + 1 ];
+    if ( begin > end or end > csr_edges_ . size () ) {
+      throw std::logic_error ( "MapGraph cached CSR row bounds are inconsistent" );
+    }
+    Vertex previous = 0;
+    bool first = true;
+    for ( size_t edge = begin; edge < end; ++ edge ) {
+      const Vertex target = csr_edges_ [ edge ];
+      if ( target >= n ) {
+        throw std::logic_error ( "MapGraph cached CSR target is out of range" );
+      }
+      if ( not first and target <= previous ) {
+        throw std::logic_error (
+          "MapGraph cached CSR rows must be sorted and duplicate-free" );
+      }
+      first = false;
+      previous = target;
+    }
+  }
+}
+
 inline MapGraph::size_type
 MapGraph::num_vertices ( void ) const {
   return grid_ -> size ();
@@ -379,6 +545,7 @@ MapGraph::num_vertices ( void ) const {
 /// Python Bindings
 
 #include <pybind11/pybind11.h>
+#include <pybind11/numpy.h>
 #include <pybind11/stl.h>
 namespace py = pybind11;
 
@@ -390,6 +557,42 @@ MapGraphBinding(py::module &m) {
     .def("num_vertices", &MapGraph::num_vertices)
     .def("has_cache", &MapGraph::has_cache)
     .def("num_cached_edges", &MapGraph::num_cached_edges)
+    .def(
+      "csr_view",
+      [] ( const std::shared_ptr<MapGraph> & graph ) {
+        graph -> validate_cached_csr ();
+        if ( sizeof ( size_t ) != sizeof ( int64_t ) or
+             sizeof ( MapGraph::Vertex ) != sizeof ( int64_t ) ) {
+          throw std::runtime_error (
+            "MapGraph zero-copy CSR view requires 64-bit native indices" );
+        }
+        if ( graph -> num_vertices () >
+               static_cast<uint64_t> ( std::numeric_limits<int64_t>::max () - 1 ) or
+             graph -> num_cached_edges () >
+               static_cast<size_t> ( std::numeric_limits<int64_t>::max () ) ) {
+          throw std::overflow_error (
+            "MapGraph CSR does not fit signed int64 NumPy indexing" );
+        }
+
+        py::object owner = py::cast ( graph );
+        py::array offsets (
+          py::dtype::of<int64_t> (),
+          { static_cast<py::ssize_t> ( graph -> num_vertices () + 1 ) },
+          { static_cast<py::ssize_t> ( sizeof ( int64_t ) ) },
+          graph -> csr_offsets_data (),
+          owner );
+        py::array targets (
+          py::dtype::of<int64_t> (),
+          { static_cast<py::ssize_t> ( graph -> num_cached_edges () ) },
+          { static_cast<py::ssize_t> ( sizeof ( int64_t ) ) },
+          graph -> csr_edges_data (),
+          owner );
+        offsets . attr ( "setflags" ) ( py::arg ( "write" ) = false );
+        targets . attr ( "setflags" ) ( py::arg ( "write" ) = false );
+        return py::make_tuple ( offsets, targets );
+      },
+      "Return read-only zero-copy int64 CSR arrays owned by this MapGraph."
+    )
     .def("adjacencies", &MapGraph::adjacencies);
 }
 

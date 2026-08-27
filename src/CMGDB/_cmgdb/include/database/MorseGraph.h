@@ -4,6 +4,7 @@
 #define _CMDP_MORSE_GRAPH_
 
 #include <fstream>
+#include <stdexcept>
 #include <utility>
 
 #include <boost/iterator/counting_iterator.hpp>
@@ -22,6 +23,7 @@
 #include <boost/archive/text_iarchive.hpp>
 
 #include "Grid.h"
+#include "AtlasGeo.h"
 #include "chomp/ConleyIndex.h"
 #include "conleyIndexString.h"
 
@@ -106,8 +108,14 @@ class MorseGraph {
   std::vector<std::vector<double>>
   morse_set_boxes ( uint64_t vertex ) const;
 
+  std::vector<std::pair<uint64_t, std::vector<double>>>
+  morse_set_chart_boxes ( uint64_t vertex ) const;
+
   std::vector<double>
   phase_space_box ( uint64_t index ) const;
+
+  std::pair<uint64_t, std::vector<double>>
+  phase_space_chart_box ( uint64_t index ) const;
 
   //// PROPERTY ACCESS
   
@@ -365,6 +373,25 @@ morse_set_boxes ( uint64_t vertex ) const {
   return morse_boxes;
 }
 
+inline std::vector<std::pair<uint64_t, std::vector<double>>> MorseGraph::
+morse_set_chart_boxes ( uint64_t vertex ) const {
+  std::vector<std::pair<uint64_t, std::vector<double>>> result;
+  for ( Grid::iterator it = grid ( vertex ) -> begin ();
+        it != grid ( vertex ) -> end (); ++ it ) {
+    std::shared_ptr<AtlasGeo> geo = std::dynamic_pointer_cast<AtlasGeo> (
+      grid ( vertex ) -> geometry ( it ) );
+    if ( not geo ) {
+      throw std::logic_error (
+        "morse_set_chart_boxes requires an Atlas-backed Morse graph" );
+    }
+    std::vector<double> bounds = geo -> get_lower_bounds ();
+    const std::vector<double> upper = geo -> get_upper_bounds ();
+    bounds . insert ( bounds . end (), upper . begin (), upper . end () );
+    result . push_back ( std::make_pair ( geo -> id (), std::move ( bounds ) ) );
+  }
+  return result;
+}
+
 inline std::vector<double> MorseGraph::
 phase_space_box ( uint64_t index ) const {
   // Get geometry for grid element given by index
@@ -375,6 +402,23 @@ phase_space_box ( uint64_t index ) const {
   bounds . insert(bounds . end(), u_bounds . begin(), u_bounds . end());
 
   return bounds;
+}
+
+inline std::pair<uint64_t, std::vector<double>> MorseGraph::
+phase_space_chart_box ( uint64_t index ) const {
+  if ( index >= phaseSpace () -> size () ) {
+    throw std::out_of_range ( "phase-space cell index is out of range" );
+  }
+  std::shared_ptr<AtlasGeo> geo = std::dynamic_pointer_cast<AtlasGeo> (
+    phaseSpace () -> geometry ( index ) );
+  if ( not geo ) {
+    throw std::logic_error (
+      "phase_space_chart_box requires an Atlas-backed Morse graph" );
+  }
+  std::vector<double> bounds = geo -> get_lower_bounds ();
+  const std::vector<double> upper = geo -> get_upper_bounds ();
+  bounds . insert ( bounds . end (), upper . begin (), upper . end () );
+  return std::make_pair ( geo -> id (), std::move ( bounds ) );
 }
 
 /** return a iterator pair to all vertices */
@@ -471,7 +515,9 @@ MorseGraphBinding(py::module &m) {
     .def("adjacencies", &MorseGraph::adjacencies)
     .def("morse_set", &MorseGraph::morse_set)
     .def("morse_set_boxes", &MorseGraph::morse_set_boxes)
-    .def("phase_space_box", &MorseGraph::phase_space_box);
+    .def("morse_set_chart_boxes", &MorseGraph::morse_set_chart_boxes)
+    .def("phase_space_box", &MorseGraph::phase_space_box)
+    .def("phase_space_chart_box", &MorseGraph::phase_space_chart_box);
 }
 
 #endif

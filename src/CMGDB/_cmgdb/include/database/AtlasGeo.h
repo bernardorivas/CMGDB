@@ -18,6 +18,14 @@ public:
 	size_type id ( void ) const { return id_; }
 	size_type & id ( void ) { return id_; }
 
+  std::vector<double> get_lower_bounds ( void ) const override {
+    return rect_ . get_lower_bounds ();
+  }
+
+  std::vector<double> get_upper_bounds ( void ) const override {
+    return rect_ . get_upper_bounds ();
+  }
+
 
 
 private: 

@@ -9,11 +9,13 @@
 #include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <tuple>
 
 // #define CMG_VERBOSE
 #define MEMORYBOOKKEEPING
 
 #include "Model.h"
+#include "AtlasModel.h"
 
 #include "Map.h"
 #include "ChompMap.h"
@@ -28,7 +30,199 @@
 #include "Configuration.h"
 
 #include "chomp/ConleyIndex.h"
+#include "chomp/ExplicitChainComplex.h"
 #include "conleyIndexString.h"
+
+namespace {
+
+typedef std::tuple<uint64_t, uint64_t, int> SparseEntry;
+typedef std::vector<std::vector<SparseEntry> > GradedSparseEntries;
+typedef chomp::SparseMatrix<chomp::Ring> ChainMatrix;
+
+struct RelativeHomologyShiftResult {
+  std::vector<std::string> shift_class;
+  std::vector<uint64_t> homology_dimensions;
+  std::vector<std::vector<std::vector<int64_t> > > induced_maps;
+};
+
+std::vector<ChainMatrix>
+BuildExplicitMatrices (
+    const std::vector<uint64_t> & cell_counts,
+    const GradedSparseEntries & entries,
+    const bool boundary_matrices ) {
+  if ( entries . size () != cell_counts . size () ) {
+    throw std::invalid_argument (
+      boundary_matrices
+        ? "boundary_entries must have one list for every chain dimension"
+        : "chain_map_entries must have one list for every chain dimension" );
+  }
+
+  std::vector<ChainMatrix> result ( cell_counts . size () );
+  for ( size_t d = 0; d < cell_counts . size (); ++ d ) {
+    const uint64_t rows = boundary_matrices
+      ? ( d == 0 ? 0 : cell_counts [ d - 1 ] )
+      : cell_counts [ d ];
+    const uint64_t columns = cell_counts [ d ];
+    if ( rows > static_cast<uint64_t> ( std::numeric_limits<int64_t>::max () ) ||
+         columns > static_cast<uint64_t> ( std::numeric_limits<int64_t>::max () ) ) {
+      throw std::overflow_error ( "chain group is too large for CHOMP matrices" );
+    }
+    result [ d ] . resize (
+      static_cast<int64_t> ( rows ), static_cast<int64_t> ( columns ) );
+
+    std::set<std::pair<uint64_t, uint64_t> > occupied;
+    for ( const SparseEntry & entry : entries [ d ] ) {
+      const uint64_t row = std::get<0> ( entry );
+      const uint64_t column = std::get<1> ( entry );
+      const int coefficient = std::get<2> ( entry );
+      if ( row >= rows || column >= columns ) {
+        std::ostringstream message;
+        message
+          << ( boundary_matrices ? "boundary" : "chain map" )
+          << " entry (" << row << ", " << column << ") in dimension " << d
+          << " is outside its " << rows << " x " << columns << " matrix";
+        throw std::out_of_range ( message . str () );
+      }
+      if ( ! occupied . insert ( std::make_pair ( row, column ) ) . second ) {
+        std::ostringstream message;
+        message
+          << "duplicate " << ( boundary_matrices ? "boundary" : "chain map" )
+          << " entry (" << row << ", " << column << ") in dimension " << d;
+        throw std::invalid_argument ( message . str () );
+      }
+      const chomp::Ring value ( coefficient );
+      if ( value != chomp::Ring ( 0 ) ) {
+        result [ d ] . write (
+          static_cast<int64_t> ( row ), static_cast<int64_t> ( column ), value );
+      }
+    }
+  }
+  return result;
+}
+
+bool IsZeroMatrix ( const ChainMatrix & matrix ) {
+  return matrix . size () == 0;
+}
+
+bool EqualMatrices ( const ChainMatrix & lhs, const ChainMatrix & rhs ) {
+  if ( lhs . number_of_rows () != rhs . number_of_rows () ||
+       lhs . number_of_columns () != rhs . number_of_columns () ) return false;
+  if ( lhs . size () != rhs . size () ) return false;
+  for ( int64_t row = 0; row < lhs . number_of_rows (); ++ row ) {
+    for ( ChainMatrix::MatrixPosition entry = lhs . row_begin ( row );
+          entry != lhs . end ();
+          lhs . row_advance ( entry ) ) {
+      if ( lhs . read ( entry ) !=
+           rhs . read ( row, lhs . column ( entry ) ) ) return false;
+    }
+  }
+  return true;
+}
+
+void ValidateExplicitChainData (
+    const std::vector<ChainMatrix> & boundaries,
+    const std::vector<ChainMatrix> & chain_map ) {
+  for ( size_t d = 2; d < boundaries . size (); ++ d ) {
+    if ( ! IsZeroMatrix ( boundaries [ d - 1 ] * boundaries [ d ] ) ) {
+      std::ostringstream message;
+      message << "boundary squared is nonzero from dimension " << d
+              << " to dimension " << d - 2 << " (coefficients are in F_5)";
+      throw std::invalid_argument ( message . str () );
+    }
+  }
+  for ( size_t d = 1; d < boundaries . size (); ++ d ) {
+    const ChainMatrix boundary_after_map = boundaries [ d ] * chain_map [ d ];
+    const ChainMatrix map_after_boundary = chain_map [ d - 1 ] * boundaries [ d ];
+    if ( ! EqualMatrices ( boundary_after_map, map_after_boundary ) ) {
+      std::ostringstream message;
+      message << "chain-map equation fails in dimension " << d
+              << ": boundary[d] * map[d] != map[d-1] * boundary[d] over F_5";
+      throw std::invalid_argument ( message . str () );
+    }
+  }
+}
+
+chomp::Chain ApplyChainMatrix (
+    const ChainMatrix & matrix, const chomp::Chain & input ) {
+  chomp::Chain output;
+  output . dimension () = input . dimension ();
+  for ( const chomp::Term & term : input () ) {
+    for ( ChainMatrix::MatrixPosition entry =
+            matrix . column_begin ( static_cast<int64_t> ( term . index () ) );
+          entry != matrix . end ();
+          matrix . column_advance ( entry ) ) {
+      output += chomp::Term (
+        static_cast<chomp::Index> ( matrix . row ( entry ) ),
+        matrix . read ( entry ) * term . coef () );
+    }
+  }
+  return chomp::simplify ( output );
+}
+
+RelativeHomologyShiftResult
+ComputeRelativeHomologyShiftClass (
+    const std::vector<uint64_t> & cell_counts,
+    const GradedSparseEntries & boundary_entries,
+    const GradedSparseEntries & chain_map_entries ) {
+  if ( cell_counts . empty () ) {
+    throw std::invalid_argument ( "cell_counts must contain at least dimension zero" );
+  }
+
+  std::vector<ChainMatrix> boundaries =
+    BuildExplicitMatrices ( cell_counts, boundary_entries, true );
+  std::vector<ChainMatrix> chain_map =
+    BuildExplicitMatrices ( cell_counts, chain_map_entries, false );
+  ValidateExplicitChainData ( boundaries, chain_map );
+
+  chomp::ExplicitChainComplex complex ( cell_counts, boundaries );
+  chomp::MorseComplex morse ( complex );
+  chomp::Generators_t generators =
+    chomp::SmithGenerators ( morse, complex . dimension () );
+
+  chomp::ConleyIndex_t conley_index;
+  RelativeHomologyShiftResult result;
+  for ( int d = 0; d <= complex . dimension (); ++ d ) {
+    if ( d > morse . dimension () ) {
+      conley_index . data () . push_back ( ChainMatrix ( 0, 0 ) );
+      result . homology_dimensions . push_back ( 0 );
+      result . induced_maps . push_back ( {} );
+      continue;
+    }
+
+    std::vector<chomp::Chain> images;
+    images . reserve ( generators [ d ] . size () );
+    for ( const std::pair<chomp::Chain, chomp::Ring> & generator : generators [ d ] ) {
+      const chomp::Chain lifted = morse . lift ( generator . first );
+      const chomp::Chain mapped = ApplyChainMatrix ( chain_map [ d ], lifted );
+      images . push_back ( morse . lower ( mapped ) );
+    }
+
+    const ChainMatrix basis = chomp::chainsToMatrix ( generators [ d ], morse, d );
+    const ChainMatrix mapped_basis = chomp::chainsToMatrix ( images, morse, d );
+    ChainMatrix induced_map = chomp::SmithSolve ( basis, mapped_basis );
+    if ( induced_map . number_of_rows () != induced_map . number_of_columns () ) {
+      throw std::runtime_error (
+        "internal error: induced self-map on homology is not square" );
+    }
+    result . homology_dimensions . push_back (
+      static_cast<uint64_t> ( induced_map . number_of_rows () ) );
+    std::vector<std::vector<int64_t> > dense (
+      induced_map . number_of_rows (),
+      std::vector<int64_t> ( induced_map . number_of_columns (), 0 ) );
+    for ( int64_t row = 0; row < induced_map . number_of_rows (); ++ row ) {
+      for ( int64_t column = 0; column < induced_map . number_of_columns (); ++ column ) {
+        dense [ row ] [ column ] =
+          induced_map . read ( row, column ) . balanced_value ();
+      }
+    }
+    result . induced_maps . push_back ( std::move ( dense ) );
+    conley_index . data () . push_back ( induced_map );
+  }
+  result . shift_class = conleyIndexString ( conley_index );
+  return result;
+}
+
+} // namespace
 
 #include <boost/serialization/export.hpp>
 #include "SuccinctGrid.h"
@@ -160,6 +354,55 @@ std::pair<MorseGraph, MapGraph> ComputeMorseGraph ( Model const& model ) {
 // As ComputeMorseGraph, but without building the returned MapGraph.
 MorseGraph ComputeMorseGraphOnly ( Model const& model ) {
   return ComputeMorseGraphCore ( model, false, nullptr );
+}
+
+// Atlas-backed counterpart.  The graph construction itself is grid-generic;
+// Atlas::clone/subgrid/subdivide/join preserve chart tags throughout the
+// adaptive decomposition.
+static MorseGraph ComputeAtlasMorseGraphCore (
+    AtlasModel const& model,
+    std::shared_ptr < Grid > * initial_phase_space ) {
+  std::shared_ptr<const Map> map = model . map ();
+  MorseGraph morsegraph ( model . phaseSpace () );
+  std::shared_ptr<Grid> phase_space = morsegraph . phaseSpace ();
+  if ( initial_phase_space ) * initial_phase_space = phase_space;
+
+  Compute_Morse_Graph (
+    & morsegraph,
+    phase_space,
+    map,
+    model . phase_subdiv_init (),
+    model . phase_subdiv_min (),
+    model . phase_subdiv_max (),
+    model . phase_subdiv_limit () );
+  return morsegraph;
+}
+
+std::pair<MorseGraph, MapGraph>
+ComputeMorseGraph ( AtlasModel const& model ) {
+  std::shared_ptr<Grid> phase_space;
+  MorseGraph morsegraph = ComputeAtlasMorseGraphCore ( model, & phase_space );
+  MapGraph map_graph ( phase_space, model . map () );
+  return std::make_pair ( morsegraph, map_graph );
+}
+
+MorseGraph
+ComputeMorseGraphOnly ( AtlasModel const& model ) {
+  return ComputeAtlasMorseGraphCore ( model, nullptr );
+}
+
+std::pair<MorseGraph, MapGraph>
+ComputeConleyMorseGraph ( AtlasModel const& ) {
+  throw std::logic_error (
+    "Conley-index computation is not available directly on AtlasModel: "
+    "supply a valid suspension index pair and carrier/chain map instead" );
+}
+
+MorseGraph
+ComputeConleyMorseGraphOnly ( AtlasModel const& ) {
+  throw std::logic_error (
+    "Conley-index computation is not available directly on AtlasModel: "
+    "supply a valid suspension index pair and carrier/chain map instead" );
 }
 
 std::vector<uint64_t>
@@ -631,7 +874,6 @@ void computeMorseGraph ( MorseGraph & morsegraph,
   std::cout << "SingleCMG: computeMorseGraph.\n";
 #endif
   std::shared_ptr < Grid > phase_space = morsegraph . phaseSpace ();
-  clock_t start_time = clock ();
   Compute_Morse_Graph ( & morsegraph,
                         phase_space,
                         map,
@@ -639,21 +881,9 @@ void computeMorseGraph ( MorseGraph & morsegraph,
                         SINGLECMG_MIN_PHASE_SUBDIVISIONS,
                         SINGLECMG_MAX_PHASE_SUBDIVISIONS,
                         SINGLECMG_COMPLEXITY_LIMIT );
-  clock_t stop_time = clock ();
   if ( outputfile != NULL ) {
     morsegraph . save ( outputfile );
   }
-  std::ofstream stats_file ( "SingleCMG_statistics.txt" );
-  stats_file << "Morse Graph calculation resource usage statistics.\n";
-  stats_file << "The final grid has " << phase_space -> size () << " grid elements.\n";
-  stats_file << "The computation took " << ((double)(stop_time-start_time)/(double)CLOCKS_PER_SEC)
-             << " seconds.\n";
-  stats_file << "All memory figures are in bytes:\n";
-  stats_file << "grid_memory_use = " << phase_space -> memory () << "\n";
-  stats_file << "max_graph_memory = " << max_graph_memory << "\n";
-  stats_file << "max_scc_memory_internal = " << max_scc_memory_internal << "\n";
-  stats_file << "max_scc_memory_external = " << max_scc_memory_external << "\n";
-  stats_file . close ();
 }
 
 MorseGraph MorseGraphIntvalMap ( int phase_subdiv_min, int phase_subdiv_max,
@@ -769,8 +999,9 @@ MorseGraph MorseGraphMap ( int phase_subdiv_min, int phase_subdiv_max,
 namespace py = pybind11;
 
 PYBIND11_MODULE(_cmgdb, m) {
-  ModelBinding(m);
   GridBinding(m);
+  ModelBinding(m);
+  AtlasModelBinding(m);
   MapGraphBinding(m);
   MorseGraphBinding(m);
   MorseSetReachabilityBinding(m);
@@ -778,6 +1009,53 @@ PYBIND11_MODULE(_cmgdb, m) {
   m.doc() = "Conley Morse Graph Database Module";
 
   m.def("ComputeConleyIndex", &ComputeConleyIndex);
+  m.def(
+    "ComputeRelativeHomologyShiftClass",
+    [] ( const std::vector<uint64_t> & cell_counts,
+         const GradedSparseEntries & boundary_entries,
+         const GradedSparseEntries & chain_map_entries ) {
+      RelativeHomologyShiftResult result;
+      {
+        py::gil_scoped_release release;
+        result = ComputeRelativeHomologyShiftClass (
+          cell_counts, boundary_entries, chain_map_entries );
+      }
+      py::dict output;
+      py::dict validation;
+      validation [ "matrix_shapes_and_entries" ] = true;
+      validation [ "boundary_squared_zero" ] = true;
+      validation [ "chain_map_equation" ] = true;
+      output [ "coefficient_field" ] = 5;
+      output [ "cell_counts" ] = cell_counts;
+      output [ "validation" ] = validation;
+      output [ "homology_dimensions" ] = result . homology_dimensions;
+      output [ "induced_maps" ] = result . induced_maps;
+      output [ "shift_class" ] = result . shift_class;
+      return output;
+    },
+    py::arg ( "cell_counts" ),
+    py::arg ( "boundary_entries" ),
+    py::arg ( "chain_map_entries" ),
+    R"doc(
+Compute a relative-homology shift class from an explicit finite chain map.
+
+``cell_counts[d]`` is the number of basis cells in degree ``d``.
+``boundary_entries[d]`` contains sparse ``(row, column, coefficient)`` entries
+for the boundary ``C_d -> C_{d-1}``; its degree-zero list must be empty.
+``chain_map_entries[d]`` contains sparse entries for the endomorphism of
+``C_d``. Coefficients are reduced in CMGDB's coefficient field F_5.
+
+The function validates matrix bounds and uniqueness, ``boundary^2 = 0``, and
+the chain-map equation before computing the induced maps on homology. The
+returned dictionary contains the homology dimensions, dense induced matrices,
+and the usual CMGDB Frobenius/shift-class strings, one item per degree.
+
+For a Conley-index computation, the supplied complex must be the relative
+cellular chain complex of a valid index pair and the supplied chain map must be
+a quotient-compatible chain selector carried by the outer approximation. This
+API validates the algebraic data, but cannot certify that topological carrier
+obligation from matrices alone.
+)doc" );
   m.def(
     "ComputeConleyIndexForCells",
     [] ( const Model & model,
@@ -795,14 +1073,26 @@ PYBIND11_MODULE(_cmgdb, m) {
     py::arg ( "morse_graph" ),
     py::arg ( "cells" ),
     "Compute the Conley index of an arbitrary phase-space cell subset." );
-  m.def("ComputeConleyMorseGraph", &ComputeConleyMorseGraph);
-  m.def("ComputeMorseGraph", &ComputeMorseGraph);
-  m.def("ComputeConleyMorseGraphOnly", &ComputeConleyMorseGraphOnly,
+  m.def("ComputeConleyMorseGraph",
+        py::overload_cast<Model const&> ( &ComputeConleyMorseGraph ));
+  m.def("ComputeConleyMorseGraph",
+        py::overload_cast<AtlasModel const&> ( &ComputeConleyMorseGraph ));
+  m.def("ComputeMorseGraph",
+        py::overload_cast<Model const&> ( &ComputeMorseGraph ));
+  m.def("ComputeMorseGraph",
+        py::overload_cast<AtlasModel const&> ( &ComputeMorseGraph ));
+  m.def("ComputeConleyMorseGraphOnly",
+        py::overload_cast<Model const&> ( &ComputeConleyMorseGraphOnly ),
         "Conley-Morse graph without the extra returned MapGraph. Skips a full "
         "box-map pass over the phase space; use when the MapGraph is unused.");
-  m.def("ComputeMorseGraphOnly", &ComputeMorseGraphOnly,
+  m.def("ComputeConleyMorseGraphOnly",
+        py::overload_cast<AtlasModel const&> ( &ComputeConleyMorseGraphOnly ));
+  m.def("ComputeMorseGraphOnly",
+        py::overload_cast<Model const&> ( &ComputeMorseGraphOnly ),
         "Morse graph without the extra returned MapGraph. Skips a full "
         "box-map pass over the phase space; use when the MapGraph is unused.");
+  m.def("ComputeMorseGraphOnly",
+        py::overload_cast<AtlasModel const&> ( &ComputeMorseGraphOnly ));
   m.def(
     "MorseDirectedPathCells",
     [] ( const MapGraph & map_graph,

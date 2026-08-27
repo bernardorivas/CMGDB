@@ -92,6 +92,15 @@ def test_former_cap_env_vars_are_inert(monkeypatch):
     assert map_graph.num_cached_edges() == 16
 
 
+def test_opt_in_hard_edge_cap_applies_to_batch_cache(monkeypatch):
+    monkeypatch.setenv("CMGDB_MAPGRAPH_HARD_MAX_EDGES", "15")
+    model = CMGDB.Model(2, 2, 2, 10000, [0.0, 0.0], [1.0, 1.0], f)
+    model.set_batch_map(f_batch)
+
+    with pytest.raises(RuntimeError, match="HARD_MAX_EDGES"):
+        CMGDB.ComputeMorseGraph(model)
+
+
 def test_reserve_edges_is_a_hint_not_a_ceiling(monkeypatch):
     """A reserve smaller than the real edge count grows rather than failing."""
     monkeypatch.setenv("CMGDB_MAPGRAPH_RESERVE_EDGES", "2")

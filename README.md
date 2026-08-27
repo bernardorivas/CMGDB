@@ -7,8 +7,10 @@ global dynamics of discrete dynamical systems.
 > For the official, PyPI-released package, install upstream with `pip install CMGDB`.
 > This fork adds a few performance and analysis features (see
 > [What this fork adds](#what-this-fork-adds)). It is not published to PyPI;
-> install its prebuilt release wheels as shown below. The mathematical output
-> is unchanged from upstream.
+> install the current development tree from source as shown below. Prebuilt
+> wheels remain available for the older `fork.3` feature baseline. The
+> mathematical output of the inherited CMGDB algorithms is unchanged from
+> upstream.
 
 ## Overview
 
@@ -31,6 +33,14 @@ computes — these are additive helpers and a build-flag change.
 - **Batched adjacency construction** — `Model.set_batch_map(...)` plus a CSR
   adjacency cache in `MapGraph` let CMGDB build the map graph with far fewer
   Python calls.
+- **Compact MapGraph checkpoints** — `MapGraph.csr_view()` exposes the native
+  cached CSR as read-only zero-copy NumPy arrays, and
+  `write_map_graph_csr_checkpoint(...)` atomically persists mmap-ready `int64`
+  offsets plus `int32`/`int64` targets with explicit caps and strict
+  configuration/content fingerprints. The scalar construction path used by
+  `AtlasModel` now appends directly to CSR instead of retaining and copying a
+  second per-row edge store. See
+  [the MapGraph CSR documentation](docs/map_graph_csr.md).
 - **Regions of attraction** — `CMGDB.cmgdb_roa` and `CMGDB.morse_graph_parser`
   provide exact region-of-attraction labels computed on the `MapGraph` returned
   during the Morse stage, plus a standalone parser for CMGDB's DOT output.
@@ -40,6 +50,23 @@ computes — these are additive helpers and a build-flag change.
   an arbitrary phase-space cell subset. This supports Conley-index
   recomputation after collapsing an order-convex collection of Morse nodes and
   adding the cells on connections internal to that quotient fiber.
+- **Explicit relative-chain-complex bridge** —
+  `CMGDB.ComputeRelativeHomologyShiftClass(...)` accepts a finite based
+  relative chain complex and an explicit chain endomorphism without pretending
+  that noncubical cells are boxes. It validates the chain-complex and chain-map
+  equations over F_5, computes the induced homology maps, and applies CMGDB's
+  existing Frobenius/shift-class reduction. See
+  [the explicit-chain API documentation](docs/explicit_relative_chain_maps.md).
+- **Tagged finite-union box maps** — `CMGDB.AtlasModel(...)` runs the native
+  adaptive SCC/Morse pipeline on a disjoint union of rectangular charts. Its
+  callback returns separately covered `(target_chart, bounds)` pieces, which
+  avoids convexifying a hybrid image across reset seams. Atlas charts are not
+  a quotient cell complex: glued-face representatives and quotient incidence
+  remain the adapter's responsibility. `set_active_subgrid` constructs a
+  selected tagged dyadic antichain directly as a compressed tree, without first
+  allocating its full rectangular refinement; inactive targets are explicit
+  exits with no implicit cemetery vertex. The legacy TreeGrid/CHOMP Conley path
+  is disabled. See [the AtlasModel documentation](docs/atlas_model.md).
 - **A correctness-validating benchmark harness** — `tests/bench.py` checks the
   expected Morse-graph output before reporting timings.
 - **Quieter default output** — per-run progress prints are gated behind a
@@ -62,27 +89,29 @@ computes — these are additive helpers and a build-flag change.
 
 ## Installation
 
-This fork is not on PyPI, but every release carries prebuilt wheels for
-CPython 3.11-3.13 on manylinux x86_64 and macOS arm64, so no compiler or
-dependency is needed to use it:
-
-	pip install cmgdb==1.3.3+fork.3 \
-	  --find-links https://github.com/bernardorivas/CMGDB/releases/expanded_assets/v1.3.3%2Bfork.3
-
-The version pin is what selects this fork; `--find-links` only tells pip where
-to look. To build from source instead you need a C++ compiler and
+The Atlas, compact-CSR, and explicit-chain APIs documented above are currently
+on `master` and have not yet been packaged in a release wheel. Build the
+current source with a C++ compiler and
 [Boost](https://www.boost.org/) (>= 1.56), [GMP](https://gmplib.org/), and
-[SDSL](https://github.com/xxsds/sdsl-lite) v3, which is header-only.
-
-Clone and install:
+[SDSL](https://github.com/xxsds/sdsl-lite) v3:
 
 	git clone https://github.com/bernardorivas/CMGDB.git
 	cd CMGDB
 	./install.sh
 
-Or install directly with pip:
+Or install the current tree directly with pip:
 
-	pip install --force-reinstall --no-deps --no-cache-dir git+https://github.com/bernardorivas/CMGDB.git
+	pip install --force-reinstall --no-deps --no-cache-dir git+https://github.com/bernardorivas/CMGDB.git@master
+
+The most recent prebuilt release, `fork.3`, predates the Atlas, compact-CSR,
+and explicit-chain APIs. It remains available for the earlier batched-map and
+reachability features on CPython 3.11-3.13, manylinux x86_64, and macOS arm64:
+
+	pip install cmgdb==1.3.3+fork.3 \
+	  --find-links https://github.com/bernardorivas/CMGDB/releases/expanded_assets/v1.3.3%2Bfork.3
+
+The version pin is what selects this fork; `--find-links` only tells pip where
+to look.
 
 To uninstall:
 
@@ -148,12 +177,34 @@ build cached adjacencies with fewer Python calls:
 model.set_batch_map(box_map.batch)
 ```
 
+For a finite tagged chart family, use the separate Atlas lookup.  It preserves
+every tagged target piece (including an explicit empty union), rejects exact
+duplicate source rectangles, and raises on a cache miss rather than silently
+turning that miss into an open exit:
+
+```python
+atlas_box_map = CMGDB.precompute_atlas_box_map(
+    tagged_callback,
+    [(chart_id, bounds), ...],
+    batch_size=4096,
+    batch_callback=optional_batched_tagged_callback,
+    provenance_callback=optional_source_provenance,
+)
+atlas_model.set_map(atlas_box_map)
+```
+
+`PrecomputedAtlasBoxMap` is a verbatim callback-value cache; it does not turn
+sampled values into a certified continuous-image enclosure.  Its `batch`
+method is available to Python callers, although the current native
+`AtlasModel` consumes the scalar tagged-union callback interface.
+
 ### Cache sizing
 
-The eager CSR cache has **no size ceiling**. A graph is built for whatever grid
-it is given; a run too large for the host fails where it actually runs out of
-memory, rather than being refused up front on a guess. Sizing the run is the
-caller's decision.
+By default, the eager CSR cache has **no size ceiling**. A graph is built for
+whatever grid it is given; a run too large for the host fails where it actually
+runs out of memory, rather than being refused up front on a guess. Sizing the
+run is the caller's decision. Explicit hard limits are available when an
+application has a real resource budget, as described below.
 
 Budgeting is still worth doing: offsets use approximately `8 * (vertices + 1)`
 bytes and cached edges use `8 * edges` bytes, excluding temporary batch objects
@@ -173,6 +224,20 @@ Two optional environment variables tune allocation. Neither refuses anything:
 Both must be positive base-10 integers; a malformed value is an error rather
 than being silently ignored, since ignoring it would drop the hint you asked
 for.
+
+Three separate opt-in variables stop native CSR growth before its next reserve
+or append:
+
+- `CMGDB_MAPGRAPH_HARD_MAX_VERTICES` limits `V`;
+- `CMGDB_MAPGRAPH_HARD_MAX_EDGES` limits retained edges;
+- `CMGDB_MAPGRAPH_HARD_MAX_CACHE_BYTES` limits the `int64` offset array plus
+  native `uint64` edge-buffer capacity.
+
+They are unset by default and accept nonnegative base-10 integers (zero is a
+real limit). The byte cap does not include the grid, Morse graph, callback
+state, or a transient scalar row / batch returned before CMGDB can count it.
+Checkpoint caps remain independent because an on-disk checkpoint can use
+`int32` targets even though the live native graph uses `uint64` targets.
 
 For the measured 3-D level-24 graph (~1.096 billion edges) on a 48-GiB host:
 
@@ -195,9 +260,11 @@ ask for a memory-lean run; earlier versions required setting an artificially
 low edge cap to provoke the same fallback, which also refused unrelated runs
 that would have fit. Accepted values are `0`/`1`, `off`/`on`, `false`/`true`.
 
-> Removed in this fork: `CMGDB_MAPGRAPH_MAX_VERTICES` and
+> Removed in this fork: the old `CMGDB_MAPGRAPH_MAX_VERTICES` and
 > `CMGDB_MAPGRAPH_MAX_EDGES`. They are read by nothing and setting them has no
-> effect. The Python `max_table_points` argument is likewise gone.
+> effect. The explicitly named `CMGDB_MAPGRAPH_HARD_*` limits above have
+> fail-fast semantics and never select a lazy fallback. The Python
+> `max_table_points` argument is likewise gone.
 
 ### Evaluation modes
 
