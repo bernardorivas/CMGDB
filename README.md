@@ -103,12 +103,12 @@ Or install the current tree directly with pip:
 
 	pip install --force-reinstall --no-deps --no-cache-dir git+https://github.com/bernardorivas/CMGDB.git@master
 
-The most recent prebuilt release, `fork.3`, predates the Atlas, compact-CSR,
-and explicit-chain APIs. It remains available for the earlier batched-map and
-reachability features on CPython 3.11-3.13, manylinux x86_64, and macOS arm64:
+Prebuilt wheels of the most recent release, `fork.4`, which includes the Atlas,
+compact-CSR, and explicit-chain APIs, are available for CPython 3.11-3.13 on
+manylinux x86_64 and macOS arm64:
 
-	pip install cmgdb==1.3.3+fork.3 \
-	  --find-links https://github.com/bernardorivas/CMGDB/releases/expanded_assets/v1.3.3%2Bfork.3
+	pip install cmgdb==1.3.3+fork.4 \
+	  --find-links https://github.com/bernardorivas/CMGDB/releases/expanded_assets/v1.3.3%2Bfork.4
 
 The version pin is what selects this fork; `--find-links` only tells pip where
 to look.
