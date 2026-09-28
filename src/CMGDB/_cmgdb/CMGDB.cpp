@@ -32,6 +32,7 @@
 #include "chomp/ConleyIndex.h"
 #include "chomp/ExplicitChainComplex.h"
 #include "conleyIndexString.h"
+#include "CarrierChainMap.h"
 
 namespace {
 
@@ -998,6 +999,175 @@ MorseGraph MorseGraphMap ( int phase_subdiv_min, int phase_subdiv_max,
 
 namespace py = pybind11;
 
+namespace {
+
+/// Values of a NumPy-compatible integer array, and its shape. An empty array
+/// may have any dtype (``np.asarray([])`` is float64).
+std::vector<int64_t>
+IntegerArrayValues ( py::handle object,
+                     const std::string & name,
+                     std::vector<py::ssize_t> & shape,
+                     const bool allow_bool ) {
+  py::array array = py::array::ensure ( object );
+  if ( ! array ) {
+    throw py::type_error ( name + " must be convertible to a NumPy array" );
+  }
+  shape . assign ( array . shape (), array . shape () + array . ndim () );
+  std::vector<int64_t> values;
+  if ( array . size () == 0 ) return values;
+  const char kind = array . dtype () . kind ();
+  if ( kind != 'i' && kind != 'u' && ! ( allow_bool && kind == 'b' ) ) {
+    throw py::type_error ( name + " must have an integer dtype" );
+  }
+  values . resize ( static_cast<size_t> ( array . size () ) );
+  if ( kind == 'u' && array . itemsize () == 8 ) {
+    py::array_t<uint64_t, py::array::c_style | py::array::forcecast> converted ( array );
+    const uint64_t * data = converted . data ();
+    for ( size_t i = 0; i < values . size (); ++ i ) {
+      if ( data [ i ] > static_cast<uint64_t> ( std::numeric_limits<int64_t>::max () ) ) {
+        std::ostringstream message;
+        message << name << " has value " << data [ i ] << " at flat index " << i
+                << ", outside the int64 range";
+        throw std::invalid_argument ( message . str () );
+      }
+      values [ i ] = static_cast<int64_t> ( data [ i ] );
+    }
+  } else {
+    py::array_t<int64_t, py::array::c_style | py::array::forcecast> converted ( array );
+    std::copy ( converted . data (), converted . data () + values . size (),
+                values . begin () );
+  }
+  return values;
+}
+
+std::vector<int32_t>
+Int32Values ( const std::vector<int64_t> & values, const std::string & name ) {
+  std::vector<int32_t> result ( values . size () );
+  for ( size_t i = 0; i < values . size (); ++ i ) {
+    if ( values [ i ] < std::numeric_limits<int32_t>::min () ||
+         values [ i ] > std::numeric_limits<int32_t>::max () ) {
+      std::ostringstream message;
+      message << name << " has value " << values [ i ] << " at flat index " << i
+              << ", outside the int32 range";
+      throw std::invalid_argument ( message . str () );
+    }
+    result [ i ] = static_cast<int32_t> ( values [ i ] );
+  }
+  return result;
+}
+
+std::string ShapeString ( const std::vector<py::ssize_t> & shape ) {
+  std::ostringstream text;
+  text << "(";
+  for ( size_t k = 0; k < shape . size (); ++ k ) {
+    if ( k > 0 ) text << ", ";
+    text << shape [ k ];
+  }
+  if ( shape . size () == 1 ) text << ",";
+  text << ")";
+  return text . str ();
+}
+
+/// Cells of a simplicial complex given as a list over degrees d of integer
+/// arrays of shape (n_d, d + 1); flat labels per degree.
+std::vector<std::vector<int32_t> >
+SimplexArrays ( py::handle object, const std::string & name ) {
+  if ( ! py::isinstance<py::list> ( object ) && ! py::isinstance<py::tuple> ( object ) ) {
+    throw py::type_error (
+      name + " must be a list of integer arrays, one per degree" );
+  }
+  py::sequence degrees = py::reinterpret_borrow<py::sequence> ( object );
+  if ( degrees . size () == 0 ) {
+    throw std::invalid_argument ( name + " must contain the array of 0-cells" );
+  }
+  std::vector<std::vector<int32_t> > result;
+  for ( size_t d = 0; d < degrees . size (); ++ d ) {
+    const std::string label = name + "[" + std::to_string ( d ) + "]";
+    std::vector<py::ssize_t> shape;
+    const std::vector<int64_t> values =
+      IntegerArrayValues ( degrees [ d ], label, shape, false );
+    const py::ssize_t width = static_cast<py::ssize_t> ( d + 1 );
+    const bool matrix = shape . size () == 2 && shape [ 1 ] == width;
+    const bool vertex_list = d == 0 && shape . size () == 1;
+    const bool empty_list = shape . size () == 1 && shape [ 0 ] == 0;
+    if ( ! matrix && ! vertex_list && ! empty_list ) {
+      std::ostringstream message;
+      message << label << " must have shape (n, " << d + 1 << "); got "
+              << ShapeString ( shape );
+      throw std::invalid_argument ( message . str () );
+    }
+    result . push_back ( Int32Values ( values, label ) );
+  }
+  return result;
+}
+
+std::vector<uint8_t>
+ExitMask ( py::handle object, const std::string & name ) {
+  std::vector<py::ssize_t> shape;
+  const std::vector<int64_t> values = IntegerArrayValues ( object, name, shape, true );
+  if ( shape . size () != 1 ) {
+    throw std::invalid_argument (
+      name + " must be one-dimensional; got shape " + ShapeString ( shape ) );
+  }
+  std::vector<uint8_t> result ( values . size () );
+  for ( size_t i = 0; i < values . size (); ++ i ) {
+    if ( values [ i ] != 0 && values [ i ] != 1 ) {
+      std::ostringstream message;
+      message << name << "[" << i << "] = " << values [ i ] << " must be 0 or 1";
+      throw std::invalid_argument ( message . str () );
+    }
+    result [ i ] = static_cast<uint8_t> ( values [ i ] );
+  }
+  return result;
+}
+
+std::vector<int64_t>
+OneDimensionalValues ( py::handle object, const std::string & name ) {
+  std::vector<py::ssize_t> shape;
+  std::vector<int64_t> values = IntegerArrayValues ( object, name, shape, false );
+  if ( shape . size () != 1 ) {
+    throw std::invalid_argument (
+      name + " must be one-dimensional; got shape " + ShapeString ( shape ) );
+  }
+  return values;
+}
+
+py::dict
+CarrierChainMapToPython ( const carrier_chain_map::CarrierChainMapResult & result,
+                          const bool return_carriers ) {
+  py::dict output;
+  output [ "status" ] = result . status;
+  output [ "failure_degree" ] = result . failure_degree;
+  output [ "failure_row" ] = result . failure_row;
+  output [ "carrier_count" ] = result . carrier_count;
+  if ( result . status == "ok" ) {
+    py::list chain_map;
+    for ( const std::vector<int64_t> & entries : result . chain_map ) {
+      const py::ssize_t rows = static_cast<py::ssize_t> ( entries . size () / 3 );
+      py::array_t<int64_t> array ( std::vector<py::ssize_t> { rows, 3 } );
+      std::copy ( entries . begin (), entries . end (), array . mutable_data () );
+      chain_map . append ( array );
+    }
+    output [ "chain_map" ] = chain_map;
+    if ( result . has_payload ) {
+      py::dict payload;
+      payload [ "cell_counts" ] = result . cell_counts;
+      payload [ "boundary_entries" ] = result . boundary_entries;
+      payload [ "chain_map_entries" ] = result . chain_map_entries;
+      output [ "payload" ] = payload;
+    }
+  }
+  if ( return_carriers ) {
+    py::array_t<int64_t> ids ( static_cast<py::ssize_t> ( result . carrier_ids . size () ) );
+    std::copy ( result . carrier_ids . begin (), result . carrier_ids . end (),
+                ids . mutable_data () );
+    output [ "carrier_ids" ] = ids;
+  }
+  return output;
+}
+
+} // namespace
+
 PYBIND11_MODULE(_cmgdb, m) {
   GridBinding(m);
   ModelBinding(m);
@@ -1055,6 +1225,107 @@ cellular chain complex of a valid index pair and the supplied chain map must be
 a quotient-compatible chain selector carried by the outer approximation. This
 API validates the algebraic data, but cannot certify that topological carrier
 obligation from matrices alone.
+)doc" );
+  m.def(
+    "ComputeCarrierChainMap",
+    [] ( py::object source_simplices,
+         py::object vertex_image_indptr,
+         py::object vertex_image_indices,
+         py::object source_exit,
+         py::object target_simplices,
+         py::object target_exit,
+         int64_t modulus,
+         bool return_carriers ) {
+      if ( modulus != 5 ) {
+        throw std::invalid_argument (
+          "ComputeCarrierChainMap supports only modulus=5; got modulus="
+          + std::to_string ( modulus ) );
+      }
+      carrier_chain_map::CarrierChainMapInput input;
+      input . source_simplices = SimplexArrays ( source_simplices, "source_simplices" );
+      input . vertex_image_indptr =
+        OneDimensionalValues ( vertex_image_indptr, "vertex_image_indptr" );
+      input . vertex_image_indices = Int32Values (
+        OneDimensionalValues ( vertex_image_indices, "vertex_image_indices" ),
+        "vertex_image_indices" );
+      input . source_exit = ExitMask ( source_exit, "source_exit" );
+      input . target_is_source = target_simplices . is_none ();
+      if ( input . target_is_source ) {
+        if ( ! target_exit . is_none () ) {
+          throw std::invalid_argument (
+            "target_exit is given only together with target_simplices" );
+        }
+      } else {
+        if ( target_exit . is_none () ) {
+          throw std::invalid_argument (
+            "target_exit is required when target_simplices is given" );
+        }
+        input . target_simplices = SimplexArrays ( target_simplices, "target_simplices" );
+        input . target_exit = ExitMask ( target_exit, "target_exit" );
+      }
+      carrier_chain_map::CarrierChainMapResult result;
+      {
+        py::gil_scoped_release release;
+        result = carrier_chain_map::ComputeCarrierChainMap ( input );
+      }
+      return CarrierChainMapToPython ( result, return_carriers );
+    },
+    py::arg ( "source_simplices" ),
+    py::arg ( "vertex_image_indptr" ),
+    py::arg ( "vertex_image_indices" ),
+    py::arg ( "source_exit" ),
+    py::kw_only (),
+    py::arg ( "target_simplices" ) = py::none (),
+    py::arg ( "target_exit" ) = py::none (),
+    py::arg ( "modulus" ) = 5,
+    py::arg ( "return_carriers" ) = false,
+    R"doc(
+Compute the chain map induced by an acyclic carrier over F_5.
+
+``source_simplices[d]`` is an integer array of shape ``(n_d, d + 1)`` holding
+the d-cells of a simplicial complex in complex order: every row is a strictly
+increasing tuple of vertex labels (arbitrary int32 values), and the rows are in
+strictly increasing lexicographic order. The row index of a cell is its
+position in this order. The 0-cells may also be given as a one-dimensional
+array. The complex must be closed under faces. ``target_simplices`` has the
+same format; ``None`` means the target is the source complex.
+
+``vertex_image_indptr`` (length ``n_0 + 1``) and ``vertex_image_indices`` are a
+CSR map from every source vertex row to a set of target vertex labels;
+duplicates are allowed. ``source_exit`` and ``target_exit`` are 0/1 masks over
+the vertex rows marking the exit vertices, and ``P0`` is the subcomplex induced
+on them. ``target_exit`` is required with ``target_simplices`` and not allowed
+without it.
+
+The carrier of a source cell ``s`` is the target subcomplex induced on the
+union ``T(s)`` of the vertex images of its vertices. The function checks, in
+this order, that every carrier is nonempty, that every distinct carrier is
+acyclic over F_5 (Betti numbers ``(1, 0, ..., 0)``), and that every cell of the
+source ``P0`` has its carrier in the target ``P0``. It then constructs the
+canonical chain selector: a vertex ``v`` goes to the smallest vertex of
+``T(v)``; a d-cell goes to the unique chain of its carrier with the required
+boundary that is supported on the greedy independent d-cells of the carrier,
+taken in complex order. The chain map is validated: ``d phi = phi d`` over F_5,
+every image lies in its carrier, and ``P0`` goes into ``P0``.
+
+Returns a dict with ``status`` (``"ok"``, ``"empty_carrier"``,
+``"not_acyclic"``, ``"pair_violation"``, ``"no_solution"`` or
+``"chain_map_invalid"``), ``failure_degree`` and ``failure_row`` (the first
+failing source cell in complex order, ``-1`` when the status is ok), and
+``carrier_count`` (the number of distinct nonempty carriers). When the status
+is ok, ``chain_map[d]`` is an int64 array of ``(source_row, target_row,
+coefficient)`` rows with coefficients in 1..4, and, when the target is the
+source, ``payload`` holds ``cell_counts``, ``boundary_entries`` and
+``chain_map_entries`` of the relative complex ``C(X) / C(P0)`` in the argument
+format of ``ComputeRelativeHomologyShiftClass``: the basis of degree d is the
+d-cells outside ``P0`` in complex order, and entries at cells of ``P0`` are
+dropped. With ``return_carriers=True`` the dict also holds ``carrier_ids``,
+the carrier number of every source cell in complex order (degree-major), or
+``-1`` for an empty carrier.
+
+Only ``modulus=5`` is supported. Invalid input raises ``ValueError``,
+``IndexError`` or ``TypeError`` naming the offending position. The GIL is
+released during the computation.
 )doc" );
   m.def(
     "ComputeConleyIndexForCells",

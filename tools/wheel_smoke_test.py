@@ -30,8 +30,25 @@ for name in (
     "ComputeMorseSetReachability",
     "MorseDirectedPathCells",
     "ComputeConleyIndexForCells",
+    "ComputeCarrierChainMap",
 ):
     assert hasattr(CMGDB, name), f"missing fork entry point {name}"
+
+step("computing a carrier chain map")
+# A filled triangle rotated by its vertex map 0 -> 1 -> 2 -> 0.
+carrier = CMGDB.ComputeCarrierChainMap(
+    [[0, 1, 2], [[0, 1], [0, 2], [1, 2]], [[0, 1, 2]]],
+    [0, 1, 2, 3],
+    [1, 2, 0],
+    [0, 0, 0],
+)
+assert carrier["status"] == "ok", carrier
+shift = CMGDB.ComputeRelativeHomologyShiftClass(
+    carrier["payload"]["cell_counts"],
+    carrier["payload"]["boundary_entries"],
+    carrier["payload"]["chain_map_entries"],
+)
+assert shift["shift_class"] == ["x-1", "0", "0"], shift
 
 
 def f(x):
