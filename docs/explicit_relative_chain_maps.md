@@ -75,3 +75,24 @@ Those facts depend on the suspension cells, index pair, and carrier. They
 cannot be inferred from the three matrices, so this function does not claim to
 validate them. The algebraic validation here starts once a suspension adapter
 has discharged that obligation.
+
+## ComputeRelativeShiftClass
+
+`CMGDB.ComputeRelativeShiftClass` takes the same arguments, performs the same
+validation (with the same exceptions and messages), and returns a dictionary
+with the same keys and formats. It computes the induced maps by plain linear
+algebra over `F_5`: the boundary matrices are column reduced, the homology
+basis in each degree is a set of cycle representatives chosen by that
+reduction, and the image of each basis cycle is reduced modulo the boundaries
+onto the basis. The shift class is read from the invariant factors of each
+induced matrix and written in the format above. It uses neither CHOMP's Morse
+reduction nor its Smith normal form, and every step terminates.
+
+`ComputeRelativeHomologyShiftClass` can return a wrong induced map, and hence
+a wrong shift class, when the coreduction Morse complex of the input is not
+minimal: its solve projects the images along a complement chosen by the Smith
+form of the generators rather than along the image of the boundary. With zero
+boundary both functions return the same result, and the induced matrix is the
+supplied one. With nonzero boundary the two functions choose different
+homology bases, so even where both are correct their induced matrices may
+differ by a change of basis.
