@@ -13,9 +13,9 @@
 // every distinct carrier is acyclic over GF(5), and that the carrier of every
 // cell of the source P0 (the subcomplex induced on the exit vertices) lies in
 // the target P0. Each check reports the first failing source cell in complex
-// order. Acyclicity is checked source cell by source cell, once for every
-// distinct carrier, and the kernel stops at the first cell whose carrier is
-// not acyclic. It then constructs the canonical chain selector:
+// order. Acyclicity is checked once for every distinct carrier, in order of
+// first use, and the kernel stops at the first cell whose carrier is not
+// acyclic. It then constructs the canonical chain selector:
 //   - a vertex v goes to the smallest vertex of T(v);
 //   - a d-cell s (d >= 1) goes to the unique d-chain c of its carrier with
 //     boundary ( c ) = phi ( boundary ( s ) ) that is supported on the greedy
@@ -566,6 +566,13 @@ private:
   std::vector<int64_t> next_;
 };
 
+/// Default limits of the first block of source cells whose carriers are
+/// interned together before the new ones are checked for acyclicity: its
+/// number of cells, and the total number of vertices of their carriers. The
+/// limits double from one block to the next.
+const int64_t kCarrierBlockCells = 4096;
+const int64_t kCarrierBlockVertices = int64_t ( 1 ) << 20;
+
 struct CarrierChainMapInput {
   std::vector<std::vector<int32_t> > source_simplices;   // labels, flat per degree
   std::vector<std::vector<int32_t> > target_simplices;   // unused when target_is_source
@@ -575,6 +582,10 @@ struct CarrierChainMapInput {
   std::vector<uint8_t> source_exit;
   std::vector<uint8_t> target_exit;                      // unused when target_is_source
   bool return_chain_map = true;                          // form the result's chain_map
+  // Limits of the first block, raised to 1 if smaller; the result does not
+  // depend on them.
+  int64_t block_cells = kCarrierBlockCells;
+  int64_t block_vertices = kCarrierBlockVertices;
 };
 
 typedef std::tuple<uint64_t, uint64_t, int> PayloadEntry;
@@ -807,26 +818,6 @@ ComputeCarrierChainMap ( const CarrierChainMapInput & input ) {
   int64_t stamp = 0;
   std::vector<int32_t> vertices;
 
-  // Id of the carrier of a source cell, whose sorted vertex rows are left in
-  // `vertices`; `inserted` tells whether the carrier is new.
-  auto intern_carrier = [ & ] ( int64_t d, int64_t row, bool & inserted ) {
-    const int32_t * cell = source . cell ( d, row );
-    vertices . clear ();
-    ++ stamp;
-    for ( int64_t k = 0; k <= d; ++ k ) {
-      for ( int64_t e = image_begin [ cell [ k ] ];
-            e < image_begin [ cell [ k ] + 1 ]; ++ e ) {
-        const int32_t vertex = image_rows [ e ];
-        if ( member [ vertex ] != stamp ) {
-          member [ vertex ] = stamp;
-          vertices . push_back ( vertex );
-        }
-      }
-    }
-    if ( d > 0 ) std::sort ( vertices . begin (), vertices . end () );
-    return carriers . intern ( vertices, inserted );
-  };
-
   // Record the carrier numbers of the source cells, -1 for a cell whose
   // carrier was not interned, and the number of distinct carriers.
   auto record_carriers = [ & ] ( int64_t carrier_count ) {
@@ -842,7 +833,7 @@ ComputeCarrierChainMap ( const CarrierChainMapInput & input ) {
   // of the cell has an empty image, and the vertices of a cell are 0-cells,
   // which come first in complex order; so the first source cell with an empty
   // carrier, if there is one, is the first vertex with an empty image. The
-  // carriers of the vertices before it are recorded.
+  // carriers of the vertices before it, which are their images, are recorded.
   int64_t empty_row = -1;
   for ( int64_t v = 0; v < source_vertices && empty_row < 0; ++ v ) {
     if ( image_begin [ v ] == image_begin [ v + 1 ] ) empty_row = v;
@@ -850,7 +841,9 @@ ComputeCarrierChainMap ( const CarrierChainMapInput & input ) {
   if ( empty_row >= 0 ) {
     bool inserted = false;
     for ( int64_t row = 0; row < empty_row; ++ row ) {
-      carrier_of [ 0 ] [ row ] = intern_carrier ( 0, row, inserted );
+      vertices . assign ( image_rows . begin () + image_begin [ row ],
+                          image_rows . begin () + image_begin [ row + 1 ] );
+      carrier_of [ 0 ] [ row ] = carriers . intern ( vertices, inserted );
     }
     record_carriers ( carriers . count () );
     result . status = "empty_carrier";
@@ -903,23 +896,81 @@ ComputeCarrierChainMap ( const CarrierChainMapInput & input ) {
     return true;
   };
 
-  // Acyclicity, source cell by source cell in complex order. A distinct
-  // carrier is checked once, at its first use; so the first cell whose
-  // carrier is not acyclic is the first use of that carrier, and the check
-  // stops there. The carriers of the cells before it are recorded, and the
-  // failing carrier is not counted.
-  for ( int64_t d = 0; d < source_degrees; ++ d ) {
-    for ( int64_t row = 0; row < source . count ( d ); ++ row ) {
-      bool inserted = false;
-      const int64_t id = intern_carrier ( d, row, inserted );
-      if ( inserted && ! acyclic ( id ) ) {
+  // Acyclicity, block by block of source cells in complex order. The
+  // carriers of a block are interned first, and the new ones are then
+  // checked in order of first use, so that every distinct carrier is checked
+  // once. The first cell whose carrier is not acyclic is the first use of
+  // that carrier, and the check stops there: the carriers of the cells
+  // before it are recorded, the failing carrier is not counted, and the
+  // cells after it in the block lose their carrier numbers again. The block
+  // limits double from one block to the next: a successful call alternates
+  // between the two steps only a few times, and a call that fails early
+  // interns few cells past the failing one.
+  {
+    // First use of every new carrier of a block, as ( degree << 32 ) | row.
+    std::vector<int64_t> first_use;
+    const int64_t largest = std::numeric_limits<int64_t>::max () / 2;
+    int64_t block_cells = std::min ( largest, std::max ( int64_t ( 1 ), input . block_cells ) );
+    int64_t block_vertices =
+      std::min ( largest, std::max ( int64_t ( 1 ), input . block_vertices ) );
+    int64_t d = 0;
+    int64_t row = 0;
+    while ( d < source_degrees ) {
+      first_use . clear ();
+      const int64_t first_new = carriers . count ();
+      int64_t interned_cells = 0;
+      int64_t interned_vertices = 0;
+      while ( d < source_degrees && interned_cells < block_cells &&
+              interned_vertices < block_vertices ) {
+        if ( row == source . count ( d ) ) {
+          ++ d;
+          row = 0;
+          continue;
+        }
+        // The sorted vertex rows of the carrier of the cell.
+        const int32_t * cell = source . cell ( d, row );
+        vertices . clear ();
+        ++ stamp;
+        for ( int64_t k = 0; k <= d; ++ k ) {
+          for ( int64_t e = image_begin [ cell [ k ] ];
+                e < image_begin [ cell [ k ] + 1 ]; ++ e ) {
+            const int32_t vertex = image_rows [ e ];
+            if ( member [ vertex ] != stamp ) {
+              member [ vertex ] = stamp;
+              vertices . push_back ( vertex );
+            }
+          }
+        }
+        if ( d > 0 ) std::sort ( vertices . begin (), vertices . end () );
+        bool inserted = false;
+        carrier_of [ d ] [ row ] = carriers . intern ( vertices, inserted );
+        if ( inserted ) first_use . push_back ( ( d << 32 ) | row );
+        ++ interned_cells;
+        interned_vertices += static_cast<int64_t> ( vertices . size () );
+        ++ row;
+      }
+      for ( size_t k = 0; k < first_use . size (); ++ k ) {
+        const int64_t id = first_new + static_cast<int64_t> ( k );
+        if ( acyclic ( id ) ) continue;
+        const int64_t failure_degree = first_use [ k ] >> 32;
+        const int64_t failure_row = first_use [ k ] & 0xFFFFFFFF;
+        // Clear the cells from the failing one to the end of the block.
+        for ( int64_t e = failure_degree, r = failure_row; e < d || ( e == d && r < row ); ) {
+          if ( r == source . count ( e ) ) {
+            ++ e;
+            r = 0;
+            continue;
+          }
+          carrier_of [ e ] [ r ++ ] = -1;
+        }
         record_carriers ( id );
         result . status = "not_acyclic";
-        result . failure_degree = d;
-        result . failure_row = row;
+        result . failure_degree = failure_degree;
+        result . failure_row = failure_row;
         return result;
       }
-      carrier_of [ d ] [ row ] = id;
+      if ( block_cells < largest ) block_cells *= 2;
+      if ( block_vertices < largest ) block_vertices *= 2;
     }
   }
   record_carriers ( carriers . count () );

@@ -1359,9 +1359,9 @@ The carrier of a source cell ``s`` is the target subcomplex induced on the
 union ``T(s)`` of the vertex images of its vertices. The function checks, in
 this order, that every carrier is nonempty, that every distinct carrier is
 acyclic over F_5 (Betti numbers ``(1, 0, ..., 0)``), and that every cell of the
-source ``P0`` has its carrier in the target ``P0``. Acyclicity is checked
-source cell by source cell in complex order, once for every distinct carrier,
-and the function stops at the first cell whose carrier is not acyclic. It then
+source ``P0`` has its carrier in the target ``P0``. Acyclicity is checked once
+for every distinct carrier, in complex order of first use, and the function
+stops at the first cell whose carrier is not acyclic. It then
 constructs the canonical chain selector: a vertex ``v`` goes to the smallest
 vertex of ``T(v)``; a d-cell goes to the unique chain of its carrier with the
 required boundary that is supported on the greedy independent d-cells of the

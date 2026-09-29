@@ -8,8 +8,12 @@ shows that the native function, which stops at the first cell whose carrier is
 not acyclic, reports the same failure.
 """
 
+import functools
 import itertools
 import random
+import shutil
+import subprocess
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -831,6 +835,89 @@ def test_random_maps_to_another_complex_match_reference(seed):
     assert_matches_reference(
         source, images, source_exit, target=target, target_exit=target_exit
     )
+
+
+# Large complexes, and the blocks of the acyclicity check.
+
+GRID = 40
+
+
+@functools.lru_cache(maxsize=None)
+def grid_complex(spread):
+    """A triangulated GRID x GRID grid, every square cut along the diagonal
+    from (i, j) to (i + 1, j + 1); vertex (i, j) has label spread * (i * (GRID
+    + 1) + j), so that a spread of 40 leaves the labels too sparse for a table."""
+
+    def label(i, j):
+        return spread * (i * (GRID + 1) + j)
+
+    squares = [(i, j) for i in range(GRID) for j in range(GRID)]
+    return simplicial_complex(
+        [(label(i, j), label(i + 1, j), label(i + 1, j + 1)) for i, j in squares]
+        + [(label(i, j), label(i, j + 1), label(i + 1, j + 1)) for i, j in squares]
+    )
+
+
+@pytest.mark.parametrize("spread", [1, 40])
+def test_identity_on_a_large_complex(spread):
+    complex_ = grid_complex(spread)
+    assert [len(group) for group in complex_] == [1681, 4880, 3200]
+    result = comparable(native(complex_, identity(complex_), return_carriers=True))
+    assert result["status"] == "ok"
+    assert result["carrier_ids"] == list(range(9761))
+    for d, group in enumerate(complex_):
+        assert result["chain_map"][d] == [(row, row, 1) for row in range(len(group))]
+
+
+@pytest.mark.parametrize("spread", [1, 40])
+@pytest.mark.parametrize("moved", [0, 40, 41, 700, 858, 859, 860, 1000, 1680])
+def test_first_failure_in_a_large_complex(moved, spread):
+    # The identity with one vertex sent far away. Vertex carriers are single
+    # vertices and the carriers of the cells away from the moved vertex are
+    # simplices, so the first failing cell is the first edge at the moved
+    # vertex, whose carrier is two vertices without an edge. The moved
+    # vertices put that edge at positions 1,681 to 6,519 in complex order,
+    # among them 4,093, 4,096 and 4,099, around the end of the first block.
+    complex_ = grid_complex(spread)
+    width = GRID + 1
+    i, j = divmod(moved, width)
+    images = {vertex: [vertex] for (vertex,) in complex_[0]}
+    images[spread * moved] = [spread * (((i + GRID // 2) % width) * width + (j + GRID // 2) % width)]
+    row = next(row for row, edge in enumerate(complex_[1]) if spread * moved in edge)
+    number = {}
+    ids = [
+        number.setdefault(frozenset(t for vertex in cell for t in images[vertex]), len(number))
+        for cell in complex_[0] + complex_[1][:row]
+    ]
+    result = comparable(native(complex_, images, return_carriers=True))
+    assert (result["status"], result["failure_degree"], result["failure_row"]) == (
+        "not_acyclic",
+        1,
+        row,
+    )
+    assert result["carrier_count"] == len(number)
+    assert result["carrier_ids"] == ids + [-1] * (9761 - len(ids))
+
+
+def test_blocks_of_the_acyclicity_check_leave_the_result_unchanged():
+    # tests/cpp/test_carrier_chain_map_blocks.cpp runs the kernel with blocks
+    # of one cell, of a few cells and of a few carrier vertices.
+    compiler = shutil.which("c++") or shutil.which("g++") or shutil.which("clang++")
+    if compiler is None:
+        pytest.skip("no C++ compiler available")
+    repo = Path(__file__).resolve().parents[1]
+    source = repo / "tests" / "cpp" / "test_carrier_chain_map_blocks.cpp"
+    include = repo / "src" / "CMGDB" / "_cmgdb" / "include" / "database"
+    binary = source.with_suffix("")
+    subprocess.run(
+        [compiler, "-std=c++17", "-O1", "-I", str(include), str(source), "-o", str(binary)],
+        check=True,
+    )
+    try:
+        completed = subprocess.run([str(binary)], capture_output=True, text=True, check=False)
+        assert completed.returncode == 0, completed.stdout + completed.stderr
+    finally:
+        binary.unlink(missing_ok=True)
 
 
 # The native name.
