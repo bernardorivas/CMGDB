@@ -539,6 +539,7 @@ struct CarrierChainMapInput {
   std::vector<int32_t> vertex_image_indices;
   std::vector<uint8_t> source_exit;
   std::vector<uint8_t> target_exit;                      // unused when target_is_source
+  bool return_chain_map = true;                          // form the result's chain_map
 };
 
 typedef std::tuple<uint64_t, uint64_t, int> PayloadEntry;
@@ -548,6 +549,7 @@ struct CarrierChainMapResult {
   int64_t failure_degree = -1;
   int64_t failure_row = -1;
   int64_t carrier_count = 0;
+  bool has_chain_map = false;
   // chain_map [ d ]: flat ( source_row, target_row, coefficient ) triples.
   std::vector<std::vector<int64_t> > chain_map;
   bool has_payload = false;
@@ -1110,16 +1112,19 @@ ComputeCarrierChainMap ( const CarrierChainMapInput & input ) {
     }
   }
 
-  // Output in full complex indexing.
-  result . chain_map . assign ( source_degrees, std::vector<int64_t> () );
-  for ( int64_t d = 0; d < source_degrees; ++ d ) {
-    std::vector<int64_t> & entries = result . chain_map [ d ];
-    entries . reserve ( 3 * phi_rows [ d ] . size () );
-    for ( int64_t row = 0; row < source . count ( d ); ++ row ) {
-      for ( int64_t e = phi_begin [ d ] [ row ]; e < phi_begin [ d ] [ row + 1 ]; ++ e ) {
-        entries . push_back ( row );
-        entries . push_back ( phi_rows [ d ] [ e ] );
-        entries . push_back ( phi_values [ d ] [ e ] );
+  // Output in full complex indexing, unless it is not wanted.
+  if ( input . return_chain_map ) {
+    result . has_chain_map = true;
+    result . chain_map . assign ( source_degrees, std::vector<int64_t> () );
+    for ( int64_t d = 0; d < source_degrees; ++ d ) {
+      std::vector<int64_t> & entries = result . chain_map [ d ];
+      entries . reserve ( 3 * phi_rows [ d ] . size () );
+      for ( int64_t row = 0; row < source . count ( d ); ++ row ) {
+        for ( int64_t e = phi_begin [ d ] [ row ]; e < phi_begin [ d ] [ row + 1 ]; ++ e ) {
+          entries . push_back ( row );
+          entries . push_back ( phi_rows [ d ] [ e ] );
+          entries . push_back ( phi_values [ d ] [ e ] );
+        }
       }
     }
   }

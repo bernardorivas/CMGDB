@@ -44,7 +44,15 @@ carrier = CMGDB.ComputeCarrierChainMap(
     [0, 0, 0],
 )
 assert carrier["status"] == "ok", carrier
-shift = CMGDB.ComputeRelativeHomologyShiftClass(
+lean = CMGDB.ComputeCarrierChainMap(
+    [[0, 1, 2], [[0, 1], [0, 2], [1, 2]], [[0, 1, 2]]],
+    [0, 1, 2, 3],
+    [1, 2, 0],
+    [0, 0, 0],
+    return_chain_map=False,
+)
+assert "chain_map" not in lean and lean["payload"] == carrier["payload"], lean
+shift =CMGDB.ComputeRelativeHomologyShiftClass(
     carrier["payload"]["cell_counts"],
     carrier["payload"]["boundary_entries"],
     carrier["payload"]["chain_map_entries"],

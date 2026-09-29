@@ -1142,14 +1142,16 @@ CarrierChainMapToPython ( const carrier_chain_map::CarrierChainMapResult & resul
   output [ "failure_row" ] = result . failure_row;
   output [ "carrier_count" ] = result . carrier_count;
   if ( result . status == "ok" ) {
-    py::list chain_map;
-    for ( const std::vector<int64_t> & entries : result . chain_map ) {
-      const py::ssize_t rows = static_cast<py::ssize_t> ( entries . size () / 3 );
-      py::array_t<int64_t> array ( std::vector<py::ssize_t> { rows, 3 } );
-      std::copy ( entries . begin (), entries . end (), array . mutable_data () );
-      chain_map . append ( array );
+    if ( result . has_chain_map ) {
+      py::list chain_map;
+      for ( const std::vector<int64_t> & entries : result . chain_map ) {
+        const py::ssize_t rows = static_cast<py::ssize_t> ( entries . size () / 3 );
+        py::array_t<int64_t> array ( std::vector<py::ssize_t> { rows, 3 } );
+        std::copy ( entries . begin (), entries . end (), array . mutable_data () );
+        chain_map . append ( array );
+      }
+      output [ "chain_map" ] = chain_map;
     }
-    output [ "chain_map" ] = chain_map;
     if ( result . has_payload ) {
       py::dict payload;
       payload [ "cell_counts" ] = result . cell_counts;
@@ -1288,7 +1290,8 @@ Every step terminates. The GIL is released during the computation.
          py::object target_simplices,
          py::object target_exit,
          int64_t modulus,
-         bool return_carriers ) {
+         bool return_carriers,
+         bool return_chain_map ) {
       if ( modulus != 5 ) {
         throw std::invalid_argument (
           "ComputeCarrierChainMap supports only modulus=5; got modulus="
@@ -1316,6 +1319,7 @@ Every step terminates. The GIL is released during the computation.
         input . target_simplices = SimplexArrays ( target_simplices, "target_simplices" );
         input . target_exit = ExitMask ( target_exit, "target_exit" );
       }
+      input . return_chain_map = return_chain_map;
       carrier_chain_map::CarrierChainMapResult result;
       {
         py::gil_scoped_release release;
@@ -1332,6 +1336,7 @@ Every step terminates. The GIL is released during the computation.
     py::arg ( "target_exit" ) = py::none (),
     py::arg ( "modulus" ) = 5,
     py::arg ( "return_carriers" ) = false,
+    py::arg ( "return_chain_map" ) = true,
     R"doc(
 Compute the chain map induced by an acyclic carrier over F_5.
 
@@ -1374,9 +1379,11 @@ source, ``payload`` holds ``cell_counts``, ``boundary_entries`` and
 ``chain_map_entries`` of the relative complex ``C(X) / C(P0)`` in the argument
 format of ``ComputeRelativeHomologyShiftClass``: the basis of degree d is the
 d-cells outside ``P0`` in complex order, and entries at cells of ``P0`` are
-dropped. With ``return_carriers=True`` the dict also holds ``carrier_ids``,
-the carrier number of every source cell in complex order (degree-major), or
-``-1`` for an empty carrier; carriers are numbered in order of first use.
+dropped. With ``return_chain_map=False`` the dict holds no ``chain_map``, and
+the arrays are not formed; the payload is unchanged. With
+``return_carriers=True`` the dict also holds ``carrier_ids``, the carrier
+number of every source cell in complex order (degree-major), or ``-1`` for an
+empty carrier; carriers are numbered in order of first use.
 
 When the status is ``"empty_carrier"`` or ``"not_acyclic"``, the function
 stops at the failing cell, so ``carrier_count`` and ``carrier_ids`` describe

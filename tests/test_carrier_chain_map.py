@@ -565,6 +565,41 @@ def test_carrier_ids_are_returned_only_on_request():
     assert ids.tolist() == [0, 0, 1, 0, 2, 2, 2]
 
 
+def test_chain_map_can_be_left_out():
+    full = native(ANNULUS, identity(ANNULUS), {0, 4})
+    lean = native(ANNULUS, identity(ANNULUS), {0, 4}, return_chain_map=False)
+    assert set(full) == OK_KEYS | {"payload"}
+    assert set(lean) == FAILURE_KEYS | {"payload"}
+    assert lean["payload"] == full["payload"]
+    assert lean["carrier_count"] == full["carrier_count"]
+    assert native(ANNULUS, identity(ANNULUS), {0, 4}, return_chain_map=True).keys() == full.keys()
+
+    # Into another complex there is no payload either.
+    other = native(CIRCLE, identity(CIRCLE), target=TRIANGLE, return_chain_map=False)
+    assert other == {"status": "ok", "failure_degree": -1, "failure_row": -1, "carrier_count": 6}
+
+
+@pytest.mark.parametrize("seed", range(40))
+def test_leaving_out_the_chain_map_keeps_the_rest(seed):
+    rng = random.Random(4000 + seed)
+    complex_, apex = cone(rng, top_dimension=rng.randint(1, 5))
+    labels = [vertex for (vertex,) in complex_[0]]
+    exit_vertices = set(random_subset(rng, labels, 3))
+    images = {}
+    for vertex in labels:
+        pool = sorted(exit_vertices) if vertex in exit_vertices else labels
+        images[vertex] = random_subset(rng, pool, 3) or [vertex]
+        if seed % 3 and vertex not in exit_vertices:
+            images[vertex].append(apex)
+    full = comparable(native(complex_, images, exit_vertices, return_carriers=True))
+    lean = comparable(
+        native(complex_, images, exit_vertices, return_carriers=True, return_chain_map=False)
+    )
+    assert "chain_map" not in lean
+    full.pop("chain_map", None)
+    assert lean == full
+
+
 # Input validation.
 
 
