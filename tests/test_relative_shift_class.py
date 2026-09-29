@@ -10,8 +10,10 @@ returns a dictionary with the same keys and formats.  The tests check:
   induced map is exactly s I in every basis;
 - a split oracle: a complex H + K with K acyclic, in a random basis, and the
   chain map A + 0 plus a null-homotopic map, whose induced map is similar to A;
-- a random simplicial complex on which the existing function returns a wrong
-  induced map, because its Morse complex is not minimal.
+- a random simplicial complex and a dense complex on which the Morse complex
+  of the existing function need not be minimal.  There the result of the
+  existing function depends on the iteration order of Boost's unordered
+  containers, so it is only run, and only the new function is checked.
 """
 
 import itertools
@@ -425,20 +427,24 @@ def test_homotopy_oracle_on_simplicial_complexes(seed):
 
 def test_simplicial_case_where_the_morse_complex_is_not_minimal():
     # H_1 has dimension 4 and the map is 2 I on it.  The coreduction Morse
-    # complex of the existing function has more critical 1-cells than b_1, and
-    # it returns "x-2x-2x^2+1" in degree 1.
+    # complex of the existing function can have more critical 1-cells than
+    # b_1 here, and its result then depends on the iteration order of Boost's
+    # unordered containers, which differs between Boost versions.  Only the
+    # new function is checked; the existing one is only run.
     counts, boundaries, maps, scalar = simplicial_oracle_case(random.Random(10273))
     assert counts == [8, 28, 19]
     assert scalar == 2
     result = compute(counts, boundaries, maps)
     assert_scalar_induced_maps(result, counts, scalar, dimensions=[1, 4, 2])
     assert result["shift_class"] == ["x-2", "x-2x-2x-2x-2", "x-2x-2"]
-    assert existing(counts, boundaries, maps)["shift_class"][1] != "x-2x-2x-2x-2"
+    existing(counts, boundaries, maps)
 
 
-def test_dense_case_where_the_existing_function_is_wrong():
+def test_dense_case_with_a_scalar_map():
     # A dense complex with H = (0, 2, 1) and the map 3 I = -2 I on it.  The
-    # existing function returns [[-2, -1], [0, -2]] in degree 1.
+    # result of the existing function on it depends on the iteration order
+    # of Boost's unordered containers, as above, so that function is only
+    # run.
     counts = [2, 6, 3]
     boundaries = [
         [],
@@ -456,7 +462,7 @@ def test_dense_case_where_the_existing_function_is_wrong():
     result = compute(counts, boundaries, maps)
     assert_scalar_induced_maps(result, counts, 3, dimensions=[0, 2, 1])
     assert result["shift_class"] == ["0", "x+2x+2", "x+2"]
-    assert existing(counts, boundaries, maps)["induced_maps"][1] != [[-2, 0], [0, -2]]
+    existing(counts, boundaries, maps)
 
 
 # The split oracle: induced maps that are not scalar.
