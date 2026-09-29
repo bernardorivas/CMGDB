@@ -61,6 +61,11 @@ inline uint8_t Incidence5 ( int64_t i ) {
   return ( i % 2 == 0 ) ? 1 : 4;
 }
 
+/// Largest ratio of the range of the vertex labels to the number of vertices
+/// for which the rows of the labels are kept in a table. The table then takes
+/// at most 128 bytes per vertex; sparser labels are found by binary search.
+const int64_t kLabelTableRatio = 32;
+
 /// A simplicial complex in complex order. Vertices are identified by their
 /// rows among the 0-cells; since the 0-cells are sorted by label, the order of
 /// vertex rows is the order of labels.
@@ -70,6 +75,25 @@ struct SimplicialComplex {
   std::vector<std::vector<int32_t> > cells;   // counts [ d ] x ( d + 1 ) vertex rows
   std::vector<std::vector<int32_t> > faces;   // counts [ d ] x ( d + 1 ) rows of (d-1)-cells
   std::vector<std::vector<int64_t> > first;   // counts [ 0 ] + 1 offsets of d-cells by first vertex
+  // label_rows [ label - label_low ]: row of the vertex with that label, or
+  // -1; empty when the labels are searched instead.
+  int64_t label_low = 0;
+  std::vector<int32_t> label_rows;
+
+  /// Row of the vertex with the given label, or -1.
+  int32_t vertex_row ( int32_t label ) const {
+    if ( ! label_rows . empty () ) {
+      const int64_t offset = static_cast<int64_t> ( label ) - label_low;
+      if ( offset < 0 || offset >= static_cast<int64_t> ( label_rows . size () ) ) {
+        return -1;
+      }
+      return label_rows [ offset ];
+    }
+    std::vector<int32_t>::const_iterator found =
+      std::lower_bound ( labels . begin (), labels . end (), label );
+    if ( found == labels . end () || * found != label ) return -1;
+    return static_cast<int32_t> ( found - labels . begin () );
+  }
 
   int64_t degrees ( void ) const {
     return static_cast<int64_t> ( counts . size () );
@@ -177,6 +201,19 @@ inline void BuildSimplicialComplex (
   for ( int64_t row = 0; row < vertices; ++ row ) {
     complex . cells [ 0 ] [ row ] = static_cast<int32_t> ( row );
   }
+  complex . label_low = 0;
+  complex . label_rows . clear ();
+  if ( vertices > 0 ) {
+    const int64_t low = labels . front ();
+    const int64_t range = static_cast<int64_t> ( labels . back () ) - low + 1;
+    if ( range <= kLabelTableRatio * vertices ) {
+      complex . label_low = low;
+      complex . label_rows . assign ( range, -1 );
+      for ( int64_t row = 0; row < vertices; ++ row ) {
+        complex . label_rows [ labels [ row ] - low ] = static_cast<int32_t> ( row );
+      }
+    }
+  }
 
   // Vertex rows of every cell, and the complex order.
   for ( int64_t d = 1; d < degrees; ++ d ) {
@@ -188,17 +225,15 @@ inline void BuildSimplicialComplex (
     for ( int64_t row = 0; row < count; ++ row ) {
       for ( int64_t k = 0; k < width; ++ k ) {
         const int32_t label = input [ row * width + k ];
-        std::vector<int32_t>::const_iterator found =
-          std::lower_bound ( labels . begin (), labels . end (), label );
-        if ( found == labels . end () || * found != label ) {
+        const int32_t vertex = complex . vertex_row ( label );
+        if ( vertex < 0 ) {
           std::ostringstream message;
           message << name << "[" << d << "] row " << row
                   << " has vertex label " << label
                   << ", which is not a 0-cell of " << name;
           throw std::invalid_argument ( message . str () );
         }
-        cells [ row * width + k ] =
-          static_cast<int32_t> ( found - labels . begin () );
+        cells [ row * width + k ] = vertex;
         if ( k > 0 && cells [ row * width + k ] <= cells [ row * width + k - 1 ] ) {
           std::ostringstream message;
           message << name << "[" << d << "] row " << row
@@ -744,17 +779,15 @@ ComputeCarrierChainMap ( const CarrierChainMapInput & input ) {
     const size_t start = image_rows . size ();
     for ( int64_t e = indptr [ v ]; e < indptr [ v + 1 ]; ++ e ) {
       const int32_t label = indices [ e ];
-      std::vector<int32_t>::const_iterator found = std::lower_bound (
-        target . labels . begin (), target . labels . end (), label );
-      if ( found == target . labels . end () || * found != label ) {
+      const int32_t vertex = target . vertex_row ( label );
+      if ( vertex < 0 ) {
         std::ostringstream message;
         message << "vertex_image_indices[" << e << "] = " << label
                 << " (in the image of source vertex row " << v
                 << ") is not a vertex label of " << target_name;
         throw std::invalid_argument ( message . str () );
       }
-      image_rows . push_back (
-        static_cast<int32_t> ( found - target . labels . begin () ) );
+      image_rows . push_back ( vertex );
     }
     std::sort ( image_rows . begin () + start, image_rows . end () );
     image_rows . erase (
