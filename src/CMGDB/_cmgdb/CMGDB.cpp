@@ -33,6 +33,7 @@
 #include "chomp/ExplicitChainComplex.h"
 #include "conleyIndexString.h"
 #include "CarrierChainMap.h"
+#include "RelativeShiftClass.h"
 
 namespace {
 
@@ -1225,6 +1226,58 @@ cellular chain complex of a valid index pair and the supplied chain map must be
 a quotient-compatible chain selector carried by the outer approximation. This
 API validates the algebraic data, but cannot certify that topological carrier
 obligation from matrices alone.
+)doc" );
+  m.def(
+    "ComputeRelativeShiftClass",
+    [] ( const std::vector<uint64_t> & cell_counts,
+         const GradedSparseEntries & boundary_entries,
+         const GradedSparseEntries & chain_map_entries ) {
+      relative_shift_class::RelativeShiftClassResult result;
+      {
+        py::gil_scoped_release release;
+        result = relative_shift_class::ComputeRelativeShiftClass (
+          cell_counts, boundary_entries, chain_map_entries );
+      }
+      py::dict output;
+      py::dict validation;
+      validation [ "matrix_shapes_and_entries" ] = true;
+      validation [ "boundary_squared_zero" ] = true;
+      validation [ "chain_map_equation" ] = true;
+      output [ "coefficient_field" ] = 5;
+      output [ "cell_counts" ] = cell_counts;
+      output [ "validation" ] = validation;
+      output [ "homology_dimensions" ] = result . homology_dimensions;
+      output [ "induced_maps" ] = result . induced_maps;
+      output [ "shift_class" ] = result . shift_class;
+      return output;
+    },
+    py::arg ( "cell_counts" ),
+    py::arg ( "boundary_entries" ),
+    py::arg ( "chain_map_entries" ),
+    R"doc(
+Compute a relative-homology shift class from an explicit finite chain map, by
+plain linear algebra over F_5.
+
+The arguments, the validation (with its exceptions and messages) and the keys
+and formats of the returned dictionary are those of
+``ComputeRelativeHomologyShiftClass``: ``cell_counts[d]`` is the number of
+basis cells in degree ``d``, ``boundary_entries[d]`` holds the sparse
+``(row, column, coefficient)`` entries of the boundary ``C_d -> C_{d-1}`` (its
+degree-zero list must be empty), and ``chain_map_entries[d]`` those of the
+endomorphism of ``C_d``. Coefficients are reduced in F_5.
+
+The boundary matrices are column reduced over F_5, without a Morse reduction
+or a Smith normal form. The homology basis in degree ``d`` is a set of cycle
+representatives chosen by the reduction, and ``induced_maps[d]`` has in column
+``k`` the coordinates of the class of the image of the ``k``-th basis cycle,
+with entries in -2..2. An induced matrix is determined up to a change of basis;
+for a complex with zero boundary the basis is the standard one, so the induced
+matrix is the given one. ``shift_class[d]`` is computed from the invariant
+factors of the induced matrix and written as CMGDB writes shift classes: the
+invariant factors with their powers of ``x`` removed, those of positive degree
+concatenated in divisibility order, or ``"0"``.
+
+Every step terminates. The GIL is released during the computation.
 )doc" );
   m.def(
     "ComputeCarrierChainMap",

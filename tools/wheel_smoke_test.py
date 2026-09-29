@@ -31,6 +31,7 @@ for name in (
     "MorseDirectedPathCells",
     "ComputeConleyIndexForCells",
     "ComputeCarrierChainMap",
+    "ComputeRelativeShiftClass",
 ):
     assert hasattr(CMGDB, name), f"missing fork entry point {name}"
 
@@ -49,6 +50,14 @@ shift = CMGDB.ComputeRelativeHomologyShiftClass(
     carrier["payload"]["chain_map_entries"],
 )
 assert shift["shift_class"] == ["x-1", "0", "0"], shift
+
+step("computing a shift class by linear algebra")
+exact = CMGDB.ComputeRelativeShiftClass(
+    carrier["payload"]["cell_counts"],
+    carrier["payload"]["boundary_entries"],
+    carrier["payload"]["chain_map_entries"],
+)
+assert exact == shift, exact
 
 
 def f(x):
