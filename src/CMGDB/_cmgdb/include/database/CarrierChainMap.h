@@ -12,7 +12,10 @@
 // The kernel checks, in this order, that every carrier is nonempty, that
 // every distinct carrier is acyclic over GF(5), and that the carrier of every
 // cell of the source P0 (the subcomplex induced on the exit vertices) lies in
-// the target P0. It then constructs the canonical chain selector:
+// the target P0. Each check reports the first failing source cell in complex
+// order. Acyclicity is checked source cell by source cell, once for every
+// distinct carrier, and the kernel stops at the first cell whose carrier is
+// not acyclic. It then constructs the canonical chain selector:
 //   - a vertex v goes to the smallest vertex of T(v);
 //   - a d-cell s (d >= 1) goes to the unique d-chain c of its carrier with
 //     boundary ( c ) = phi ( boundary ( s ) ) that is supported on the greedy
@@ -551,7 +554,8 @@ struct CarrierChainMapResult {
   std::vector<uint64_t> cell_counts;
   std::vector<std::vector<PayloadEntry> > boundary_entries;
   std::vector<std::vector<PayloadEntry> > chain_map_entries;
-  // Carrier id of every source cell, degree-major; -1 for an empty carrier.
+  // Carrier id of every source cell, degree-major; -1 for an empty carrier
+  // and, on empty_carrier and not_acyclic, from the failing cell on.
   std::vector<int64_t> carrier_ids;
 };
 
@@ -757,59 +761,65 @@ ComputeCarrierChainMap ( const CarrierChainMapInput & input ) {
     image_begin [ v + 1 ] = static_cast<int64_t> ( image_rows . size () );
   }
 
-  // Carriers of all source cells, interned in order of first use.
+  // Carriers of the source cells, interned in complex order, so that the
+  // distinct carriers are numbered in order of first use.
   CarrierTable carriers;
   std::vector<std::vector<int64_t> > carrier_of ( source_degrees );
-  std::vector<int64_t> first_use_degree;
-  std::vector<int64_t> first_use_row;
+  for ( int64_t d = 0; d < source_degrees; ++ d ) {
+    carrier_of [ d ] . assign ( source . count ( d ), -1 );
+  }
   std::vector<int64_t> member ( target_vertices, -1 );
   int64_t stamp = 0;
-  int64_t empty_degree = -1;
-  int64_t empty_row = -1;
-  {
-    std::vector<int32_t> vertices;
-    for ( int64_t d = 0; d < source_degrees; ++ d ) {
-      carrier_of [ d ] . assign ( source . count ( d ), -1 );
-      for ( int64_t row = 0; row < source . count ( d ); ++ row ) {
-        const int32_t * cell = source . cell ( d, row );
-        vertices . clear ();
-        ++ stamp;
-        for ( int64_t k = 0; k <= d; ++ k ) {
-          for ( int64_t e = image_begin [ cell [ k ] ];
-                e < image_begin [ cell [ k ] + 1 ]; ++ e ) {
-            const int32_t vertex = image_rows [ e ];
-            if ( member [ vertex ] != stamp ) {
-              member [ vertex ] = stamp;
-              vertices . push_back ( vertex );
-            }
-          }
-        }
-        if ( vertices . empty () ) {
-          if ( empty_degree < 0 ) {
-            empty_degree = d;
-            empty_row = row;
-          }
-          continue;
-        }
-        if ( d > 0 ) std::sort ( vertices . begin (), vertices . end () );
-        bool inserted = false;
-        carrier_of [ d ] [ row ] = carriers . intern ( vertices, inserted );
-        if ( inserted ) {
-          first_use_degree . push_back ( d );
-          first_use_row . push_back ( row );
+  std::vector<int32_t> vertices;
+
+  // Id of the carrier of a source cell, whose sorted vertex rows are left in
+  // `vertices`; `inserted` tells whether the carrier is new.
+  auto intern_carrier = [ & ] ( int64_t d, int64_t row, bool & inserted ) {
+    const int32_t * cell = source . cell ( d, row );
+    vertices . clear ();
+    ++ stamp;
+    for ( int64_t k = 0; k <= d; ++ k ) {
+      for ( int64_t e = image_begin [ cell [ k ] ];
+            e < image_begin [ cell [ k ] + 1 ]; ++ e ) {
+        const int32_t vertex = image_rows [ e ];
+        if ( member [ vertex ] != stamp ) {
+          member [ vertex ] = stamp;
+          vertices . push_back ( vertex );
         }
       }
     }
+    if ( d > 0 ) std::sort ( vertices . begin (), vertices . end () );
+    return carriers . intern ( vertices, inserted );
+  };
+
+  // Record the carrier numbers of the source cells, -1 for a cell whose
+  // carrier was not interned, and the number of distinct carriers.
+  auto record_carriers = [ & ] ( int64_t carrier_count ) {
+    result . carrier_count = carrier_count;
+    for ( int64_t d = 0; d < source_degrees; ++ d ) {
+      result . carrier_ids . insert ( result . carrier_ids . end (),
+                                     carrier_of [ d ] . begin (),
+                                     carrier_of [ d ] . end () );
+    }
+  };
+
+  // Empty carriers. The carrier of a cell is empty exactly when every vertex
+  // of the cell has an empty image, and the vertices of a cell are 0-cells,
+  // which come first in complex order; so the first source cell with an empty
+  // carrier, if there is one, is the first vertex with an empty image. The
+  // carriers of the vertices before it are recorded.
+  int64_t empty_row = -1;
+  for ( int64_t v = 0; v < source_vertices && empty_row < 0; ++ v ) {
+    if ( image_begin [ v ] == image_begin [ v + 1 ] ) empty_row = v;
   }
-  result . carrier_count = carriers . count ();
-  for ( int64_t d = 0; d < source_degrees; ++ d ) {
-    result . carrier_ids . insert ( result . carrier_ids . end (),
-                                   carrier_of [ d ] . begin (),
-                                   carrier_of [ d ] . end () );
-  }
-  if ( empty_degree >= 0 ) {
+  if ( empty_row >= 0 ) {
+    bool inserted = false;
+    for ( int64_t row = 0; row < empty_row; ++ row ) {
+      carrier_of [ 0 ] [ row ] = intern_carrier ( 0, row, inserted );
+    }
+    record_carriers ( carriers . count () );
     result . status = "empty_carrier";
-    result . failure_degree = empty_degree;
+    result . failure_degree = 0;
     result . failure_row = empty_row;
     return result;
   }
@@ -830,43 +840,54 @@ ComputeCarrierChainMap ( const CarrierChainMapInput & input ) {
   }
   std::vector<int32_t> scratch;
 
-  // Acyclicity of every distinct carrier, in order of first use: the first
-  // failing carrier is the carrier of the first failing source cell.
-  {
-    std::vector<std::vector<int32_t> > cells ( target_degrees );
-    std::vector<int64_t> ranks ( target_degrees + 1, 0 );
-    for ( int64_t id = 0; id < carriers . count (); ++ id ) {
-      const int64_t current = mark_carrier ( id );
-      for ( int64_t d = 0; d < target_degrees; ++ d ) {
-        detail::InducedCells ( target, d, carriers . begin ( id ), carriers . end ( id ),
-                               member, current, cells [ d ] );
-      }
-      std::fill ( ranks . begin (), ranks . end (), 0 );
-      for ( int64_t d = 1; d < target_degrees; ++ d ) {
-        if ( cells [ d ] . empty () ) continue;
-        detail::SetLocalRows ( cells [ d - 1 ], local [ d - 1 ] );
-        detail::EliminateCarrierBoundary ( target, d, cells [ d - 1 ], cells [ d ],
-                                           local [ d - 1 ], false, eliminator, scratch );
-        detail::ClearLocalRows ( cells [ d - 1 ], local [ d - 1 ] );
-        ranks [ d ] = eliminator . rank ();
-      }
-      bool acyclic = true;
-      for ( int64_t d = 0; d < target_degrees; ++ d ) {
-        const int64_t betti =
-          static_cast<int64_t> ( cells [ d ] . size () ) - ranks [ d ] - ranks [ d + 1 ];
-        if ( betti != ( d == 0 ? 1 : 0 ) ) {
-          acyclic = false;
-          break;
-        }
-      }
-      if ( ! acyclic ) {
+  // Whether a carrier is acyclic over GF(5): its Betti numbers are
+  // ( 1, 0, ..., 0 ).
+  std::vector<std::vector<int32_t> > carrier_cells ( target_degrees );
+  std::vector<int64_t> ranks ( target_degrees + 1, 0 );
+  auto acyclic = [ & ] ( int64_t id ) {
+    const int64_t current = mark_carrier ( id );
+    for ( int64_t d = 0; d < target_degrees; ++ d ) {
+      detail::InducedCells ( target, d, carriers . begin ( id ), carriers . end ( id ),
+                             member, current, carrier_cells [ d ] );
+    }
+    std::fill ( ranks . begin (), ranks . end (), 0 );
+    for ( int64_t d = 1; d < target_degrees; ++ d ) {
+      if ( carrier_cells [ d ] . empty () ) continue;
+      detail::SetLocalRows ( carrier_cells [ d - 1 ], local [ d - 1 ] );
+      detail::EliminateCarrierBoundary ( target, d, carrier_cells [ d - 1 ],
+                                         carrier_cells [ d ], local [ d - 1 ], false,
+                                         eliminator, scratch );
+      detail::ClearLocalRows ( carrier_cells [ d - 1 ], local [ d - 1 ] );
+      ranks [ d ] = eliminator . rank ();
+    }
+    for ( int64_t d = 0; d < target_degrees; ++ d ) {
+      const int64_t betti = static_cast<int64_t> ( carrier_cells [ d ] . size () )
+                            - ranks [ d ] - ranks [ d + 1 ];
+      if ( betti != ( d == 0 ? 1 : 0 ) ) return false;
+    }
+    return true;
+  };
+
+  // Acyclicity, source cell by source cell in complex order. A distinct
+  // carrier is checked once, at its first use; so the first cell whose
+  // carrier is not acyclic is the first use of that carrier, and the check
+  // stops there. The carriers of the cells before it are recorded, and the
+  // failing carrier is not counted.
+  for ( int64_t d = 0; d < source_degrees; ++ d ) {
+    for ( int64_t row = 0; row < source . count ( d ); ++ row ) {
+      bool inserted = false;
+      const int64_t id = intern_carrier ( d, row, inserted );
+      if ( inserted && ! acyclic ( id ) ) {
+        record_carriers ( id );
         result . status = "not_acyclic";
-        result . failure_degree = first_use_degree [ id ];
-        result . failure_row = first_use_row [ id ];
+        result . failure_degree = d;
+        result . failure_row = row;
         return result;
       }
+      carrier_of [ d ] [ row ] = id;
     }
   }
+  record_carriers ( carriers . count () );
 
   // Pair preservation of the carrier: a cell of the source P0 has its carrier
   // in the target P0, that is, its carrier vertices are exit vertices.

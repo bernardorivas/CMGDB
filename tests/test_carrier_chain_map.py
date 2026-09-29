@@ -3,6 +3,9 @@
 A pure-Python reference of the same specification is compared with the native
 function on hand-built and randomized simplicial complexes, for exact equality
 of the chain map and of the relative payload, including the order of entries.
+The reference forms every carrier before it checks any, so the comparison also
+shows that the native function, which stops at the first cell whose carrier is
+not acyclic, reports the same failure.
 """
 
 import itertools
@@ -209,6 +212,13 @@ def reference(source, images, source_exit=(), *, target=None, target_exit=()):
 
     def fail(status, d, row):
         result.update(status=status, failure_degree=d, failure_row=row)
+        if status in ("empty_carrier", "not_acyclic"):
+            # The kernel stops at the failing cell: only the carriers of the
+            # cells before it are numbered.
+            before = sum(len(group) for group in source[:d]) + row
+            kept = carrier_ids[:before]
+            result["carrier_ids"] = kept + [-1] * (len(carrier_ids) - before)
+            result["carrier_count"] = len({index for index in kept if index >= 0})
         return result
 
     if empty:
@@ -513,6 +523,41 @@ def test_pair_violation():
     )
 
 
+def test_failure_stops_at_the_failing_cell():
+    # Vertex 2 of the hexagon has the whole hexagon as its carrier.
+    images = {i: [i, (i + 1) % 6] for i in range(6)}
+    images[2] = list(range(6))
+    result = assert_matches_reference(HEXAGON, images)
+    assert (result["status"], result["failure_degree"], result["failure_row"]) == (
+        "not_acyclic",
+        0,
+        2,
+    )
+    assert result["carrier_count"] == 2
+    assert result["carrier_ids"] == [0, 1] + [-1] * 10
+
+
+def test_empty_carrier_precedes_an_earlier_non_acyclic_carrier():
+    # The carrier of vertex 0 is the whole circle; vertex 2 has no image.
+    images = {0: [0, 1, 2], 1: [1], 2: []}
+    result = assert_matches_reference(CIRCLE, images)
+    assert (result["status"], result["failure_degree"], result["failure_row"]) == (
+        "empty_carrier",
+        0,
+        2,
+    )
+    assert result["carrier_count"] == 2
+    assert result["carrier_ids"] == [0, 1, -1, -1, -1, -1]
+
+
+def test_later_failures_number_every_carrier():
+    path = simplicial_complex([(0, 1), (1, 2)])
+    result = assert_matches_reference(path, {0: [1], 1: [1], 2: [2]}, {0})
+    assert result["status"] == "pair_violation"
+    assert result["carrier_count"] == 3
+    assert result["carrier_ids"] == [0, 0, 1, 0, 2]
+
+
 def test_carrier_ids_are_returned_only_on_request():
     assert "carrier_ids" not in native(TRIANGLE, identity(TRIANGLE))
     ids = native(TRIANGLE, {0: [0], 1: [0], 2: [2]}, return_carriers=True)["carrier_ids"]
@@ -697,6 +742,23 @@ def test_random_complexes_match_reference(seed):
     else:
         simplex = rng.choice(complex_[-1])
         images = {vertex: rng.sample(simplex, rng.randint(1, len(simplex))) for vertex in labels}
+    exit_vertices = set(random_subset(rng, labels, 2)) if seed % 3 == 0 else set()
+    assert_matches_reference(complex_, images, exit_vertices)
+
+
+@pytest.mark.parametrize("seed", range(120))
+def test_random_failures_match_reference(seed):
+    # The identity with a few enlarged vertex images, and at times an empty
+    # one, so that the first failing cell falls at varied positions.
+    rng = random.Random(3000 + seed)
+    labels = random_labels(rng, rng.randint(3, 12))
+    complex_ = random_complex(rng, labels, rng.randint(1, 4), rng.randint(2, 12))
+    images = {vertex: [vertex] for vertex in labels}
+    for _ in range(rng.randint(1, 3)):
+        vertex = rng.choice(labels)
+        images[vertex] = sorted(set(images[vertex]) | set(random_subset(rng, labels, 4)))
+    if seed % 4 == 0:
+        images[rng.choice(labels)] = []
     exit_vertices = set(random_subset(rng, labels, 2)) if seed % 3 == 0 else set()
     assert_matches_reference(complex_, images, exit_vertices)
 

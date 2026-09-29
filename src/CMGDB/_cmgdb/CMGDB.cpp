@@ -1354,12 +1354,14 @@ The carrier of a source cell ``s`` is the target subcomplex induced on the
 union ``T(s)`` of the vertex images of its vertices. The function checks, in
 this order, that every carrier is nonempty, that every distinct carrier is
 acyclic over F_5 (Betti numbers ``(1, 0, ..., 0)``), and that every cell of the
-source ``P0`` has its carrier in the target ``P0``. It then constructs the
-canonical chain selector: a vertex ``v`` goes to the smallest vertex of
-``T(v)``; a d-cell goes to the unique chain of its carrier with the required
-boundary that is supported on the greedy independent d-cells of the carrier,
-taken in complex order. The chain map is validated: ``d phi = phi d`` over F_5,
-every image lies in its carrier, and ``P0`` goes into ``P0``.
+source ``P0`` has its carrier in the target ``P0``. Acyclicity is checked
+source cell by source cell in complex order, once for every distinct carrier,
+and the function stops at the first cell whose carrier is not acyclic. It then
+constructs the canonical chain selector: a vertex ``v`` goes to the smallest
+vertex of ``T(v)``; a d-cell goes to the unique chain of its carrier with the
+required boundary that is supported on the greedy independent d-cells of the
+carrier, taken in complex order. The chain map is validated: ``d phi = phi d``
+over F_5, every image lies in its carrier, and ``P0`` goes into ``P0``.
 
 Returns a dict with ``status`` (``"ok"``, ``"empty_carrier"``,
 ``"not_acyclic"``, ``"pair_violation"``, ``"no_solution"`` or
@@ -1374,7 +1376,13 @@ format of ``ComputeRelativeHomologyShiftClass``: the basis of degree d is the
 d-cells outside ``P0`` in complex order, and entries at cells of ``P0`` are
 dropped. With ``return_carriers=True`` the dict also holds ``carrier_ids``,
 the carrier number of every source cell in complex order (degree-major), or
-``-1`` for an empty carrier.
+``-1`` for an empty carrier; carriers are numbered in order of first use.
+
+When the status is ``"empty_carrier"`` or ``"not_acyclic"``, the function
+stops at the failing cell, so ``carrier_count`` and ``carrier_ids`` describe
+only the source cells before it in complex order: ``carrier_count`` is the
+number of distinct carriers of those cells, and ``carrier_ids`` is ``-1`` from
+the failing cell on.
 
 Only ``modulus=5`` is supported. Invalid input raises ``ValueError``,
 ``IndexError`` or ``TypeError`` naming the offending position. The GIL is
