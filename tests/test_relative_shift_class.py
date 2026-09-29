@@ -312,6 +312,11 @@ INVALID = {
         ([1, 1], [[], []], [[(0, 0, 1)]]),
     ),
     "no degree": (ValueError, "cell_counts must contain at least dimension zero", ([], [], [])),
+    "chain group above the int64 range": (
+        OverflowError,
+        "chain group is too large for CHOMP matrices",
+        ([2**63], [[]], [[]]),
+    ),
 }
 
 
@@ -323,6 +328,13 @@ def test_invalid_input_raises_as_the_existing_function(name):
     with pytest.raises(error) as old:
         existing(*arguments)
     assert str(new.value) == str(old.value)
+
+
+def test_chain_groups_too_large_to_pack_are_refused():
+    # Below the int64 range; the existing function cannot allocate its
+    # matrices at this size, so it is not run.
+    with pytest.raises(OverflowError, match="too large for ComputeRelativeShiftClass"):
+        compute([2**60], [[]], [[]])
 
 
 # Zero boundary: the existing function is exact there.

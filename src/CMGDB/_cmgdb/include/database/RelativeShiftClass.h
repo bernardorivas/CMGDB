@@ -7,8 +7,11 @@
 // The input is that of ComputeRelativeHomologyShiftClass: the number of basis
 // cells in every degree, the sparse boundary matrices, and the sparse matrices
 // of the chain map. It is validated in the same order and with the same
-// messages: bounds and duplicate coordinates, boundary^2 = 0, and the
-// chain-map equation.
+// messages: the sizes of the chain groups, bounds and duplicate coordinates,
+// boundary^2 = 0, and the chain-map equation. The one difference is a chain
+// group of 2^60 or more cells within the int64_t range, which cannot be
+// packed here and is refused with a message of this function (see
+// BuildColumns).
 //
 // Homology. The boundary matrices are column reduced from the top degree
 // down: R_d = boundary_d * V_d with V_d upper unitriangular, where a column is
@@ -239,11 +242,20 @@ struct SparseColumns {
 /// Validate and store the matrices of one degree. The first entry, in input
 /// order, that is out of bounds or repeats an earlier coordinate is reported,
 /// with the messages of ComputeRelativeHomologyShiftClass.
+///
+/// A size above the int64_t range is reported with the threshold and message
+/// of ComputeRelativeHomologyShiftClass. A size from kIndexLimit up to that
+/// range cannot be packed, and is reported with a message of this function;
+/// ComputeRelativeHomologyShiftClass cannot allocate its matrices there.
 inline SparseColumns BuildColumns ( uint64_t rows,
                                     uint64_t columns,
                                     const std::vector<SparseEntry> & entries,
                                     size_t degree,
                                     bool boundary_matrix ) {
+  if ( rows > static_cast<uint64_t> ( std::numeric_limits<int64_t>::max () ) ||
+       columns > static_cast<uint64_t> ( std::numeric_limits<int64_t>::max () ) ) {
+    throw std::overflow_error ( "chain group is too large for CHOMP matrices" );
+  }
   if ( rows >= kIndexLimit || columns >= kIndexLimit ) {
     throw std::overflow_error ( "chain group is too large for ComputeRelativeShiftClass" );
   }

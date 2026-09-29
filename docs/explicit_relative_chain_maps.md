@@ -88,6 +88,12 @@ onto the basis. The shift class is read from the invariant factors of each
 induced matrix and written in the format above. It uses neither CHOMP's Morse
 reduction nor its Smith normal form, and every step terminates.
 
+The one difference in validation is a chain group of `2^60` or more cells
+within the `int64` range. `ComputeRelativeShiftClass` refuses it with
+`OverflowError: chain group is too large for ComputeRelativeShiftClass`, and
+`ComputeRelativeHomologyShiftClass` fails to allocate its matrices
+(`MemoryError`).
+
 `ComputeRelativeHomologyShiftClass` can return a wrong induced map, and hence
 a wrong shift class, when the coreduction Morse complex of the input is not
 minimal: its solve projects the images along a complement chosen by the Smith
