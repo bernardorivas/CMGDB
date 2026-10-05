@@ -16,6 +16,7 @@ Both reject boxes that reach outside the domain.
 
 from __future__ import annotations
 
+import contextlib
 import itertools
 import os
 from collections.abc import Callable
@@ -145,28 +146,51 @@ def _validate_batched_output(values: Any, n_points: int) -> np.ndarray:
     return out
 
 
+@contextlib.contextmanager
+def _lent_module(module: Any, device: Any):
+    """Lend ``module`` to an evaluation on ``device`` in eval mode.
+
+    ``Module.to`` and ``Module.eval`` work in place on the caller's module, so
+    its device and the training flag of every submodule are put back on exit
+    (a module spread over several devices comes back on the device of its
+    first tensor).
+    """
+    modes = [(submodule, submodule.training) for submodule in module.modules()]
+    tensor = next(itertools.chain(module.parameters(), module.buffers()), None)
+    home = None if tensor is None else tensor.device
+    try:
+        lent = module.to(device)
+        lent.eval()
+        yield lent
+    finally:
+        if home is not None:
+            module.to(home)
+        for submodule, training in modes:
+            submodule.training = training
+
+
 def as_batched_evaluator(f: Any, *, device: Any = "auto"):
     """Return a callable that maps ``(n, d)`` float64 NumPy arrays to arrays.
 
     Non-Torch callables are assumed to already be batched. If Torch is
     installed and ``f`` is a ``torch.nn.Module``, the returned evaluator runs
-    the module in ``float32`` on ``device`` and returns ``float64`` NumPy data.
+    the module in ``float32`` on ``device`` in eval mode and returns
+    ``float64`` NumPy data. After each call the module is back on its own
+    device and in its own modes.
     """
     torch = _import_torch(required=False)
     if torch is not None and isinstance(f, torch.nn.Module):
         torch_device = select_torch_device(device)
-        module = f.to(torch_device)
-        module.eval()
 
         def torch_evaluator(points: np.ndarray) -> np.ndarray:
             points = np.asarray(points, dtype=np.float64)
-            with torch.no_grad():
+            with _lent_module(f, torch_device) as module, torch.no_grad():
                 x = torch.as_tensor(points, dtype=torch.float32, device=torch_device)
                 values = module(x).detach().cpu().numpy()
             return _validate_batched_output(values, len(points))
 
         torch_evaluator._cmgdb_torch_device = torch_device
-        torch_evaluator._cmgdb_width = _max_linear_width(module)
+        torch_evaluator._cmgdb_width = _max_linear_width(f)
         return torch_evaluator
 
     def numpy_evaluator(points: np.ndarray) -> np.ndarray:

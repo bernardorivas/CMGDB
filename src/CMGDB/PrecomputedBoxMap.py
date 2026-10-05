@@ -2,6 +2,8 @@
 ### MIT LICENSE 2026 Marcio Gameiro
 
 import sys
+import contextlib
+import itertools
 import numpy as np
 
 class PrecomputedBoxMap:
@@ -29,7 +31,8 @@ class PrecomputedBoxMap:
        f must map an (m, dim) NumPy array of points to an (m, dim) array of
        image points (the BoxMapBatch convention). If PyTorch is in use and f
        is a torch.nn.Module, it is evaluated in float32 on device ('auto'
-       selects mps, then cuda, then cpu); torch is never imported otherwise.
+       selects mps, then cuda, then cpu) in eval mode, and afterwards returned
+       to its own device and modes; torch is never imported otherwise.
 
        Typical use:
            F = CMGDB.PrecomputedBoxMap(f, lower_bounds, upper_bounds, subdiv_max)
@@ -90,38 +93,50 @@ class PrecomputedBoxMap:
         else:
             chunk = max(1, int(batch_points))
 
-        evaluator = self._make_evaluator(f, device)
         step = self._finest_box_side / scale
         table = np.empty((n_total, self.dim), dtype=float)
-        for start in range(0, n_total, chunk):
-            stop = min(start + chunk, n_total)
-            flat_idx = np.arange(start, stop, dtype=np.int64)
-            multi_idx = np.stack(np.unravel_index(flat_idx, tuple(nodes_per_axis)), axis=-1)
-            # The last node is upper_bounds itself, where TreeGrid puts the
-            # upper faces of the boundary boxes: lower_bounds + multi_idx *
-            # step rounds to either side of it on many domains (to
-            # 1.2000000000000002 on [-1, 1.2], outside the domain of f)
-            points = np.where(multi_idx == nodes_per_axis - 1, self.upper_bounds,
-                              self.lower_bounds + multi_idx * step)
-            values = np.asarray(evaluator(points), dtype=float)
-            if values.shape != (stop - start, self.dim):
-                raise ValueError(
-                    f"The map must return an array of shape (m, {self.dim}); "
-                    f"got {values.shape} for m={stop - start}")
-            table[start:stop] = values
+        with self._evaluator(f, device) as evaluator:
+            for start in range(0, n_total, chunk):
+                stop = min(start + chunk, n_total)
+                flat_idx = np.arange(start, stop, dtype=np.int64)
+                multi_idx = np.stack(np.unravel_index(flat_idx, tuple(nodes_per_axis)), axis=-1)
+                # The last node is upper_bounds itself, where TreeGrid puts the
+                # upper faces of the boundary boxes: lower_bounds + multi_idx *
+                # step rounds to either side of it on many domains (to
+                # 1.2000000000000002 on [-1, 1.2], outside the domain of f)
+                points = np.where(multi_idx == nodes_per_axis - 1, self.upper_bounds,
+                                  self.lower_bounds + multi_idx * step)
+                values = np.asarray(evaluator(points), dtype=float)
+                if values.shape != (stop - start, self.dim):
+                    raise ValueError(
+                        f"The map must return an array of shape (m, {self.dim}); "
+                        f"got {values.shape} for m={stop - start}")
+                table[start:stop] = values
         self._table = table.reshape(tuple(nodes_per_axis) + (self.dim,))
 
-    def _make_evaluator(self, f, device):
+    @contextlib.contextmanager
+    def _evaluator(self, f, device):
+        """Yield a function evaluating f on an (m, dim) array of points."""
         # Torch is used only if the caller already imported it and f is a Module
         torch = sys.modules.get('torch')
-        if torch is not None and isinstance(f, torch.nn.Module):
-            if device == 'auto':
-                if torch.backends.mps.is_available():
-                    device = 'mps'
-                elif torch.cuda.is_available():
-                    device = 'cuda'
-                else:
-                    device = 'cpu'
+        if torch is None or not isinstance(f, torch.nn.Module):
+            yield lambda points: f(points)
+            return
+        if device == 'auto':
+            if torch.backends.mps.is_available():
+                device = 'mps'
+            elif torch.cuda.is_available():
+                device = 'cuda'
+            else:
+                device = 'cpu'
+        # Module.to and Module.eval change the caller's module in place, so
+        # its device and the mode of every submodule are put back afterwards
+        # (a module spread over several devices comes back on the device of
+        # its first tensor)
+        modes = [(submodule, submodule.training) for submodule in f.modules()]
+        tensor = next(itertools.chain(f.parameters(), f.buffers()), None)
+        home = None if tensor is None else tensor.device
+        try:
             module = f.to(device)
             module.eval()
 
@@ -129,8 +144,12 @@ class PrecomputedBoxMap:
                 with torch.no_grad():
                     x = torch.as_tensor(points, dtype=torch.float32, device=device)
                     return module(x).detach().cpu().numpy().astype(float)
-            return evaluator
-        return lambda points: f(points)
+            yield evaluator
+        finally:
+            if home is not None:
+                f.to(home)
+            for submodule, training in modes:
+                submodule.training = training
 
     @staticmethod
     def _first_bad(bad, lower, upper, *arrays):

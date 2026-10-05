@@ -1,6 +1,9 @@
 """Regression tests for the precomputed box maps: the PrecomputedBoxMap class
 and the grid-layout factories of CMGDB.precomputed_grid."""
 
+import copy
+import itertools
+
 import numpy as np
 import pytest
 import CMGDB
@@ -188,3 +191,59 @@ def test_conley_morse_graph_on_adaptive_grid_matches_live(use_batch):
     if use_batch:
         model.set_batch_map(F.batch)
     assert conley_signature(*CMGDB.ComputeConleyMorseGraph(model)) == live
+
+
+def train_mode_net(torch):
+    """A network in the middle of training, with one submodule the user froze
+    in eval mode."""
+    torch.manual_seed(0)
+    net = torch.nn.Sequential(torch.nn.Linear(2, 8), torch.nn.BatchNorm1d(8),
+                              torch.nn.Dropout(0.5), torch.nn.Tanh(),
+                              torch.nn.Linear(8, 2))
+    net.train()
+    net[1].eval()
+    return net
+
+
+def module_state(net):
+    devices = [t.device for t in itertools.chain(net.parameters(), net.buffers())]
+    return devices, [m.training for m in net.modules()]
+
+
+def lattice_points(F):
+    """The nodes of F's table, in table order."""
+    axes = [np.linspace(lo, up, n) for lo, up, n in
+            zip(F.lower_bounds, F.upper_bounds, F._nodes_per_axis)]
+    return np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, F.dim)
+
+
+@pytest.mark.parametrize("device", ["auto", "cpu"])
+def test_class_leaves_torch_module_as_it_was(device):
+    # C40: the module was moved to device and put in eval mode in place, so
+    # the caller's next CPU call or training step failed or ran without
+    # dropout
+    torch = pytest.importorskip("torch")
+    net = train_mode_net(torch)
+    before = module_state(net)
+    F = CMGDB.PrecomputedBoxMap(net, [0.0, 0.0], [1.0, 1.0], 6, device=device)
+    assert module_state(net) == before
+    if device == "cpu":
+        # The table still comes from the network in eval mode
+        reference = copy.deepcopy(net).eval()
+        with torch.no_grad():
+            expected = reference(torch.as_tensor(lattice_points(F), dtype=torch.float32))
+        assert np.array_equal(F._table.reshape(-1, 2), expected.numpy().astype(float))
+
+
+@pytest.mark.parametrize("device", ["auto", "cpu"])
+def test_factories_leave_torch_module_as_it_was(device):
+    # C40, in the fork's as_batched_evaluator
+    torch = pytest.importorskip("torch")
+    net = train_mode_net(torch)
+    before = module_state(net)
+    CMGDB.make_precomputed_box_map(net, [0.0, 0.0], [1.0, 1.0], subdiv_max=6,
+                                   device=device)
+    assert module_state(net) == before
+    evaluator = precomputed_grid.as_batched_evaluator(net, device=device)
+    evaluator(np.zeros((3, 2)))
+    assert module_state(net) == before
