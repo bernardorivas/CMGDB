@@ -14,6 +14,7 @@
 #include "MorseGraph.h"
 #include "Configuration.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <exception>
 #include <functional>
@@ -621,18 +622,19 @@ ModelBinding(py::module &m) {
     .def("phaseSpace", &Model::phaseSpace)
     .def("setmap", &Model::setmap)
     .def("set_batch_map", [](Model & model, py::function F_batch_py) {
-      // Wrap the Python batch map as a flat-buffer evaluator. The rectangle
-      // buffer is exposed to Python as a zero-copy, read-only NumPy array of
-      // shape (count, 2*dim); the view is valid only during the call.
+      // Wrap the Python batch map as a flat-buffer evaluator. The rectangles
+      // are copied into a read-only NumPy array of shape (count, 2*dim) that
+      // owns its data. A view of the buffer would dangle if the callback kept
+      // it: the callers refill the buffer for the next chunk and free it when
+      // they return.
       model . set_batch_map (
         [F_batch_py](const std::vector<double> & rects, uint64_t count,
                      uint64_t dim, std::vector<double> & images) {
           py::gil_scoped_acquire gil;
           py::array_t<double> rects_array (
-            { (py::ssize_t) count, (py::ssize_t) (2 * dim) },
-            { (py::ssize_t) (2 * dim * sizeof(double)), (py::ssize_t) sizeof(double) },
-            rects . data (),
-            py::capsule ( rects . data (), [](void *){} ) );
+            { (py::ssize_t) count, (py::ssize_t) (2 * dim) } );
+          std::copy_n ( rects . data (), count * 2 * dim,
+                        rects_array . mutable_data () );
           rects_array . attr ( "setflags" ) ( py::arg ( "write" ) = false );
           py::object result = F_batch_py ( rects_array );
           py::array_t<double, py::array::c_style | py::array::forcecast> images_array =
@@ -649,7 +651,13 @@ ModelBinding(py::module &m) {
           const double * data = images_array . data ();
           images . assign ( data, data + count * 2 * dim );
         } );
-    })
+    },
+    "Attach a batched evaluator for the map F this model was constructed "
+    "with. The evaluator is called with a read-only NumPy array of shape "
+    "(count, 2*dim), one rectangle per row (dim lower bounds, then dim upper "
+    "bounds); the array is a copy, which the evaluator may keep. The "
+    "evaluator must return the image rectangles in the same layout, as an "
+    "array or a list of lists, and must agree with F on every rectangle.")
     .def("param_dim", &Model::param_dim)
     .def("phase_dim", &Model::phase_dim)
     .def("phase_subdiv_min", &Model::phase_subdiv_min)

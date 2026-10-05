@@ -183,7 +183,7 @@ For background, see this
 
 An explicit `True` or `False` for either cache flag always wins over `CMGDB_MAPGRAPH_CACHE`. `ComputeMorseGraphOnly` and `ComputeConleyMorseGraphOnly` take the same keyword arguments except `cache_map_graph`, since they return no `map_graph`. The `AtlasModel` overloads take no keyword arguments; their caches follow `CMGDB_MAPGRAPH_CACHE`.
 
-A batch map attached with `model.set_batch_map(g)` receives a read-only NumPy array of shape `(count, 2*dim)`, one rectangle per row (lower bounds, then upper bounds), and must return the image rectangles in the same layout, as an array or a list of lists. It must agree with the model's scalar map on every rectangle.
+A batch map attached with `model.set_batch_map(g)` receives a read-only NumPy array of shape `(count, 2*dim)`, one rectangle per row (lower bounds, then upper bounds); the array is a copy, which `g` may keep. `g` must return the image rectangles in the same layout, as an array or a list of lists, and must agree with the model's scalar map on every rectangle.
 
 A cached `map_graph` also unlocks the native post-processing queries (all of which release the GIL and refuse a lazy graph):
 
