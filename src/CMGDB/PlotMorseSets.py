@@ -89,42 +89,6 @@ def _resolve_plot_setup(rows, num_morse_sets, morse_nodes, cmap, clist, scale_fa
 
 
 
-def _effective_dpi_scale(fig, dpi, probe_dpi=50):
-    """Factor that turns a requested dpi into the dpi seen on the saved page.
-
-       Matplotlib rasterizes an artist over the region it draws, while
-       ``bbox_inches='tight'`` crops the page to the content plus its labels.
-       The bitmap covers fewer inches than the page, so its resolution there is
-       lower than the number requested -- by about 17% for a 2-D plot and 49%
-       for a 3-D one, where the projected axes fill a fraction of the canvas.
-
-       The ratio depends on the layout, not on the dpi, so one cheap probe
-       render measures it exactly. Modelling it from the axes or the projected
-       data cube does not work: neither predicts what mplot3d actually emits.
-    """
-    import io
-    import re
-
-    try:
-        buffer = io.BytesIO()
-        fig.savefig(buffer, format='pdf', dpi=probe_dpi, bbox_inches='tight')
-        raw = buffer.getvalue()
-        widths = [int(m) for m in re.findall(rb'/Width\s+(\d+)', raw)]
-        boxes = re.findall(rb'/MediaBox\s*\[([^\]]+)\]', raw)
-        if not widths or not boxes:
-            return 1.0
-        numbers = [float(v) for v in boxes[0].split()]
-        page_in = (numbers[2] - numbers[0]) / 72.0
-        bitmap_in = max(widths) / probe_dpi
-        if bitmap_in <= 0 or page_in <= 0:
-            return 1.0
-        return max(1.0, page_in / bitmap_in)
-    except Exception:
-        # A backend that cannot probe gets the uncorrected dpi rather than an
-        # exception raised from a plotting call.
-        return 1.0
-
-
 def _finish(fig, ax, fig_fname, dpi, show, rasterized=False):
     """Save if asked, show if the backend can, and hand the figure back.
 
@@ -142,10 +106,9 @@ def _finish(fig, ax, fig_fname, dpi, show, rasterized=False):
     if dpi == None:
         dpi = 600 if rasterized else 300
     if fig_fname:
-        # Scale so ``dpi`` is the resolution obtained on the page, not the one
-        # requested of a bitmap that covers only part of it.
-        save_dpi = dpi * (_effective_dpi_scale(fig, dpi) if rasterized else 1.0)
-        fig.savefig(fig_fname, dpi=save_dpi, bbox_inches='tight')
+        # A bitmap that covers part of a vector page still has dpi pixels per
+        # inch of it, so dpi goes to savefig as it is, 'figure' included.
+        fig.savefig(fig_fname, dpi=dpi, bbox_inches='tight')
     if show == None:
         show = matplotlib.get_backend().lower() not in ('agg', 'pdf', 'ps', 'svg', 'cairo', 'template')
     if show:

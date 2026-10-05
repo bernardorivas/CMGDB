@@ -1,10 +1,13 @@
 """Regression tests for the Morse set plots (review findings C01, C02 and C04-C22)."""
 
+import re
+
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from PIL import Image
 
 import CMGDB
 
@@ -314,4 +317,59 @@ def test_translucent_unscaled_set_still_merges():
     rows += [[i * H, j * H, (i + 1) * H, (j + 1) * H, 1] for i in range(5, 8) for j in range(3)]
     fig, ax = CMGDB.PlotMorseSets(rows, scale_factor=[1.5, 1], alpha=0.5, show=False)
     assert len(ax.patches) == 1 and len(ax.collections) == 1
+    plt.close(fig)
+
+
+def cube_rows(n=3):
+    """An n x n x n block of 0.1 cubes, all in set 0."""
+    return [[i * H, j * H, k * H, (i + 1) * H, (j + 1) * H, (k + 1) * H, 0]
+            for i in range(n) for j in range(n) for k in range(n)]
+
+
+def embedded_ppi(path):
+    """Pixels per inch of the page of the one bitmap in an uncompressed PDF."""
+    raw = path.read_bytes()
+    # The bitmap and its alpha mask each state the width.
+    widths = {int(w) for w in re.findall(rb'/Width\s+(\d+)', raw)}
+    placed = re.findall(rb'([-\d.]+) [-\d.]+ [-\d.]+ [-\d.]+ [-\d.]+ [-\d.]+ cm\s*/\w+ Do', raw)
+    assert len(widths) == 1 and len(placed) == 1
+    return widths.pop() / (float(placed[0]) / 72.0)
+
+
+def png_dpi(path):
+    return Image.open(path).info['dpi'][0]
+
+
+@pytest.mark.parametrize("plot, rows", [(CMGDB.PlotMorseSets, corner_rows()),
+                                        (CMGDB.PlotMorseSets3D, cube_rows())])
+def test_rasterized_saves_have_the_requested_dpi(monkeypatch, tmp_path, plot, rows):
+    # C02: a rasterized save multiplied dpi by a probe of how much of the
+    # page the bitmap covers, so dpi=100 embedded 119 px per inch (2-D) and
+    # 132 (3-D) in a PDF and enlarged a PNG alike. A bitmap covering part of
+    # the page already has dpi pixels per inch of it.
+    monkeypatch.setitem(matplotlib.rcParams, 'pdf.compression', 0)
+    fig, ax = plot(rows, rasterize=True, dpi=100, fig_fname=str(tmp_path / 'r.pdf'),
+                   show=False)
+    assert embedded_ppi(tmp_path / 'r.pdf') == pytest.approx(100, rel=0.01)
+    plt.close(fig)
+    fig, ax = plot(rows, rasterize=True, dpi=100, fig_fname=str(tmp_path / 'r.png'),
+                   show=False)
+    assert png_dpi(tmp_path / 'r.png') == pytest.approx(100, rel=0.01)
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("plot, rows", [
+    (CMGDB.PlotMorseSets, corner_rows()),
+    (CMGDB.PlotMorseSets, line_rows()),
+    (CMGDB.PlotMorseSets1D, line_rows()),
+    (CMGDB.PlotMorseSets3D, cube_rows()),
+    (CMGDB.PlotMorseSetsScatter, corner_rows()),
+])
+@pytest.mark.parametrize("rasterize", [False, True])
+def test_dpi_figure_saves_at_the_figure_dpi(tmp_path, plot, rows, rasterize):
+    # C22: savefig takes dpi='figure', and 1.3.2 passed it on, but the dpi was
+    # multiplied by a scale before saving, so 'figure' * 1.0 raised TypeError.
+    out = tmp_path / 'f.png'
+    fig, ax = plot(rows, fig_fname=str(out), dpi='figure', rasterize=rasterize, show=False)
+    assert png_dpi(out) == pytest.approx(fig.dpi, rel=0.01)
     plt.close(fig)
