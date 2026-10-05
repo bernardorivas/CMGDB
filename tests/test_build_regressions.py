@@ -146,3 +146,13 @@ def test_matplotlib_requirement_excludes_releases_without_poly3d_shade():
     assert not requirement.specifier.contains("3.6.0")
     assert not requirement.specifier.contains("3.6.3")
     assert requirement.specifier.contains("3.7.0")
+
+
+def test_build_backend_requirement_excludes_releases_without_pep639():
+    # project.license is an SPDX expression (PEP 639), which scikit-build-core
+    # parses from 0.11 on; under 0.10.x every build failed before CMake ran
+    # (C51, fixed by the merge).
+    requirement = next(Requirement(line) for line in pyproject()["build-system"]["requires"]
+                       if Requirement(line).name == "scikit-build-core")
+    assert not requirement.specifier.contains("0.10.7")
+    assert requirement.specifier.contains("0.11.0")
