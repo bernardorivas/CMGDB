@@ -63,6 +63,12 @@ class BoxMapData:
         if self._use_index:
             self._build_index(self._points_per_bin)
 
+    def __setstate__(self, state):
+        # copy.deepcopy and pickle give the copy a new X array, writeable
+        # again, while its index is that of the copied points
+        self.__dict__.update(state)
+        self._X.flags.writeable = False
+
     def _build_index(self, points_per_bin):
         """Build the uniform-grid index over X: assign each point an integer bin,
            sort point indices by bin, and store CSR-style bin offsets so the points

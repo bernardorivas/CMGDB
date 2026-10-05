@@ -1,6 +1,9 @@
 """Regression tests for the spatial index of BoxMapData: it must select the
 same points as the linear scan of BoxMapDataLinear."""
 
+import copy
+import pickle
+
 import numpy as np
 import pytest
 import CMGDB
@@ -93,9 +96,19 @@ def test_shrunk_data_rebuilds_the_index(two_datasets, num_points):
     assert np.array_equal(F.map_points(rect), linear.map_points(rect))
 
 
-def test_data_points_cannot_change_in_place(two_datasets):
-    # C49: an in-place change of F.X left the index stale too, so it raises
+@pytest.mark.parametrize("copier", [
+    lambda F: F,
+    copy.copy,
+    copy.deepcopy,
+    lambda F: pickle.loads(pickle.dumps(F)),   # as when sent to a worker process
+], ids=["original", "copy", "deepcopy", "pickle"])
+def test_data_points_cannot_change_in_place(two_datasets, copier):
+    # C49: an in-place change of F.X left the index stale too, so it
+    # raises, also on a copy, whose X used to be writeable again
     X0, X1 = two_datasets
-    F = CMGDB.BoxMapData(X0, 0.5 * X0)
+    F = copier(CMGDB.BoxMapData(X0, 0.5 * X0, domain_padding=False))
     with pytest.raises(ValueError):
         F.X[:] = X1
+    rect = [0.0, 0.0, 0.5, 0.5]
+    linear = CMGDB.BoxMapDataLinear(X0, 0.5 * X0, domain_padding=False)
+    assert np.array_equal(F.map_points(rect), linear.map_points(rect))
