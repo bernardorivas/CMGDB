@@ -651,6 +651,11 @@ ComputeConleyMorseGraphOnly ( AtlasModel const& ) {
 // graph is computed on coarser grids than the final one, so its edges need not
 // match reachability in map_graph, and map_graph can have cycles through cells
 // outside the Morse sets, or through the cells of several Morse sets.
+//
+// Each binding runs the Check* function of its query with the GIL held and
+// releases the GIL only for the Compute* function. build_cache() runs with the
+// GIL held, so the has_cache() read cannot race a concurrent build, and the CSR
+// of a cached MapGraph never changes again.
 
 namespace {
 
@@ -838,15 +843,14 @@ CheckMorseDirectedPathCells (
 // The cells reachable from a cell of a source Morse set that also reach a cell
 // of a target Morse set, in increasing order. One sweep from the source cells
 // visits exactly the forward-reachable cells and, with the target cells seeded
-// 1, marks those that reach a target, so no reverse CSR is built.
+// 1, marks those that reach a target, so no reverse CSR is built. Requires
+// CheckMorseDirectedPathCells.
 std::vector<uint64_t>
 ComputeMorseDirectedPathCells (
     const MapGraph & map_graph,
     const MorseGraph & morse_graph,
     const std::vector<uint64_t> & source_nodes,
     const std::vector<uint64_t> & target_nodes ) {
-  CheckMorseDirectedPathCells (
-    map_graph, morse_graph, source_nodes, target_nodes );
   const uint64_t n = map_graph . num_vertices ();
   std::vector<uint8_t> reaches_target ( static_cast<size_t> ( n ), 0 );
   for ( const uint64_t node : target_nodes ) {
@@ -902,12 +906,12 @@ CheckMorseReachabilityMasks (
 
 // Bit i of a query cell's mask is set when the cell reaches a cell of Morse
 // set i. Each Morse cell is seeded with the bit of its own node only.
+// Requires CheckMorseReachabilityMasks.
 std::vector<uint64_t>
 ComputeMorseReachabilityMasks (
     const MapGraph & map_graph,
     const MorseGraph & morse_graph,
     const std::vector<uint64_t> & query_vertices ) {
-  CheckMorseReachabilityMasks ( map_graph, morse_graph, query_vertices );
   const uint64_t n = map_graph . num_vertices ();
   const size_t number_of_morse_sets = morse_graph . NumVertices ();
   std::vector<uint64_t> reach_mask ( static_cast<size_t> ( n ), 0 );
@@ -951,13 +955,12 @@ CheckMorseSingletonReachability (
 
 // A query cell's summary is the id of the only Morse node it reaches, -1 when
 // it reaches none and -2 when it reaches several. Each Morse cell is seeded
-// with its own node only.
+// with its own node only. Requires CheckMorseSingletonReachability.
 std::vector<int32_t>
 ComputeMorseSingletonReachability (
     const MapGraph & map_graph,
     const MorseGraph & morse_graph,
     const std::vector<uint64_t> & query_vertices ) {
-  CheckMorseSingletonReachability ( map_graph, morse_graph, query_vertices );
   constexpr int32_t NO_MORSE_NODE = -1;
   constexpr int32_t MULTIPLE_MORSE_NODES = -2;
   const auto merge_summary =
@@ -1648,6 +1651,8 @@ another dimension than the grid. The GIL is released during the computation.
          const MorseGraph & morse_graph,
          const std::vector<uint64_t> & source_nodes,
          const std::vector<uint64_t> & target_nodes ) {
+      CheckMorseDirectedPathCells (
+        map_graph, morse_graph, source_nodes, target_nodes );
       std::vector<uint64_t> values;
       {
         py::gil_scoped_release release;
@@ -1673,6 +1678,7 @@ another dimension than the grid. The GIL is released during the computation.
     [] ( const MapGraph & map_graph,
          const MorseGraph & morse_graph,
          const std::vector<uint64_t> & query_vertices ) {
+      CheckMorseReachabilityMasks ( map_graph, morse_graph, query_vertices );
       std::vector<uint64_t> values;
       {
         py::gil_scoped_release release;
@@ -1697,6 +1703,7 @@ another dimension than the grid. The GIL is released during the computation.
     [] ( const MapGraph & map_graph,
          const MorseGraph & morse_graph,
          const std::vector<uint64_t> & query_vertices ) {
+      CheckMorseSingletonReachability ( map_graph, morse_graph, query_vertices );
       std::vector<int32_t> values;
       {
         py::gil_scoped_release release;
