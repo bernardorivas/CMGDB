@@ -641,31 +641,180 @@ ComputeConleyMorseGraphOnly ( AtlasModel const& ) {
     "supply a valid suspension index pair and carrier/chain map instead" );
 }
 
-std::vector<uint64_t>
-ComputeMorseDirectedPathCells (
+// Native reachability queries on a cached MapGraph.
+//
+// The answers are defined on the cells of the returned map_graph: a cell
+// reaches a Morse node when some directed path (possibly of length zero) leads
+// from it to a cell of that node's Morse set. The queries never consult the
+// Morse graph's edges and assume nothing about where the cycles of map_graph
+// lie. On a hierarchical run (phase_subdiv_init < phase_subdiv_min) the Morse
+// graph is computed on coarser grids than the final one, so its edges need not
+// match reachability in map_graph, and map_graph can have cycles through cells
+// outside the Morse sets, or through the cells of several Morse sets.
+
+namespace {
+
+void CheckCachedMapGraph ( const MapGraph & map_graph, const char * query ) {
+  if ( not map_graph . has_cache () ) {
+    throw std::runtime_error (
+      std::string ( query ) + " requires a cached MapGraph; refusing to use "
+      "on-demand map callbacks." );
+  }
+  if ( map_graph . num_vertices () > std::numeric_limits<uint32_t>::max () ) {
+    throw std::runtime_error (
+      std::string ( query ) + " currently supports at most 2^32-1 map vertices" );
+  }
+}
+
+void CheckQueryVertices ( const MapGraph & map_graph,
+                          const std::vector<uint64_t> & query_vertices,
+                          const char * query ) {
+  const uint64_t n = map_graph . num_vertices ();
+  for ( const uint64_t vertex : query_vertices ) {
+    if ( vertex >= n ) {
+      std::ostringstream message;
+      message
+        << query << " query vertex " << vertex
+        << " is outside [0, " << n << ")";
+      throw std::out_of_range ( message . str () );
+    }
+  }
+}
+
+/// ReachabilitySweep
+///    Every cell v of the cached map graph carries a value, initially its
+///    seed, in a join semilattice whose join is `merge`. Sweep ( start ) runs
+///    an iterative Tarjan search from start over the cells not swept yet. When
+///    it returns, every swept cell holds the join of the seeds of all the
+///    cells reachable from it, itself included.
+///
+///    Tarjan closes the strongly connected components in reverse topological
+///    order, so a component's value is complete when it closes: it joins the
+///    seeds of its own cells and the values of the components its edges reach,
+///    all closed before it. Along the way a cell joins the value of each swept
+///    successor and of each tree child as the child finishes. Every value
+///    joined into a cell belongs to a cell it reaches, so the partial values
+///    of open components are joined soundly too.
+template < class Value, class Merge >
+class ReachabilitySweep {
+ public:
+  ReachabilitySweep ( const MapGraph & map_graph,
+                      const char * query,
+                      std::vector<Value> & value,
+                      Merge merge )
+    : map_graph_ ( map_graph ),
+      query_ ( query ),
+      n_ ( map_graph . num_vertices () ),
+      rank_ ( static_cast<size_t> ( n_ ), UNSEEN ),
+      value_ ( value ),
+      merge_ ( merge ) {}
+
+  bool swept ( uint64_t vertex ) const { return rank_ [ vertex ] != UNSEEN; }
+
+  void Sweep ( uint32_t start ) {
+    if ( rank_ [ start ] != UNSEEN ) return;
+    Open ( start );
+    while ( not frames_ . empty () ) {
+      Frame & frame = frames_ . back ();
+      const MapGraph::AdjacencySpan adjacency =
+        map_graph_ . adjacency_span ( frame . vertex );
+      if ( adjacency . size () > std::numeric_limits<uint32_t>::max () ) {
+        throw std::runtime_error (
+          std::string ( query_ ) + " found more than 2^32-1 outgoing edges "
+          "at one vertex" );
+      }
+      bool descended = false;
+      while ( frame . next_adjacency < adjacency . size () ) {
+        const uint64_t successor =
+          adjacency . begin () [ frame . next_adjacency ];
+        ++ frame . next_adjacency;
+        if ( successor >= n_ ) {
+          throw std::runtime_error (
+            std::string ( query_ ) + " found an adjacency outside the MapGraph" );
+        }
+        if ( rank_ [ successor ] == UNSEEN ) {
+          // Open invalidates frame.
+          Open ( static_cast<uint32_t> ( successor ) );
+          descended = true;
+          break;
+        }
+        frame . lowlink = std::min ( frame . lowlink, rank_ [ successor ] );
+        value_ [ frame . vertex ] =
+          merge_ ( value_ [ frame . vertex ], value_ [ successor ] );
+      }
+      if ( descended ) continue;
+
+      const uint32_t vertex = frame . vertex;
+      const uint32_t lowlink = frame . lowlink;
+      frames_ . pop_back ();
+      if ( lowlink == rank_ [ vertex ] ) {
+        // vertex is the root of its component, which closes now.
+        const Value component_value = value_ [ vertex ];
+        uint32_t member;
+        do {
+          member = component_stack_ . back ();
+          component_stack_ . pop_back ();
+          rank_ [ member ] = CLOSED;
+          value_ [ member ] = component_value;
+        } while ( member != vertex );
+      }
+      if ( not frames_ . empty () ) {
+        Frame & parent = frames_ . back ();
+        parent . lowlink = std::min ( parent . lowlink, lowlink );
+        value_ [ parent . vertex ] =
+          merge_ ( value_ [ parent . vertex ], value_ [ vertex ] );
+      }
+    }
+  }
+
+ private:
+  // rank_ [ v ] is UNSEEN until v is swept, then its preorder number (1, 2,
+  // ...) while its component is open, then CLOSED. Taking the minimum with
+  // CLOSED, the largest uint32, never lowers a lowlink, so closed cells drop
+  // out of the lowlink computation as Tarjan requires. (A preorder number of
+  // 2^32-1, possible only on a graph of 2^32-1 cells, compares the same way
+  // as CLOSED would.)
+  static constexpr uint32_t UNSEEN = 0;
+  static constexpr uint32_t CLOSED = std::numeric_limits<uint32_t>::max ();
+
+  struct Frame {
+    uint32_t vertex;
+    uint32_t next_adjacency;
+    uint32_t lowlink;
+  };
+
+  void Open ( uint32_t vertex ) {
+    ++ preorder_;
+    rank_ [ vertex ] = preorder_;
+    component_stack_ . push_back ( vertex );
+    frames_ . push_back ( { vertex, 0, preorder_ } );
+  }
+
+  const MapGraph & map_graph_;
+  const char * query_;
+  const uint64_t n_;
+  std::vector<uint32_t> rank_;
+  std::vector<Value> & value_;
+  Merge merge_;
+  uint32_t preorder_ = 0;
+  std::vector<uint32_t> component_stack_;
+  std::vector<Frame> frames_;
+};
+
+} // namespace
+
+void
+CheckMorseDirectedPathCells (
     const MapGraph & map_graph,
     const MorseGraph & morse_graph,
     const std::vector<uint64_t> & source_nodes,
     const std::vector<uint64_t> & target_nodes ) {
-  if ( not map_graph . has_cache () ) {
-    throw std::runtime_error (
-      "MorseDirectedPathCells requires a cached MapGraph; refusing to use "
-      "on-demand map callbacks." );
-  }
-
-  const uint64_t n = map_graph . num_vertices ();
-  if ( n > std::numeric_limits<uint32_t>::max () ) {
-    throw std::runtime_error (
-      "MorseDirectedPathCells currently supports at most 2^32-1 map vertices" );
-  }
-  const size_t number_of_morse_sets = morse_graph . NumVertices ();
+  CheckCachedMapGraph ( map_graph, "MorseDirectedPathCells" );
   if ( source_nodes . empty () or target_nodes . empty () ) {
     throw std::invalid_argument (
       "MorseDirectedPathCells requires nonempty source_nodes and target_nodes" );
   }
-
-  std::vector<uint8_t> is_source_node ( number_of_morse_sets, 0 );
-  std::vector<uint8_t> can_reach_target_node ( number_of_morse_sets, 0 );
+  const size_t number_of_morse_sets = morse_graph . NumVertices ();
   for ( const uint64_t node : source_nodes ) {
     if ( node >= number_of_morse_sets ) {
       std::ostringstream message;
@@ -674,7 +823,6 @@ ComputeMorseDirectedPathCells (
         << " is outside [0, " << number_of_morse_sets << ")";
       throw std::out_of_range ( message . str () );
     }
-    is_source_node [ node ] = 1;
   }
   for ( const uint64_t node : target_nodes ) {
     if ( node >= number_of_morse_sets ) {
@@ -684,157 +832,63 @@ ComputeMorseDirectedPathCells (
         << " is outside [0, " << number_of_morse_sets << ")";
       throw std::out_of_range ( message . str () );
     }
-    can_reach_target_node [ node ] = 1;
   }
+}
 
-  // Recurrent cells are terminals for the backward dynamic program. Seed each
-  // fine Morse component by whether its node can reach a requested target in
-  // the Morse DAG. This preserves all downstream paths while breaking every
-  // cell-level directed cycle at its recurrent component.
-  const std::vector<std::pair<uint64_t, uint64_t>> morse_edges =
-    morse_graph . edges_unreduced ();
-  for ( size_t pass = 0; pass < number_of_morse_sets; ++ pass ) {
-    bool changed = false;
-    for ( const auto & edge : morse_edges ) {
-      if ( edge . first >= number_of_morse_sets or
-           edge . second >= number_of_morse_sets ) {
+// The cells reachable from a cell of a source Morse set that also reach a cell
+// of a target Morse set, in increasing order. One sweep from the source cells
+// visits exactly the forward-reachable cells and, with the target cells seeded
+// 1, marks those that reach a target, so no reverse CSR is built.
+std::vector<uint64_t>
+ComputeMorseDirectedPathCells (
+    const MapGraph & map_graph,
+    const MorseGraph & morse_graph,
+    const std::vector<uint64_t> & source_nodes,
+    const std::vector<uint64_t> & target_nodes ) {
+  CheckMorseDirectedPathCells (
+    map_graph, morse_graph, source_nodes, target_nodes );
+  const uint64_t n = map_graph . num_vertices ();
+  std::vector<uint8_t> reaches_target ( static_cast<size_t> ( n ), 0 );
+  for ( const uint64_t node : target_nodes ) {
+    for ( const uint64_t cell : morse_graph . morse_set ( node ) ) {
+      if ( cell >= n ) {
         throw std::runtime_error (
-          "MorseDirectedPathCells received an invalid Morse-graph edge" );
+          "MorseDirectedPathCells found a target Morse cell outside the "
+          "MapGraph" );
       }
-      if ( can_reach_target_node [ edge . second ] and
-           not can_reach_target_node [ edge . first ] ) {
-        can_reach_target_node [ edge . first ] = 1;
-        changed = true;
-      }
+      reaches_target [ cell ] = 1;
     }
-    if ( not changed ) break;
   }
 
-  std::vector<uint8_t> forward ( static_cast<size_t> ( n ), 0 );
-  std::vector<uint32_t> vertex_stack;
-  for ( size_t node = 0; node < number_of_morse_sets; ++ node ) {
-    if ( not is_source_node [ node ] ) continue;
-    const std::vector<uint64_t> cells = morse_graph . morse_set ( node );
-    for ( const uint64_t cell : cells ) {
+  ReachabilitySweep sweep (
+    map_graph, "MorseDirectedPathCells", reaches_target,
+    [] ( uint8_t left, uint8_t right ) -> uint8_t { return left | right; } );
+  for ( const uint64_t node : source_nodes ) {
+    for ( const uint64_t cell : morse_graph . morse_set ( node ) ) {
       if ( cell >= n ) {
         throw std::runtime_error (
           "MorseDirectedPathCells found a source Morse cell outside the "
           "MapGraph" );
       }
-      if ( not forward [ cell ] ) {
-        forward [ cell ] = 1;
-        vertex_stack . push_back ( static_cast<uint32_t> ( cell ) );
-      }
-    }
-  }
-
-  while ( not vertex_stack . empty () ) {
-    const uint32_t source = vertex_stack . back ();
-    vertex_stack . pop_back ();
-    const MapGraph::AdjacencySpan adjacency =
-      map_graph . adjacency_span ( source );
-    for ( const uint64_t successor : adjacency ) {
-      if ( successor >= n ) {
-        throw std::runtime_error (
-          "MorseDirectedPathCells found an adjacency outside the MapGraph" );
-      }
-      if ( not forward [ successor ] ) {
-        forward [ successor ] = 1;
-        vertex_stack . push_back ( static_cast<uint32_t> ( successor ) );
-      }
-    }
-  }
-
-  enum VisitState : uint8_t { UNSEEN = 0, ACTIVE = 1, DONE = 2 };
-  std::vector<uint8_t> state ( static_cast<size_t> ( n ), UNSEEN );
-  std::vector<uint8_t> can_reach_target ( static_cast<size_t> ( n ), 0 );
-  for ( size_t node = 0; node < number_of_morse_sets; ++ node ) {
-    const std::vector<uint64_t> cells = morse_graph . morse_set ( node );
-    for ( const uint64_t cell : cells ) {
-      if ( cell >= n ) {
-        throw std::runtime_error (
-          "MorseDirectedPathCells found a recurrent cell outside the MapGraph" );
-      }
-      state [ cell ] = DONE;
-      can_reach_target [ cell ] = can_reach_target_node [ node ];
-    }
-  }
-
-  struct Frame {
-    uint32_t vertex;
-    uint32_t next_adjacency;
-  };
-  std::vector<Frame> stack;
-  for ( uint64_t raw_vertex = 0; raw_vertex < n; ++ raw_vertex ) {
-    if ( not forward [ raw_vertex ] or state [ raw_vertex ] != UNSEEN ) continue;
-    state [ raw_vertex ] = ACTIVE;
-    stack . push_back ( { static_cast<uint32_t> ( raw_vertex ), 0 } );
-    while ( not stack . empty () ) {
-      Frame & frame = stack . back ();
-      const MapGraph::AdjacencySpan adjacency =
-        map_graph . adjacency_span ( frame . vertex );
-      if ( adjacency . size () > std::numeric_limits<uint32_t>::max () ) {
-        throw std::runtime_error (
-          "MorseDirectedPathCells found more than 2^32-1 outgoing edges "
-          "at one vertex" );
-      }
-      if ( frame . next_adjacency == adjacency . size () ) {
-        state [ frame . vertex ] = DONE;
-        stack . pop_back ();
-        continue;
-      }
-
-      const uint64_t successor =
-        adjacency . begin () [ frame . next_adjacency ];
-      if ( successor >= n ) {
-        throw std::runtime_error (
-          "MorseDirectedPathCells found an adjacency outside the MapGraph" );
-      }
-      if ( state [ successor ] == UNSEEN ) {
-        state [ successor ] = ACTIVE;
-        stack . push_back (
-          { static_cast<uint32_t> ( successor ), 0 } );
-        continue;
-      }
-      if ( state [ successor ] == ACTIVE ) {
-        throw std::runtime_error (
-          "MorseDirectedPathCells found a directed cycle not covered by "
-          "the supplied Morse sets" );
-      }
-
-      can_reach_target [ frame . vertex ] =
-        can_reach_target [ frame . vertex ] or
-        can_reach_target [ successor ];
-      ++ frame . next_adjacency;
+      sweep . Sweep ( static_cast<uint32_t> ( cell ) );
     }
   }
 
   std::vector<uint64_t> result;
   for ( uint64_t vertex = 0; vertex < n; ++ vertex ) {
-    if ( forward [ vertex ] and can_reach_target [ vertex ] ) {
+    if ( sweep . swept ( vertex ) and reaches_target [ vertex ] ) {
       result . push_back ( vertex );
     }
   }
   return result;
 }
 
-std::vector<uint64_t>
-ComputeMorseReachabilityMasks (
+void
+CheckMorseReachabilityMasks (
     const MapGraph & map_graph,
     const MorseGraph & morse_graph,
     const std::vector<uint64_t> & query_vertices ) {
-  if ( not map_graph . has_cache () ) {
-    throw std::runtime_error (
-      "MorseReachabilityMasks requires a cached MapGraph; refusing to use "
-      "on-demand map callbacks." );
-  }
-
-  const uint64_t n = map_graph . num_vertices ();
-  if ( n > std::numeric_limits<uint32_t>::max () ) {
-    throw std::runtime_error (
-      "MorseReachabilityMasks currently supports at most 2^32-1 map vertices" );
-  }
-
+  CheckCachedMapGraph ( map_graph, "MorseReachabilityMasks" );
   const size_t number_of_morse_sets = morse_graph . NumVertices ();
   if ( number_of_morse_sets > 64 ) {
     std::ostringstream message;
@@ -843,175 +897,69 @@ ComputeMorseReachabilityMasks (
       << " Morse nodes in a uint64 mask";
     throw std::runtime_error ( message . str () );
   }
+  CheckQueryVertices ( map_graph, query_vertices, "MorseReachabilityMasks" );
+}
 
-  for ( const uint64_t query : query_vertices ) {
-    if ( query >= n ) {
-      std::ostringstream message;
-      message
-        << "MorseReachabilityMasks query vertex " << query
-        << " is outside [0, " << n << ")";
-      throw std::out_of_range ( message . str () );
-    }
-  }
-
-  // Bit i denotes reachability to Morse node i. Seed each recurrent component
-  // with the transitive closure of its node in the Morse DAG. Once seeded,
-  // recurrent cells are terminals: their closure already contains every
-  // downstream Morse node, and skipping their cell-level outgoing edges breaks
-  // every directed cycle in the remaining graph.
-  std::vector<uint64_t> morse_masks ( number_of_morse_sets, 0 );
-  for ( size_t node = 0; node < number_of_morse_sets; ++ node ) {
-    morse_masks [ node ] = uint64_t ( 1 ) << node;
-  }
-  const std::vector<std::pair<uint64_t, uint64_t>> morse_edges =
-    morse_graph . edges_unreduced ();
-  for ( size_t pass = 0; pass < number_of_morse_sets; ++ pass ) {
-    bool changed = false;
-    for ( const auto & edge : morse_edges ) {
-      if ( edge . first >= number_of_morse_sets or
-           edge . second >= number_of_morse_sets ) {
-        throw std::runtime_error (
-          "MorseReachabilityMasks received an invalid Morse-graph edge" );
-      }
-      const uint64_t updated =
-        morse_masks [ edge . first ] | morse_masks [ edge . second ];
-      if ( updated != morse_masks [ edge . first ] ) {
-        morse_masks [ edge . first ] = updated;
-        changed = true;
-      }
-    }
-    if ( not changed ) break;
-  }
-
-  enum VisitState : uint8_t { UNSEEN = 0, ACTIVE = 1, DONE = 2 };
-  std::vector<uint8_t> state ( static_cast<size_t> ( n ), UNSEEN );
+// Bit i of a query cell's mask is set when the cell reaches a cell of Morse
+// set i. Each Morse cell is seeded with the bit of its own node only.
+std::vector<uint64_t>
+ComputeMorseReachabilityMasks (
+    const MapGraph & map_graph,
+    const MorseGraph & morse_graph,
+    const std::vector<uint64_t> & query_vertices ) {
+  CheckMorseReachabilityMasks ( map_graph, morse_graph, query_vertices );
+  const uint64_t n = map_graph . num_vertices ();
+  const size_t number_of_morse_sets = morse_graph . NumVertices ();
   std::vector<uint64_t> reach_mask ( static_cast<size_t> ( n ), 0 );
-
   for ( size_t node = 0; node < number_of_morse_sets; ++ node ) {
-    const std::vector<uint64_t> cells = morse_graph . morse_set ( node );
-    for ( const uint64_t cell : cells ) {
+    for ( const uint64_t cell : morse_graph . morse_set ( node ) ) {
       if ( cell >= n ) {
         throw std::runtime_error (
           "MorseReachabilityMasks found a Morse cell outside the MapGraph" );
       }
-      state [ cell ] = DONE;
-      reach_mask [ cell ] |= morse_masks [ node ];
+      reach_mask [ cell ] |= uint64_t ( 1 ) << node;
     }
   }
 
-  struct Frame {
-    uint32_t vertex;
-    uint32_t next_adjacency;
-  };
-  std::vector<Frame> stack;
+  ReachabilitySweep sweep (
+    map_graph, "MorseReachabilityMasks", reach_mask,
+    [] ( uint64_t left, uint64_t right ) -> uint64_t { return left | right; } );
   std::vector<uint64_t> result ( query_vertices . size (), 0 );
-
   for ( size_t query_index = 0;
         query_index < query_vertices . size ();
         ++ query_index ) {
     const uint32_t query = static_cast<uint32_t> ( query_vertices [ query_index ] );
-    if ( state [ query ] == UNSEEN ) {
-      state [ query ] = ACTIVE;
-      stack . push_back ( { query, 0 } );
-      while ( not stack . empty () ) {
-        Frame & frame = stack . back ();
-        const MapGraph::AdjacencySpan adjacency =
-          map_graph . adjacency_span ( frame . vertex );
-        if ( adjacency . size () > std::numeric_limits<uint32_t>::max () ) {
-          throw std::runtime_error (
-            "MorseReachabilityMasks found more than 2^32-1 outgoing edges "
-            "at one vertex" );
-        }
-
-        if ( frame . next_adjacency == adjacency . size () ) {
-          state [ frame . vertex ] = DONE;
-          stack . pop_back ();
-          continue;
-        }
-
-        const uint64_t successor =
-          adjacency . begin () [ frame . next_adjacency ];
-        if ( successor >= n ) {
-          throw std::runtime_error (
-            "MorseReachabilityMasks found an adjacency outside the MapGraph" );
-        }
-        if ( state [ successor ] == UNSEEN ) {
-          state [ successor ] = ACTIVE;
-          stack . push_back (
-            { static_cast<uint32_t> ( successor ), 0 } );
-          continue;
-        }
-        if ( state [ successor ] == ACTIVE ) {
-          throw std::runtime_error (
-            "MorseReachabilityMasks found a directed cycle not covered by "
-            "the supplied Morse sets" );
-        }
-
-        reach_mask [ frame . vertex ] |= reach_mask [ successor ];
-        ++ frame . next_adjacency;
-      }
-    }
+    sweep . Sweep ( query );
     result [ query_index ] = reach_mask [ query ];
   }
-
   return result;
 }
 
+void
+CheckMorseSingletonReachability (
+    const MapGraph & map_graph,
+    const MorseGraph & morse_graph,
+    const std::vector<uint64_t> & query_vertices ) {
+  CheckCachedMapGraph ( map_graph, "MorseSingletonReachability" );
+  CheckQueryVertices ( map_graph, query_vertices, "MorseSingletonReachability" );
+  if ( static_cast<size_t> ( morse_graph . NumVertices () ) >
+       static_cast<size_t> ( std::numeric_limits<int32_t>::max () ) ) {
+    throw std::runtime_error (
+      "MorseSingletonReachability cannot encode the Morse-node ids in int32" );
+  }
+}
+
+// A query cell's summary is the id of the only Morse node it reaches, -1 when
+// it reaches none and -2 when it reaches several. Each Morse cell is seeded
+// with its own node only.
 std::vector<int32_t>
 ComputeMorseSingletonReachability (
     const MapGraph & map_graph,
     const MorseGraph & morse_graph,
     const std::vector<uint64_t> & query_vertices ) {
-  if ( not map_graph . has_cache () ) {
-    throw std::runtime_error (
-      "MorseSingletonReachability requires a cached MapGraph; refusing to use "
-      "on-demand map callbacks." );
-  }
-
-  const uint64_t n = map_graph . num_vertices ();
-  if ( n > std::numeric_limits<uint32_t>::max () ) {
-    throw std::runtime_error (
-      "MorseSingletonReachability currently supports at most 2^32-1 map "
-      "vertices" );
-  }
-  for ( const uint64_t query : query_vertices ) {
-    if ( query >= n ) {
-      std::ostringstream message;
-      message
-        << "MorseSingletonReachability query vertex " << query
-        << " is outside [0, " << n << ")";
-      throw std::out_of_range ( message . str () );
-    }
-  }
-
+  CheckMorseSingletonReachability ( map_graph, morse_graph, query_vertices );
   constexpr int32_t NO_MORSE_NODE = -1;
   constexpr int32_t MULTIPLE_MORSE_NODES = -2;
-  const size_t number_of_morse_sets = morse_graph . NumVertices ();
-  if ( number_of_morse_sets >
-       static_cast<size_t> ( std::numeric_limits<int32_t>::max () ) ) {
-    throw std::runtime_error (
-      "MorseSingletonReachability cannot encode the Morse-node ids in int32" );
-  }
-
-  // A recurrent node is singleton-reachable exactly when it has no outgoing
-  // edge to a distinct Morse node. Otherwise its reachable set already
-  // contains itself plus at least one other node, so MULTIPLE is sufficient
-  // for the strict singleton-basin criterion.
-  std::vector<int32_t> morse_summary ( number_of_morse_sets, NO_MORSE_NODE );
-  for ( size_t node = 0; node < number_of_morse_sets; ++ node ) {
-    morse_summary [ node ] = static_cast<int32_t> ( node );
-  }
-  for ( const auto & edge : morse_graph . edges_unreduced () ) {
-    if ( edge . first >= number_of_morse_sets or
-         edge . second >= number_of_morse_sets ) {
-      throw std::runtime_error (
-        "MorseSingletonReachability received an invalid Morse-graph edge" );
-    }
-    if ( edge . first != edge . second ) {
-      morse_summary [ edge . first ] = MULTIPLE_MORSE_NODES;
-    }
-  }
-
   const auto merge_summary =
     [=] ( int32_t left, int32_t right ) -> int32_t {
       if ( left == NO_MORSE_NODE ) return right;
@@ -1020,82 +968,31 @@ ComputeMorseSingletonReachability (
       return MULTIPLE_MORSE_NODES;
     };
 
-  enum VisitState : uint8_t { UNSEEN = 0, ACTIVE = 1, DONE = 2 };
-  std::vector<uint8_t> state ( static_cast<size_t> ( n ), UNSEEN );
+  const uint64_t n = map_graph . num_vertices ();
+  const size_t number_of_morse_sets = morse_graph . NumVertices ();
   std::vector<int32_t> reach_summary (
     static_cast<size_t> ( n ), NO_MORSE_NODE );
-
   for ( size_t node = 0; node < number_of_morse_sets; ++ node ) {
-    const std::vector<uint64_t> cells = morse_graph . morse_set ( node );
-    for ( const uint64_t cell : cells ) {
+    for ( const uint64_t cell : morse_graph . morse_set ( node ) ) {
       if ( cell >= n ) {
         throw std::runtime_error (
           "MorseSingletonReachability found a Morse cell outside the MapGraph" );
       }
-      state [ cell ] = DONE;
       reach_summary [ cell ] =
-        merge_summary ( reach_summary [ cell ], morse_summary [ node ] );
+        merge_summary ( reach_summary [ cell ], static_cast<int32_t> ( node ) );
     }
   }
 
-  struct Frame {
-    uint32_t vertex;
-    uint32_t next_adjacency;
-  };
-  std::vector<Frame> stack;
-  std::vector<int32_t> result (
-    query_vertices . size (), NO_MORSE_NODE );
-
+  ReachabilitySweep sweep (
+    map_graph, "MorseSingletonReachability", reach_summary, merge_summary );
+  std::vector<int32_t> result ( query_vertices . size (), NO_MORSE_NODE );
   for ( size_t query_index = 0;
         query_index < query_vertices . size ();
         ++ query_index ) {
     const uint32_t query = static_cast<uint32_t> ( query_vertices [ query_index ] );
-    if ( state [ query ] == UNSEEN ) {
-      state [ query ] = ACTIVE;
-      stack . push_back ( { query, 0 } );
-      while ( not stack . empty () ) {
-        Frame & frame = stack . back ();
-        const MapGraph::AdjacencySpan adjacency =
-          map_graph . adjacency_span ( frame . vertex );
-        if ( adjacency . size () > std::numeric_limits<uint32_t>::max () ) {
-          throw std::runtime_error (
-            "MorseSingletonReachability found more than 2^32-1 outgoing "
-            "edges at one vertex" );
-        }
-
-        if ( frame . next_adjacency == adjacency . size () ) {
-          state [ frame . vertex ] = DONE;
-          stack . pop_back ();
-          continue;
-        }
-
-        const uint64_t successor =
-          adjacency . begin () [ frame . next_adjacency ];
-        if ( successor >= n ) {
-          throw std::runtime_error (
-            "MorseSingletonReachability found an adjacency outside the "
-            "MapGraph" );
-        }
-        if ( state [ successor ] == UNSEEN ) {
-          state [ successor ] = ACTIVE;
-          stack . push_back (
-            { static_cast<uint32_t> ( successor ), 0 } );
-          continue;
-        }
-        if ( state [ successor ] == ACTIVE ) {
-          throw std::runtime_error (
-            "MorseSingletonReachability found a directed cycle not covered "
-            "by the supplied Morse sets" );
-        }
-
-        reach_summary [ frame . vertex ] = merge_summary (
-          reach_summary [ frame . vertex ], reach_summary [ successor ] );
-        ++ frame . next_adjacency;
-      }
-    }
+    sweep . Sweep ( query );
     result [ query_index ] = reach_summary [ query ];
   }
-
   return result;
 }
 
@@ -1768,9 +1665,9 @@ another dimension than the grid. The GIL is released during the computation.
     py::arg ( "morse_graph" ),
     py::arg ( "source_nodes" ),
     py::arg ( "target_nodes" ),
-    "Cells on some directed path from the source Morse nodes to the target "
-    "Morse nodes. Requires a cached map_graph (cache_map_graph=True or "
-    "map_graph.build_cache())." );
+    "Cells on some directed path in map_graph from a cell of a source Morse "
+    "set to a cell of a target Morse set, in increasing order. Requires a "
+    "cached map_graph (cache_map_graph=True or map_graph.build_cache())." );
   m.def(
     "MorseReachabilityMasks",
     [] ( const MapGraph & map_graph,
@@ -1793,7 +1690,8 @@ another dimension than the grid. The GIL is released during the computation.
     py::arg ( "morse_graph" ),
     py::arg ( "query_vertices" ),
     "Per-query-cell uint64 bitmasks of the Morse nodes reachable through the "
-    "box dynamics (bit i = Morse node i). Requires a cached map_graph." );
+    "box dynamics, that is, whose Morse sets the cell reaches in map_graph "
+    "(bit i = Morse node i). Requires a cached map_graph." );
   m.def(
     "MorseSingletonReachability",
     [] ( const MapGraph & map_graph,
@@ -1815,9 +1713,9 @@ another dimension than the grid. The GIL is released during the computation.
     py::arg ( "map_graph" ),
     py::arg ( "morse_graph" ),
     py::arg ( "query_vertices" ),
-    "Per-query-cell summary of the reachable Morse nodes: the node id when "
-    "exactly one is reachable, -1 when none, -2 when several. Requires a "
-    "cached map_graph." );
+    "Per-query-cell summary of the Morse nodes whose Morse sets the cell "
+    "reaches in map_graph: the node id when exactly one is reachable, -1 "
+    "when none, -2 when several. Requires a cached map_graph." );
   m.def("MorseGraphIntvalMap", &MorseGraphIntvalMap);
   m.def("MorseGraphMap", &MorseGraphMap);
 }
