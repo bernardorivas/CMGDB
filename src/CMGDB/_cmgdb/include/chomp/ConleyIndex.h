@@ -8,6 +8,9 @@
 #ifndef CHOMP_CONLEYINDEX_H
 #define CHOMP_CONLEYINDEX_H
 
+#include <memory>
+#include <type_traits>
+
 #include "chomp/SparseMatrix.h"
 #include "chomp/RelativeMapHomology.h"
 
@@ -38,6 +41,33 @@ public:
     ar & boost::serialization::make_nvp("undefined",undefined_);
   }
 };
+
+/// TouchesPhaseSpaceBoundary
+///   Whether one of the cells of `grid` with the given geometries has a
+///   face on the boundary of the phase space, in a direction that is not
+///   periodic. Cells are aligned to the grid, so a cell either lies on the
+///   boundary or at least one cell width away from it.
+template < class Grid, class Geometries > bool
+TouchesPhaseSpaceBoundary ( const Grid & grid, const Geometries & geometries ) {
+  typedef typename std::decay < decltype ( grid . bounds () ) >::type Box;
+  const Box & bounds = grid . bounds ();
+  const std::vector < bool > & periodic = grid . periodicity ();
+  for ( const auto & geometry : geometries ) {
+    std::shared_ptr < const Box > box =
+      std::dynamic_pointer_cast < const Box > ( geometry );
+    if ( not box ) return true;
+    for ( size_t d = 0; d < box -> lower_bounds . size (); ++ d ) {
+      if ( d < periodic . size () && periodic [ d ] ) continue;
+      double half_width =
+        ( box -> upper_bounds [ d ] - box -> lower_bounds [ d ] ) / 2.0;
+      if ( box -> lower_bounds [ d ] - bounds . lower_bounds [ d ] < half_width ||
+           bounds . upper_bounds [ d ] - box -> upper_bounds [ d ] < half_width ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 template < class Grid, class Subset, class Map > void
 ConleyIndex ( ConleyIndex_t * output,
@@ -145,7 +175,23 @@ ConleyIndex ( ConleyIndex_t * output,
   std::cout << "ConleyIndex: calling RelativeMapHomology.\n";
 #endif
   int error_code = RelativeMapHomology ( &(output -> data ()), grid, X, A, grid, X, A, F, depth );
-  if ( error_code == 1 ) {
+  // A fiber chain with no preboundary arises when the images of the cubes
+  // of A around a cell of cl(A) lie beyond an upper face of the phase
+  // space: the cover clips such an image away (it clamps one below a lower
+  // face onto the layer of cubes along that face), and the fiber over that
+  // cell then lacks its relative part. If S stays off the boundary of the
+  // phase space, redo the computation for r o f, where r is the projection
+  // onto the phase space. The images of the cubes of S do not change, and
+  // the projected images of the cubes of A land in cubes on the boundary,
+  // which lie in A; so (X, A) is an index pair for r o f. Near the
+  // invariant set r o f equals f, so the two have the same Conley index.
+  // If S touches the boundary, neither need hold, and the index is left
+  // undefined.
+  if ( error_code == 2 && not TouchesPhaseSpaceBoundary ( grid, S_geometries ) ) {
+    output -> data () . clear ();
+    error_code = RelativeMapHomology ( &(output -> data ()), grid, X, A, grid, X, A, F, depth, true );
+  }
+  if ( error_code != 0 ) {
 #ifdef CMG_VERBOSE
     std::cout << "Problem computing conley index. Returning undefined result.\n";
 #endif
@@ -312,7 +358,7 @@ void CombinatorialConleyIndex ( ConleyIndex_t * output,
   // Given a combinatorial index pair (X, A) and a map F
   // Computes the Conley index (the relative homology map)
   int error_code = RelativeSelfMapHomology ( &(output -> data ()), X_cubes, A_cubes, sizes, periodic, F, acyclic_check );
-  if ( error_code == 1 ) {
+  if ( error_code != 0 ) {
     std::cout << "Problem computing conley index. Returning undefined result" << std::endl;
     output -> undefined () = true;
     return;

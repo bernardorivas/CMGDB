@@ -11,7 +11,9 @@ global dynamics of discrete dynamical systems.
 > prebuilt wheels are attached to the fork's GitHub releases, and the current
 > tree installs from source as shown below. The mathematical output of the
 > inherited CMGDB algorithms is unchanged from upstream, except for the checks
-> that the fork adds to `ComputeConleyIndexForCells`.
+> that the fork adds to `ComputeConleyIndexForCells` and some Conley indices
+> that upstream leaves undefined, which the fork computes (see
+> [Undefined Conley indices](#undefined-conley-indices)).
 
 ## Overview
 
@@ -24,7 +26,8 @@ of each Morse set.
 
 Relative to upstream, this fork adds the following. Apart from the checks in
 `ComputeConleyIndexForCells` described below, none of it changes the Morse
-graph, Conley indices, or subdivision semantics that upstream computes.
+graph, the Conley indices that upstream computes, or the subdivision
+semantics.
 Batched map evaluation (`Model.set_batch_map`), the transition-graph cache,
 the native reachability queries, `ComputeConleyIndexForCells`, and
 `PrecomputedBoxMap` are upstream features; see
@@ -112,6 +115,10 @@ the native reachability queries, `ComputeConleyIndexForCells`, and
   `CMGDB.ComputeMorseGraphOnly(model)` and
   `CMGDB.ComputeConleyMorseGraphOnly(model)` skip the extra box-map pass that
   builds the returned `MapGraph`, for runs that do not use it.
+- **Conley indices that upstream leaves undefined because an exit box maps
+  out of the phase space** — the fork computes them for a Morse set that does
+  not touch the boundary of the phase space. See
+  [Undefined Conley indices](#undefined-conley-indices).
 
 ## Installation
 
@@ -195,6 +202,35 @@ A cached `map_graph` also unlocks the native post-processing queries (all of whi
 The three reachability queries are exact on the cells of `map_graph`: a cell reaches a Morse node when a directed path in `map_graph` leads from it to a cell of that node's Morse set, and a cell lies on a directed path when a cell of a source Morse set reaches it and it reaches a cell of a target Morse set. They are computed by a strongly connected component sweep of the CSR and do not use the Morse graph's edges. On a hierarchical run (`phase_subdiv_init < phase_subdiv_min`, as with the `Model(subdiv_min, subdiv_max, lower_bounds, upper_bounds, F)` constructors) the Morse graph comes from grids coarser than `map_graph`, so the two can disagree: a Morse edge need not be realized by any cell path, and with a box map that is not monotone under refinement (such as corner-sampled `BoxMap`), the cells of a Morse set can reach Morse sets that the Morse graph does not place below it, and `map_graph` can have cycles outside the Morse sets. Each call allocates arrays over all cells of `map_graph` and traverses every cell and edge reachable from its query cells (the cells of the source Morse sets for `MorseDirectedPathCells`), Morse sets included; the query cells of one call share a single traversal, so pass many cells to one call rather than one cell per call.
 
 The C++ core is silent by default; rebuild with the `CMG_VERBOSE` preprocessor define (uncomment it at the top of `src/CMGDB/_cmgdb/CMGDB.cpp`) to restore the progress and diagnostic prints.
+
+## Undefined Conley indices
+
+`morse_graph.annotations(v)` returns `[]` when the Conley index of Morse set
+`v` could not be computed (and for every vertex of a graph from
+`ComputeMorseGraph`, which computes no indices). The computation fails when
+the graph of the box map fails its fiber checks: a fiber is not acyclic, or a
+chain lifted into it has no preboundary.
+
+The usual cause is the boundary of the phase space. In this computation, a
+cover clips an image to the phase space, and an image that lies wholly beyond
+an upper face of the phase space gets an empty cover (one wholly below a lower
+face is clamped onto the layer of boxes along that face instead). An empty
+cover of the image of a box next to a Morse set can leave the index of the set
+undefined. If the set does not touch the boundary, the fork then recomputes
+its index with each image that misses the phase space projected onto it. The
+result is the Conley index of the box map itself, the one that the same boxes
+give on a larger phase space; upstream leaves it undefined. The index of a
+Morse set that touches the boundary stays undefined, because there it depends
+on how the boundary is treated. Other failures stay undefined too, for
+instance with `mode="center"` box maps, whose images of neighboring boxes need
+not overlap.
+
+To obtain such an index, enlarge the phase space until the Morse set and the
+images near it stay inside, and keep the box size: doubling the width in every
+direction and adding the dimension to each subdivision depth keeps the grid
+aligned. `ComputeConleyIndexForCells` on the larger phase space gives the index
+of a given set of boxes. A build with `CMG_VERBOSE` prints "Problem computing
+conley index" for every index it leaves undefined.
 
 ## Precomputed box maps
 

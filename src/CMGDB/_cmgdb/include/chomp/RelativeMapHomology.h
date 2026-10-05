@@ -29,6 +29,16 @@ namespace chomp {
 
 typedef std::vector < SparseMatrix < Ring > > RelativeMapHomology_t;
 
+/// RelativeMapHomology
+///   The map that F induces from H(X, A) to H(Y, B), computed by lifting
+///   each generator of H(X, A) through the fibers of the graph of F.
+///   Returns 0 on success, 1 when a fiber is empty or fails its acyclicity
+///   check, and 2 when a fiber chain has no preboundary.
+///
+///   With project_images, an image that misses the phase space of `target`
+///   in a direction that is not periodic is first projected onto it in
+///   that direction, so the computation is the one for the map r o F, where
+///   r is the projection onto the phase space (see ConleyIndex).
 template < class Grid, class Container, class RectMap > int
 RelativeMapHomology (RelativeMapHomology_t * output, 
                      const Grid & source,
@@ -38,7 +48,8 @@ RelativeMapHomology (RelativeMapHomology_t * output,
                      const Container & YE, 
                      const Container & BE,
                      const RectMap & F,
-                     int depth ) {
+                     int depth,
+                     bool project_images = false ) {
                      
   
   clock_t total_time_start = clock ();
@@ -90,6 +101,33 @@ RelativeMapHomology (RelativeMapHomology_t * output,
   /// evaluated in a single call through F.images, which uses the map's
   /// batched evaluator when it has one.
   std::unordered_map < uint64_t, std::vector < uint64_t > > F_top;
+  /// The cover of an image, projected onto the phase space first when
+  /// project_images is set. In a direction where the image misses the
+  /// phase space, the projected interval is the center of the outermost
+  /// layer of cubes, so that the cover picks up the cubes of that layer;
+  /// when the codomain complex does not reach that face, the projection
+  /// misses it and the cover is empty.
+  auto cover_image = [&] ( Rect image ) {
+    if ( project_images && full_codomain . size ( D ) > 0 ) {
+      Rect cube = full_codomain . geometry ( 0, D );
+      const Rect & reach = full_codomain . bounds ();
+      const std::vector < bool > & periodic = target . periodicity ();
+      for ( int d = 0; d < D; ++ d ) {
+        if ( (size_t) d < periodic . size () && periodic [ d ] ) continue;
+        double half_width = ( cube . upper_bounds [ d ] - cube . lower_bounds [ d ] ) / 2.0;
+        double lower = target . bounds () . lower_bounds [ d ];
+        double upper = target . bounds () . upper_bounds [ d ];
+        if ( image . upper_bounds [ d ] <= lower ) {
+          if ( reach . lower_bounds [ d ] - lower >= half_width ) return std::vector < Index > ();
+          image . lower_bounds [ d ] = image . upper_bounds [ d ] = lower + half_width;
+        } else if ( image . lower_bounds [ d ] >= upper ) {
+          if ( upper - reach . upper_bounds [ d ] >= half_width ) return std::vector < Index > ();
+          image . lower_bounds [ d ] = image . upper_bounds [ d ] = upper - half_width;
+        }
+      }
+    }
+    return full_codomain . cover ( image );
+  };
   auto materialize_fiber_images =
     [&] ( const boost::unordered_set < Index > & fiber_X_nbs,
           const boost::unordered_set < Index > & fiber_A_nbs ) {
@@ -112,7 +150,7 @@ RelativeMapHomology (RelativeMapHomology_t * output,
       }
       std::vector < Rect > images = F . images ( geometries );
       for ( size_t k = 0; k < missing . size (); ++ k ) {
-        F_top [ missing [ k ] ] = full_codomain . cover ( images [ k ] );
+        F_top [ missing [ k ] ] = cover_image ( images [ k ] );
       }
     };
 
@@ -372,16 +410,17 @@ RelativeMapHomology (RelativeMapHomology_t * output,
           // Determine chain in fiber
           Chain projected = fiber . project ( fiberchain . second );
           // Work out the preboundary. A fiber chain with no preboundary
-          // means the acyclicity assumption fails there and the homology of
-          // this map is unresolvable at this resolution: report the standard
-          // error code so the Conley index is marked undefined, rather than
+          // means that the graph fails the fiber condition there. Over
+          // cl(A) this happens when the images of the cubes of A around the
+          // cell are clipped away, which leaves the fiber without its
+          // relative part (see ConleyIndex). Report it, rather than
           // returning a silently unvalidated solve or aborting the whole
           // computation.
           Chain preboundary;
           try {
             preboundary = fiber . preboundary ( projected );
           } catch ( std::runtime_error const& ) {
-            return 1;
+            return 2;
           }
           // Include the preboundary back into the codomain
           Chain included_preboundary = fiber . include ( preboundary );
@@ -547,6 +586,9 @@ RelativeMapHomology (RelativeMapHomology_t * output,
   return 0;
 }
 
+/// RelativeSelfMapHomology
+///   RelativeMapHomology for a combinatorial map F_map given on the cubes
+///   of X, with the same return codes.
 int RelativeSelfMapHomology (RelativeMapHomology_t * output,
                              const std::vector < uint64_t > & X_cubes,
                              const std::vector < uint64_t > & A_cubes,
@@ -799,17 +841,15 @@ int RelativeSelfMapHomology (RelativeMapHomology_t * output,
 
           // Determine chain in fiber
           Chain projected = fiber . project ( fiberchain . second );
-          // Work out the preboundary. A fiber chain with no preboundary
-          // means the acyclicity assumption fails there and the homology of
-          // this map is unresolvable at this resolution: report the standard
-          // error code so the Conley index is marked undefined, rather than
-          // returning a silently unvalidated solve or aborting the whole
-          // computation.
+          // Work out the preboundary; a fiber chain with no preboundary is
+          // reported as in RelativeMapHomology. The images are given here,
+          // so there is nothing to project: an empty image of a cube of A
+          // is part of the input.
           Chain preboundary;
           try {
             preboundary = fiber . preboundary ( projected );
           } catch ( std::runtime_error const& ) {
-            return 1;
+            return 2;
           }
           // Include the preboundary back into the codomain
           Chain included_preboundary = fiber . include ( preboundary );
