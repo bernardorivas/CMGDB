@@ -1,5 +1,6 @@
 """Regression tests for the build configuration (review findings C50-C58)."""
 
+import importlib.metadata
 import json
 import re
 import shutil
@@ -156,3 +157,22 @@ def test_build_backend_requirement_excludes_releases_without_pep639():
                        if Requirement(line).name == "scikit-build-core")
     assert not requirement.specifier.contains("0.10.7")
     assert requirement.specifier.contains("0.11.0")
+
+
+def test_installed_package_carries_the_notices_of_the_code_compiled_in():
+    # The extension compiles in CHOMP (MIT) and sdsl-lite (BSD-3-Clause), whose
+    # notices wheel.exclude keeps out of the wheel with the rest of their
+    # source; license-files ships copies of them (C52, fixed by the merge).
+    files = importlib.metadata.files("CMGDB")
+    if files is None:
+        pytest.skip("CMGDB is not installed with a file list")
+    notices = {
+        "licenses/chomp-LICENSE": "src/CMGDB/_cmgdb/include/chomp/LICENSE",
+        "licenses/sdsl-lite-xxsds-LICENSE": "src/CMGDB/_cmgdb/third_party/sdsl-lite/LICENSE",
+    }
+    for shipped, source in notices.items():
+        copy = next((path for path in files
+                     if path.as_posix().endswith(".dist-info/licenses/" + shipped)), None)
+        assert copy is not None, shipped
+        assert copy.read_text() == (REPO / source).read_text(), shipped
+        assert (REPO / shipped).read_text() == (REPO / source).read_text(), shipped
