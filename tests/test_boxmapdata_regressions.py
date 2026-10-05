@@ -112,3 +112,41 @@ def test_data_points_cannot_change_in_place(two_datasets, copier):
     rect = [0.0, 0.0, 0.5, 0.5]
     linear = CMGDB.BoxMapDataLinear(X0, 0.5 * X0, domain_padding=False)
     assert np.array_equal(F.map_points(rect), linear.map_points(rect))
+
+
+@pytest.mark.parametrize("old_index", [None, False, True],
+                         ids=["1.3.2", "1.5.2-scan", "1.5.2-index"])
+def test_objects_pickled_before_x_became_a_property_load(two_datasets, old_index):
+    # C49 follow-up: a BoxMapData pickled by 1.5.2 or earlier stores X as a
+    # plain entry, with the 1.5.2 index (if any) under its own names, and no
+    # _X; unpickling it must rebuild the current index from that X
+    X0, _ = two_datasets
+    state = {"X": X0.copy(), "Y": 0.5 * X0, "dim": 2, "map_empty": "interp",
+             "lower_bounds": None, "upper_bounds": None,
+             "domain_padding": False, "padding": False}
+    if old_index is not None:
+        state["_use_index"] = old_index
+    F = CMGDB.BoxMapData.__new__(CMGDB.BoxMapData)
+    F.__setstate__(state)
+    assert not F.X.flags.writeable
+    linear = CMGDB.BoxMapDataLinear(X0, 0.5 * X0, domain_padding=False)
+    for rect in ([0.0, 0.0, 0.5, 0.5], [0.2, 0.3, 0.9, 0.4]):
+        assert np.array_equal(F.map_points(rect), linear.map_points(rect))
+
+
+def test_old_pickles_keep_their_index_policy_and_bins(two_datasets):
+    # A 1.5.2 object records only the resolved index choice and its bins.
+    # Loading it restores 'auto' and the bin size, so the rebuilt index and
+    # later reassignments of X behave as on a freshly built object.
+    X0, _ = two_datasets
+    fresh = CMGDB.BoxMapData(X0, 0.5 * X0, domain_padding=False, points_per_bin=3)
+    state = {k: v for k, v in fresh.__dict__.items()
+             if k not in ("_X", "_use_index_option", "_points_per_bin")}
+    state["X"] = np.array(X0)
+    loaded = CMGDB.BoxMapData.__new__(CMGDB.BoxMapData)
+    loaded.__setstate__(state)
+    assert loaded._use_index_option == "auto"
+    assert loaded._bins_per_dim == fresh._bins_per_dim
+    for F in (fresh, loaded):
+        F.X, F.Y = X0[:200], 0.5 * X0[:200]
+    assert loaded._use_index == fresh._use_index is False

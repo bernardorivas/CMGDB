@@ -64,6 +64,28 @@ class BoxMapData:
             self._build_index(self._points_per_bin)
 
     def __setstate__(self, state):
+        if '_X' not in state:
+            # Pickled before X became a property (1.5.2 and earlier): X is a
+            # plain entry, and any index predates the current layout, so
+            # rebuild it through the setter.
+            state = dict(state)
+            X = np.asarray(state.pop('X'))
+            used = state.get('_use_index')
+            # 1.5.2 records only the resolved choice; it came from 'auto'
+            # whenever it agrees with the threshold.
+            if used is None or used == (X.shape[0] > self._INDEX_THRESHOLD):
+                state.setdefault('_use_index_option', 'auto')
+            else:
+                state.setdefault('_use_index_option', bool(used))
+            # Recover points_per_bin from the recorded bins, so that the
+            # rebuilt index has the same bins.
+            bins = state.get('_bins_per_dim')
+            if bins:
+                state.setdefault('_points_per_bin', X.shape[0] / bins ** X.shape[1])
+            state.setdefault('_points_per_bin', 8)
+            self.__dict__.update(state)
+            self.X = X
+            return
         # copy.deepcopy and pickle give the copy a new X array, writeable
         # again, while its index is that of the copied points
         self.__dict__.update(state)
