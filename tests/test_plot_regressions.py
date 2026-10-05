@@ -70,3 +70,19 @@ def test_dict_scale_factor_is_read_by_node():
     assert ax.collections[0].get_sizes()[0] > 0
     plt.close(fig)
     plt.close(fig_l)
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float16, np.longdouble])
+def test_numpy_scale_factors_merge_like_floats(dtype):
+    # C21: Fraction() takes no numpy float that is not a float subclass
+    # (before Python 3.14), so these factors raised TypeError on the default
+    # merged path.
+    rows = [[i * H, 0, (i + 1) * H, H, 0] for i in range(5)] + [[1, 1, 1 + H, 1 + H, 1]]
+    fig, ax = CMGDB.PlotMorseSets(rows, scale_factor=list(np.array([2.0, 1.0], dtype=dtype)),
+                                  show=False)
+    fig_f, ax_f = CMGDB.PlotMorseSets(rows, scale_factor=[2.0, 1.0], show=False)
+    assert len(ax.patches) == 2 and len(ax.collections) == 0
+    for patch, reference in zip(ax.patches, ax_f.patches):
+        assert np.allclose(patch.get_path().vertices, reference.get_path().vertices)
+    plt.close(fig)
+    plt.close(fig_f)

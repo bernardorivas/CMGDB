@@ -273,6 +273,9 @@ def _scaled_runs(index, factor):
        work is one pass per refined row, so a factor with a large denominator
        is left to the per-box drawing rather than made slow.
     """
+    # Fraction takes no numpy float that is not a float subclass (float32,
+    # say) before Python 3.14, so convert first.
+    factor = float(factor)
     ratio = Fraction(factor).limit_denominator(64)
     numerator, denominator = ratio.numerator, ratio.denominator
     if numerator <= 0 or abs(float(ratio) - factor) > 1e-9 * max(1.0, abs(factor)):
