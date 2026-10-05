@@ -10,6 +10,7 @@ import pytest
 from PIL import Image
 
 import CMGDB
+from CMGDB.PlotMorseSets import _exposed_faces
 
 H = 0.1
 
@@ -423,3 +424,25 @@ def test_positional_arguments_bind_as_in_1_3_2(tmp_path, plot, num_morse_sets):
     plt.close(fig)
     with pytest.raises(TypeError):                # the new options take keywords only
         plot(*lead, True, 'u', 'v', 12, None, 50, 0.1, show=False)
+
+
+def x_planes(faces):
+    """The x coordinates of the faces normal to x."""
+    return sorted({round(float(f[0, 0]), 9) for f in faces if np.ptp(f[:, 0]) == 0})
+
+
+def test_shrunk_3d_boxes_keep_every_face():
+    # C12: faces shared with a same-set neighbor were culled before the
+    # boxes were scaled. Shrunk boxes come apart, so the culled faces left
+    # each one open toward its neighbors and the inner boxes of a block
+    # with no face at all.
+    pair = [[0, 0, 0, 1, 1, 1, 0], [1, 0, 0, 2, 1, 1, 0]]
+    faces, _, _ = _exposed_faces(pair, [0], [0.5])
+    assert len(faces) == 12
+    assert x_planes(faces) == [0.25, 0.75, 1.25, 1.75]
+    assert len(_exposed_faces(cube_rows(), [0], [0.5])[0]) == 6 * 27
+    # Enlarged boxes still overlap, so their shared faces stay hidden.
+    for factor in (1, 2):
+        faces, _, _ = _exposed_faces(pair, [0], [factor])
+        assert len(faces) == 10
+        assert len(_exposed_faces(cube_rows(), [0], [factor])[0]) == 6 * 9

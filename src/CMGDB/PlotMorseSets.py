@@ -853,7 +853,9 @@ def _exposed_faces(rows, morse_nodes, scale_factor):
        larger.
 
        Faces are scaled about their own box's centre after culling, so a scaled
-       set stays a closed surface rather than separating into shells.
+       set stays a closed surface rather than separating into shells. That
+       holds for a factor of at least 1, under which neighbors still overlap;
+       shrunk boxes come apart, so each keeps all six faces.
     """
     values = np.asarray([[float(v) for v in rect] for rect in rows], dtype=float)
     lower, upper, labels = values[:, :3], values[:, 3:6], values[:, 6].astype(int)
@@ -882,7 +884,7 @@ def _exposed_faces(rows, morse_nodes, scale_factor):
         factor = scale_factor[label]
         centre = (lower[k] + upper[k]) / 2 if factor != 1 else None
         for face, offset in candidates:
-            if aligned:
+            if aligned and factor >= 1:
                 neighbour = (label, int(index[k][0]) + offset[0],
                              int(index[k][1]) + offset[1], int(index[k][2]) + offset[2])
                 if neighbour in occupied:
