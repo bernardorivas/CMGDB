@@ -94,17 +94,21 @@ def cache_entry(build_dir, name):
     return match.group(1) if match else None
 
 
-def language_standards(build_dir, target):
-    """The language standards that CMake's file API reports for a target."""
+def compile_groups(build_dir, target):
+    """The compile groups that CMake's file API reports for a target."""
     reply = build_dir / ".cmake" / "api" / "v1" / "reply"
     index = json.loads(max(reply.glob("index-*.json")).read_text())
     codemodel = next(entry for entry in index["objects"] if entry["kind"] == "codemodel")
     model = json.loads((reply / codemodel["jsonFile"]).read_text())
     entry = next(entry for entry in model["configurations"][0]["targets"]
                  if entry["name"] == target)
-    groups = json.loads((reply / entry["jsonFile"]).read_text()).get("compileGroups", [])
+    return json.loads((reply / entry["jsonFile"]).read_text()).get("compileGroups", [])
+
+
+def language_standards(build_dir, target):
+    """The language standards that CMake's file API reports for a target."""
     return {group["languageStandard"]["standard"]
-            for group in groups if "languageStandard" in group}
+            for group in compile_groups(build_dir, target) if "languageStandard" in group}
 
 
 def test_every_cmake_policy_is_set_only_where_cmake_knows_it():
@@ -144,6 +148,22 @@ def test_compiles_as_cxx17(configured):
     if not standards:
         pytest.skip("this CMake's file API reports no language standard")
     assert standards == {"17"}
+
+
+def test_compiles_the_pybind11_headers_of_the_package_cmake_found(configured):
+    # Boost's include directory, and on macOS /opt/homebrew/include, came
+    # ahead of pybind11's own on the compile line, and Homebrew installs a
+    # pybind11 there: a build that reported the pybind11 of the build
+    # requirements compiled Homebrew's headers (C53, fixed by the merge).
+    try:
+        import pybind11
+    except ImportError:
+        pytest.skip("CMake found a pybind11 other than an importable one")
+    includes = [Path(include["path"])
+                for group in compile_groups(configured, "_cmgdb")
+                for include in group.get("includes", [])]
+    first = next(path for path in includes if (path / "pybind11" / "pybind11.h").is_file())
+    assert first.resolve() == Path(pybind11.get_include()).resolve()
 
 
 def test_finds_a_boost_that_has_no_cmake_package_file(configured, tmp_path):
