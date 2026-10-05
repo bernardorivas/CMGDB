@@ -23,7 +23,9 @@ Usage:
   python benchmarks/compare_versions.py --out my_table.md
 
 The two builds take a few minutes; results land in version_compare.md (or
---out) next to this script. Scenarios run one repetition each, all flavors
+--out) next to this script. The old revision's worktree and build are cached
+under --workdir, one per commit; the working tree is reinstalled on every
+run. Scenarios run one repetition each, all flavors
 back-to-back per scenario for thermal fairness. The scenario suite mirrors
 benchmarks/benchmark.py but validates only that all flavors compute the
 same number of Morse sets (the frozen references in references.json remain
@@ -376,19 +378,37 @@ def run_child(scenario, out_path):
 # Parent mode: build both versions and orchestrate
 # ---------------------------------------------------------------------------
 
+def resolve_revision(rev):
+    """The commit that a git revision names."""
+    return subprocess.run(
+        ["git", "rev-parse", "--verify", f"{rev}^{{commit}}"], cwd=REPO,
+        check=True, capture_output=True, text=True).stdout.strip()
+
+
 def build_versions(old_rev, workdir):
-    old_src = workdir / "old_src"
+    """Install old_rev and the current working tree into two venvs.
+
+    The old revision's worktree and venv are cached under its commit, so a
+    different old_rev gets its own. The working tree may have changed since
+    the last run, so it is reinstalled every time (pip rebuilds a local
+    directory even when its version is unchanged)."""
+    old_sha = resolve_revision(old_rev)
+    old_src = workdir / f"old_{old_sha[:12]}"
     if not old_src.exists():
-        subprocess.run(["git", "worktree", "add", "--detach",
-                        str(old_src), old_rev], cwd=REPO, check=True)
+        # --force: a worktree whose directory was deleted stays registered,
+        # and git refuses to add one at its path again without it.
+        subprocess.run(["git", "worktree", "add", "--force", "--detach",
+                        str(old_src), old_sha], cwd=REPO, check=True)
     envs = {}
-    for name, src in (("old", old_src), ("new", REPO)):
-        venv = workdir / f"venv_{name}"
+    for name, src, venv, reinstall in (
+            ("old", old_src, workdir / f"venv_old_{old_sha[:12]}", False),
+            ("new", REPO, workdir / "venv_new", True)):
         python = venv / "bin" / "python"
         stamp = venv / ".built"
-        if not stamp.exists():
+        if reinstall or not stamp.exists():
             print(f"building {name} ({src}) ...", flush=True)
-            subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True)
+            if not python.exists():
+                subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True)
             log = workdir / f"build_{name}.log"
             with open(log, "w") as fh:
                 proc = subprocess.run(
@@ -482,7 +502,8 @@ def main():
 
     workdir = Path(args.workdir)
     workdir.mkdir(parents=True, exist_ok=True)
-    envs = build_versions(args.old_rev, workdir)
+    old_sha = resolve_revision(args.old_rev)
+    envs = build_versions(old_sha, workdir)
 
     with_torch = not args.no_torch and torch_available(envs["new"])
     if not args.no_torch and not with_torch:
@@ -511,7 +532,7 @@ def main():
     lines.append("# CMGDB version performance comparison\n")
     lines.append(f"Generated {time.strftime('%Y-%m-%d %H:%M')} on "
                  f"{platform.platform()}.\n")
-    lines.append(f"**old** = git revision `{args.old_rev}`; "
+    lines.append(f"**old** = git revision `{args.old_rev}` ({old_sha[:12]}); "
                  f"**new** = current working tree"
                  + ("; **torch** = new with the map evaluated by torch "
                     "(float64, CPU)" if with_torch else "") + ".\n")

@@ -109,9 +109,11 @@ python benchmarks/compare_versions.py --old-rev <rev>  # vs any revision
 python benchmarks/compare_versions.py --scenarios leslie2d_python henon3d
 ```
 
-Builds and the old-revision worktree are cached under
-`build/version_compare/` (gitignored). Note that old revisions using the
-pre-vendoring build require a system sdsl-lite v2 installation to compile.
+The old revision's worktree and build are cached under
+`build/version_compare/` (gitignored), one per commit, and the table names
+that commit; the current working tree is rebuilt on every run. Note that old
+revisions using the pre-vendoring build require a system sdsl-lite v2
+installation to compile.
 
 ## Updating references
 
