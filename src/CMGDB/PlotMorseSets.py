@@ -31,6 +31,9 @@ RASTERIZE_FACES = 100000
 # more to trace than the boxes cost to draw one by one.
 REFINED_ROW_LIMIT = 2000000
 
+# Width and height of the default zoom inset, in fractions of the axes.
+INSET_SIZE = 0.38
+
 
 def _load_morse_sets(morse_sets):
     """Accept a Morse graph, a saved Morse set file name, or a list of boxes.
@@ -499,8 +502,13 @@ def _draw_boxes(ax, rows, morse_nodes, dim, d1, d2, cmap, cmap_norm,
     return drawn
 
 
-def _zoom_region(rows, zoom_nodes, dim, d1, d2, scale_factor, pad, square):
-    """Data-space window enclosing zoom_nodes, padded and optionally squared."""
+def _zoom_region(rows, zoom_nodes, dim, d1, d2, scale_factor, pad, square, shape=(1.0, 1.0)):
+    """Data-space window enclosing zoom_nodes, padded and optionally squared.
+
+       Squared means square on screen: shape is the data extent (dx, dy) that
+       the inset would cover at the main axes' scale, and the window takes its
+       proportions, so the inset magnifies both axes alike.
+    """
     xs = [r for r in rows if int(r[-1]) in zoom_nodes]
     if not xs:
         raise ValueError("zoom_nodes match no boxes: " + repr(sorted(zoom_nodes)))
@@ -511,9 +519,12 @@ def _zoom_region(rows, zoom_nodes, dim, d1, d2, scale_factor, pad, square):
     if square:
         # A Morse set can be a near-degenerate sliver; a square window keeps the
         # inset from stretching one axis by orders of magnitude against the other.
+        # Square in data units would do just that when the main axes span
+        # lengths of different orders, as x in [0, 100] against y in [0, 1].
         cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-        half = max(x1 - x0, y1 - y0) / 2
-        x0, x1, y0, y1 = cx - half, cx + half, cy - half, cy + half
+        sx, sy = shape
+        half = max((x1 - x0) / sx, (y1 - y0) / sy) / 2
+        x0, x1, y0, y1 = cx - half * sx, cx + half * sx, cy - half * sy, cy + half * sy
     px, py = (x1 - x0) * pad, (y1 - y0) * pad
     return x0 - px, x1 + px, y0 - py, y1 + py
 
@@ -523,7 +534,7 @@ def _inset_corner(ax, region):
     (xa, xb), (ya, yb) = ax.get_xlim(), ax.get_ylim()
     fx = ((region[0] + region[1]) / 2 - xa) / (xb - xa) if xb != xa else 0.5
     fy = ((region[2] + region[3]) / 2 - ya) / (yb - ya) if yb != ya else 0.5
-    size = 0.38
+    size = INSET_SIZE
     left = 0.04 if fx > 0.5 else 1.0 - size - 0.04
     bottom = 0.04 if fy > 0.5 else 1.0 - size - 0.04
     return [left, bottom, size, size]
@@ -545,8 +556,13 @@ def _add_zoom_inset(ax, rows, morse_nodes, dim, d1, d2, cmap, cmap_norm,
         region = tuple(zoom_bounds)
     else:
         nodes = set(int(n) for n in zoom_nodes)
+        # The main limits are set, so the data extent the inset would cover at
+        # their scale is known.
+        (xa, xb), (ya, yb) = ax.get_xlim(), ax.get_ylim()
+        width, height = (INSET_SIZE, INSET_SIZE) if zoom_pos == None else zoom_pos[2:4]
         region = _zoom_region(rows, nodes, dim, d1, d2, scale_factor,
-                              zoom_pad, zoom_square)
+                              zoom_pad, zoom_square,
+                              shape=(abs(xb - xa) * width, abs(yb - ya) * height))
     position = _inset_corner(ax, region) if zoom_pos == None else list(zoom_pos)
     axins = ax.inset_axes(position)
     # Every set is redrawn, not just the zoomed ones: neighbouring structure is
@@ -599,6 +615,9 @@ def PlotMorseSets(morse_sets, morse_nodes=None, proj_dims=None, cmap=None, clist
        draws the set larger than it is. zoom_bounds names the window directly
        as (x0, x1, y0, y1); zoom_pos places the inset as [x0, y0, w, h] in axes
        fractions, defaulting to the corner furthest from the region.
+       zoom_square widens one side of the window so the inset magnifies x and y
+       alike, keeping the shapes the main axes show; False fits the window to
+       the sets along each axis separately.
 
        morse_sets is a Morse graph, a saved Morse set file name, or a list of
        boxes [lower..., upper..., label]. scale_factor is a list indexed by

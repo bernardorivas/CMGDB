@@ -215,3 +215,27 @@ def test_zoom_inset_draws_the_sets_at_their_true_size():
     main = ax.patches[1].get_path().vertices
     assert np.allclose(main.min(axis=0), [0.685, 0.685])
     plt.close(fig)
+
+
+@pytest.mark.parametrize("fig_w, fig_h, zoom_pos", [(8, 8, None), (12, 4, None),
+                                                    (8, 8, [0.05, 0.5, 0.5, 0.25])])
+def test_square_zoom_magnifies_both_axes_alike(fig_w, fig_h, zoom_pos):
+    # C18: the window was squared in data units. On x in [0, 100], y in [0, 1]
+    # its y side spanned more than the main axes, and a square box came out
+    # of the inset as a 157 x 1.6 px sliver.
+    rows = [[i, j / 100, i + 1, (j + 1) / 100, 0] for i in range(0, 100, 10)
+            for j in range(0, 100, 10)]
+    rows += [[50, 0.50, 51, 0.51, 1]]
+    fig, ax = CMGDB.PlotMorseSets(rows, zoom_nodes=[1], zoom_pos=zoom_pos,
+                                  fig_w=fig_w, fig_h=fig_h, show=False)
+    fig.canvas.draw()
+    inset = ax.child_axes[0]
+
+    def size(axes):
+        (x0, y0), (x1, y1) = axes.transData.transform([(50, 0.50), (51, 0.51)])
+        return x1 - x0, y1 - y0
+
+    (main_w, main_h), (inset_w, inset_h) = size(ax), size(inset)
+    assert inset_w / main_w == pytest.approx(inset_h / main_h, rel=0.01)
+    assert inset_w / main_w > 5
+    plt.close(fig)
