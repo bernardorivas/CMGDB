@@ -743,6 +743,11 @@ def PlotMorseSets1D(morse_sets, morse_nodes=None, cmap=None, clist=None, scale_f
        does, and the union of the scaled boxes is drawn; a piece keeps its one
        label.
 
+       Each piece is edged in its set's face color unless edge_clr names
+       another. A translucent set, by alpha or by the alpha its color carries,
+       is drawn without that edge, as in PlotMorseSets: alpha applies to the
+       stroke on its own, so the edge would darken the rim of each piece.
+
        Returns (fig, ax).
     """
     rows, num_morse_sets = _load_morse_sets(morse_sets)
@@ -781,7 +786,13 @@ def PlotMorseSets1D(morse_sets, morse_nodes=None, cmap=None, clist=None, scale_f
             else:
                 pieces.append([b, low, high])
         clr = matplotlib.colors.to_hex(cmap(cmap_norm(morse_node)), keep_alpha=True)
+        # Edge in the face color by default, but not under a translucent fill,
+        # as in _draw_boxes: alpha applies to the stroke on its own, so the
+        # edge would darken the rim of every piece.
+        translucent = (alpha if alpha != None else matplotlib.colors.to_rgba(clr)[3]) < 1
         edges = clr if edge_clr == None else edge_clr
+        if translucent and edge_clr == None:
+            edges = 'none'
         patches = []
         for a, b in _merge_intervals(sorted(scaled), merge_tol):
             patches.append(Rectangle((a, -height / 2), b - a, height))

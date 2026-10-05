@@ -280,6 +280,27 @@ def test_translucent_sets_do_not_darken_along_their_edges(kwargs):
     plt.close(fig)
 
 
+@pytest.mark.parametrize("plot", [CMGDB.PlotMorseSets, CMGDB.PlotMorseSets1D])
+@pytest.mark.parametrize("kwargs", [{'alpha': 0.5}, {'clist': ['#1f77b480']}])
+def test_translucent_one_dimensional_sets_do_not_darken_along_their_rim(plot, kwargs):
+    # C10: PlotMorseSets1D, which draws the 1-D sets PlotMorseSets hands it,
+    # stroked each piece in its face color under a translucent fill too, so
+    # the rim of the piece came out darker than its inside.
+    rows = [[0, 1, 0], [1, 2, 0], [3, 4, 1]]
+    fig, ax = plot(rows, linewidth=2, show=False, **kwargs)
+    image = render(fig)
+    interior = pixel(image, ax, 0.5, 0.045)                 # above the axis line
+    assert np.abs(pixel(image, ax, 0.0, 0.045, dx=1) - interior).max() <= 2
+    plt.close(fig)
+    # An opaque set keeps its face-colored edge, and an edge_clr is drawn.
+    fig, ax = plot(rows, linewidth=2, show=False)
+    assert np.allclose(ax.collections[0].get_edgecolor(), [matplotlib.colors.to_rgba('#1f77b4')])
+    plt.close(fig)
+    fig, ax = plot(rows, linewidth=2, edge_clr='k', show=False, **kwargs)
+    assert np.allclose(ax.collections[0].get_edgecolor()[:, :3], [[0, 0, 0]])
+    plt.close(fig)
+
+
 def stacked_rows():
     """3-D boxes over a 10x10 grid in (x, y), one deep for x < 0.5, six deep beyond."""
     return [[i * H, j * H, k * H, (i + 1) * H, (j + 1) * H, (k + 1) * H, 0]
