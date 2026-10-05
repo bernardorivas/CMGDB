@@ -1254,7 +1254,21 @@ int percent = 0;
       std::cout . flush ();
     }
 #endif
-    RectGeo geo = * std::dynamic_pointer_cast<RectGeo>(geometry ( e ));
+    // GridElementToCubes replaces an element deeper than `depth` by its
+    // ancestor at `depth`, so the bounds must take in that ancestor.
+    // Bounds that stop at the element miss the far side of its cube, and
+    // geometryOfCube, which divides the bounds evenly among the cubes,
+    // then gives the cubes the wrong rectangles.
+    Tree::iterator node = GridToTree ( find ( e ) );
+    int excess = (int) tree () . depth ( node ) - depth;
+    std::shared_ptr<Geo> cube_geometry;
+    if ( excess > 0 ) {
+      for ( ; excess > 0; -- excess ) node = tree () . parent ( node );
+      cube_geometry = geometryOfTreeNode ( node );
+    } else {
+      cube_geometry = geometry ( e );
+    }
+    RectGeo geo = * std::dynamic_pointer_cast<RectGeo>(cube_geometry);
     for ( int d = 0; d < D; ++ d ) {
       if ( newbounds . lower_bounds [ d ] > geo . lower_bounds [ d ] )
         newbounds . lower_bounds [ d ] = geo . lower_bounds [ d ];
