@@ -6,6 +6,8 @@
 - C29: a Model without a map, or of another dimension than the Morse
   graph, is refused with ValueError instead of crashing or evaluating the
   map on boxes of the wrong dimension.
+- C27: batch_chunk_size bounds the rectangles per call of the batch map,
+  as it does in ComputeConleyMorseGraph.
 """
 
 import subprocess
@@ -26,6 +28,30 @@ def product_model(dim=2, subdiv=6):
 
     return CMGDB.Model(subdiv, subdiv, subdiv, 10000,
                        [0.0] * dim, [1.2] * dim, F)
+
+
+def cubic(x):
+    return 1.5 * x - 0.5 * x * x * x
+
+
+def cubic_model(subdiv=8):
+    """Uniform grid on [-1.5, 1.5]^2, map g(x) = 1.5x - 0.5x^3 on both axes.
+
+    g maps [-1.5, 1.5] into [-1, 1], so the whole grid is a valid cell set.
+    The scalar map and cubic_batch agree exactly (products and sums only).
+    """
+    def f(x):
+        return [cubic(x[0]), cubic(x[1])]
+
+    def F(rect):
+        return CMGDB.BoxMap(f, rect)
+
+    return CMGDB.Model(subdiv, subdiv, subdiv, 10000,
+                       [-1.5, -1.5], [1.5, 1.5], F)
+
+
+def cubic_batch(rects):
+    return CMGDB.BoxMapBatch(cubic, rects)
 
 
 # Runs in a subprocess, so that a race that corrupts the heap or trips the
@@ -120,3 +146,24 @@ def test_model_of_another_dimension_is_refused():
     with pytest.raises(ValueError, match="dimension 1.*dimension 2"):
         CMGDB.ComputeConleyIndexForCells(
             model, morse_graph, morse_graph.morse_set(0))
+
+
+def test_batch_chunk_size_bounds_rows_per_batch_call():
+    model = cubic_model()
+    morse_graph, map_graph = CMGDB.ComputeMorseGraph(model)
+    cells = list(range(map_graph.num_vertices()))
+    expected = CMGDB.ComputeConleyIndexForCells(model, morse_graph, cells)
+    rows = []
+
+    def F_batch(rects):
+        rows.append(len(rects))
+        return cubic_batch(rects)
+
+    model.set_batch_map(F_batch)
+    assert CMGDB.ComputeConleyIndexForCells(model, morse_graph, cells) == expected
+    assert max(rows) == len(cells)
+    rows.clear()
+    index = CMGDB.ComputeConleyIndexForCells(
+        model, morse_graph, cells, batch_chunk_size=8)
+    assert index == expected
+    assert rows and max(rows) <= 8

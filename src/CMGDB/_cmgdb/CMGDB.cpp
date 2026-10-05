@@ -266,7 +266,8 @@ std::vector < std::string >
 ComputeConleyIndexForCells (
     const Model & model,
     MorseGraph & morse_graph,
-    std::vector < uint64_t > cells ) {
+    std::vector < uint64_t > cells,
+    uint64_t batch_chunk_size = 65536 ) {
   // Conley index of an arbitrary cell subset of the final phase-space grid.
   // Mixed-depth (adaptive-grid) cell sets are supported: the chomp machinery
   // refines every cell to the finest depth present in the set, preserving
@@ -304,7 +305,7 @@ ComputeConleyIndexForCells (
   }
 
   chomp::ConleyIndex_t conley_index;
-  ChompMap chomp_map ( map );
+  ChompMap chomp_map ( map, batch_chunk_size );
   chomp::ConleyIndex (
     & conley_index, * phase_space_chomp, cells, chomp_map );
   return conleyIndexString ( conley_index );
@@ -1588,19 +1589,24 @@ released during the computation.
     "ComputeConleyIndexForCells",
     [] ( const Model & model,
          MorseGraph & morse_graph,
-         std::vector<uint64_t> cells ) {
+         std::vector<uint64_t> cells,
+         uint64_t batch_chunk_size ) {
       std::vector<std::string> result;
       {
         py::gil_scoped_release release;
         result = ComputeConleyIndexForCells (
-          model, morse_graph, std::move ( cells ) );
+          model, morse_graph, std::move ( cells ), batch_chunk_size );
       }
       return result;
     },
     py::arg ( "model" ),
     py::arg ( "morse_graph" ),
     py::arg ( "cells" ),
-    "Compute the Conley index of an arbitrary phase-space cell subset." );
+    py::arg ( "batch_chunk_size" ) = 65536,
+    "Compute the Conley index of an arbitrary phase-space cell subset. With "
+    "a batch map attached (model.set_batch_map), each call of it takes at "
+    "most batch_chunk_size rectangles, as in ComputeConleyMorseGraph (0 "
+    "means no limit)." );
   m.def(
     "MorseDirectedPathCells",
     [] ( const MapGraph & map_graph,
