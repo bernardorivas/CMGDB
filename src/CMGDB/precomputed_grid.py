@@ -273,7 +273,9 @@ def precompute_corner_grid(
     ``corners_per_axis`` is either one count used for every axis, or a sequence
     giving one count per axis. The per-axis form exists because CMGDB bisects
     coordinate ``depth % dim`` at each depth, so at a subdivision level that is
-    not a multiple of ``dim`` the axes are refined unequally.
+    not a multiple of ``dim`` the axes are refined unequally. The nodes of an
+    axis with more than one node run from its lower to its upper bound, both
+    exactly.
     """
     lower, upper, dim = _validate_bounds(lower_bounds, upper_bounds)
     if np.isscalar(corners_per_axis):
@@ -313,7 +315,11 @@ def precompute_corner_grid(
         end = min(start + chunk_size, n_total)
         flat_idx = np.arange(start, end, dtype=np.int64)
         multi_idx = np.stack(np.unravel_index(flat_idx, shape), axis=-1).astype(np.float64)
-        points = lower + multi_idx * step
+        # The last node of a refined axis is the upper bound itself, as on
+        # CMGDB's grid: lower + (c - 1) * step rounds to either side of it on
+        # many domains, and above it f may be undefined
+        points = np.where(multi & (multi_idx == counts - 1), upper,
+                          lower + multi_idx * step)
         values = evaluator(points)
         if ys_flat is None:
             out_dim = int(values.shape[1])

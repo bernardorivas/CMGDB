@@ -12,9 +12,11 @@ class PrecomputedBoxMap:
        dyadic grid at depth subdiv_max, in memory-bounded chunks. After that,
        calling the object with a rectangle performs no map evaluation at all:
        the corners of any box of the subdivision tree (at any depth up to
-       subdiv_max) lie exactly on the precomputed lattice, so the image
-       rectangle is a table lookup followed by a componentwise min/max --
-       the same combinatorial box image BoxMap(f, rect) would produce.
+       subdiv_max) lie on the precomputed lattice, so the image rectangle is
+       a table lookup followed by a componentwise min/max -- the box image
+       BoxMap(f, rect) would produce, up to rounding: a lattice node and the
+       box corner TreeGrid computes for it can differ in the last bit, except
+       on the faces of the domain, where both are the bounds themselves.
 
        This pays off when f is expensive (neural network surrogates, Gaussian
        processes, ODE integration): each lattice point is evaluated exactly
@@ -95,7 +97,12 @@ class PrecomputedBoxMap:
             stop = min(start + chunk, n_total)
             flat_idx = np.arange(start, stop, dtype=np.int64)
             multi_idx = np.stack(np.unravel_index(flat_idx, tuple(nodes_per_axis)), axis=-1)
-            points = self.lower_bounds + multi_idx * step
+            # The last node is upper_bounds itself, where TreeGrid puts the
+            # upper faces of the boundary boxes: lower_bounds + multi_idx *
+            # step rounds to either side of it on many domains (to
+            # 1.2000000000000002 on [-1, 1.2], outside the domain of f)
+            points = np.where(multi_idx == nodes_per_axis - 1, self.upper_bounds,
+                              self.lower_bounds + multi_idx * step)
             values = np.asarray(evaluator(points), dtype=float)
             if values.shape != (stop - start, self.dim):
                 raise ValueError(
