@@ -247,3 +247,54 @@ def test_factories_leave_torch_module_as_it_was(device):
     evaluator = precomputed_grid.as_batched_evaluator(net, device=device)
     evaluator(np.zeros((3, 2)))
     assert module_state(net) == before
+
+
+def typed_net(torch, dtype):
+    torch.manual_seed(0)
+    return torch.nn.Sequential(torch.nn.Linear(2, 8), torch.nn.Tanh(),
+                               torch.nn.Linear(8, 2)).to(dtype)
+
+
+def module_values(torch, net, points, dtype):
+    """net evaluated on the CPU in its own dtype, as float64."""
+    with torch.no_grad():
+        return net(torch.as_tensor(points, dtype=dtype)).to(torch.float64).numpy()
+
+
+@pytest.mark.parametrize("dtype_name", ["float64", "float16", "bfloat16"])
+def test_class_evaluates_module_in_its_dtype(dtype_name):
+    # C44: the points were always cast to float32, so a float64 (or half
+    # precision) module failed in its first layer
+    torch = pytest.importorskip("torch")
+    dtype = getattr(torch, dtype_name)
+    net = typed_net(torch, dtype)
+    F = CMGDB.PrecomputedBoxMap(net, [0.0, 0.0], [1.0, 1.0], 6, device="cpu")
+    expected = module_values(torch, net, lattice_points(F), dtype)
+    assert np.array_equal(F._table.reshape(-1, 2), expected)
+
+
+@pytest.mark.parametrize("dtype_name", ["float64", "float16", "bfloat16"])
+def test_factory_evaluates_module_in_its_dtype(dtype_name):
+    # C44, in the fork's as_batched_evaluator
+    torch = pytest.importorskip("torch")
+    dtype = getattr(torch, dtype_name)
+    net = typed_net(torch, dtype)
+    evaluator = precomputed_grid.as_batched_evaluator(net, device="cpu")
+    points = np.random.default_rng(0).uniform(size=(16, 2))
+    assert np.array_equal(evaluator(points), module_values(torch, net, points, dtype))
+
+
+def test_auto_device_passes_over_mps_for_float64(monkeypatch):
+    # C44: MPS has no float64, and 'auto' chose it anyway
+    torch = pytest.importorskip("torch")
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    net = typed_net(torch, torch.float64)
+    F = CMGDB.PrecomputedBoxMap(net, [0.0, 0.0], [1.0, 1.0], 6, device="auto")
+    expected = module_values(torch, net, lattice_points(F), torch.float64)
+    assert np.array_equal(F._table.reshape(-1, 2), expected)
+    assert precomputed_grid.select_torch_device("auto", dtype=torch.float64).type == "cpu"
+    assert precomputed_grid.select_torch_device("auto", dtype=torch.float32).type == "mps"
+    box_map = CMGDB.make_precomputed_box_map(net, [0.0, 0.0], [1.0, 1.0],
+                                             subdiv_max=6, device="auto")
+    assert len(box_map([0.0, 0.0, 0.125, 0.125])) == 4

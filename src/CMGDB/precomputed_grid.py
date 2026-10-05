@@ -4,7 +4,8 @@ These helpers evaluate a map on the finest corner lattice once, in bounded
 chunks, and return a ``box_map(rect)`` callable suitable for ``CMGDB.Model``.
 Torch is optional: NumPy-style batched callables work without it, while
 ``torch.nn.Module`` instances are evaluated on ``mps``, then ``cuda``, then
-``cpu`` when ``device="auto"``.
+``cpu`` when ``device="auto"`` (``mps`` has no float64, and float64 modules
+skip it).
 
 Everything in ``__all__`` is re-exported by :mod:`CMGDB.PrecomputedBoxMap`,
 next to upstream's ``PrecomputedBoxMap`` class. The class serves the adaptive
@@ -93,17 +94,22 @@ def _import_torch(*, required: bool):
     return torch
 
 
-def select_torch_device(device: Any = "auto"):
+def select_torch_device(device: Any = "auto", *, dtype: Any = None):
     """Return a ``torch.device`` using CMGDB's default preference.
 
     ``device="auto"`` chooses ``mps`` when available, then ``cuda``, then
-    ``cpu``. Explicit unavailable accelerators raise a clear error.
+    ``cpu``; it passes over ``mps``, which has no float64, when ``dtype`` is
+    ``torch.float64``. Explicit unavailable accelerators raise a clear error.
     """
     torch = _import_torch(required=True)
     if hasattr(device, "type"):
         return device
     if device is None or device == "auto":
-        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        if (
+            hasattr(torch.backends, "mps")
+            and torch.backends.mps.is_available()
+            and dtype != torch.float64
+        ):
             return torch.device("mps")
         if torch.cuda.is_available():
             return torch.device("cuda")
@@ -174,19 +180,26 @@ def as_batched_evaluator(f: Any, *, device: Any = "auto"):
 
     Non-Torch callables are assumed to already be batched. If Torch is
     installed and ``f`` is a ``torch.nn.Module``, the returned evaluator runs
-    the module in ``float32`` on ``device`` in eval mode and returns
+    the module on ``device`` in eval mode, in the dtype of its floating-point
+    parameters and buffers (``float32`` if it has none), and returns
     ``float64`` NumPy data. After each call the module is back on its own
     device and in its own modes.
     """
     torch = _import_torch(required=False)
     if torch is not None and isinstance(f, torch.nn.Module):
-        torch_device = select_torch_device(device)
+        floating = next(
+            (t for t in itertools.chain(f.parameters(), f.buffers()) if t.is_floating_point()),
+            None,
+        )
+        dtype = torch.float32 if floating is None else floating.dtype
+        torch_device = select_torch_device(device, dtype=dtype)
 
         def torch_evaluator(points: np.ndarray) -> np.ndarray:
             points = np.asarray(points, dtype=np.float64)
             with _lent_module(f, torch_device) as module, torch.no_grad():
-                x = torch.as_tensor(points, dtype=torch.float32, device=torch_device)
-                values = module(x).detach().cpu().numpy()
+                x = torch.as_tensor(points, dtype=dtype, device=torch_device)
+                # Widened on the CPU: MPS has no float64, NumPy no bfloat16
+                values = module(x).detach().cpu().to(torch.float64).numpy()
             return _validate_batched_output(values, len(points))
 
         torch_evaluator._cmgdb_torch_device = torch_device

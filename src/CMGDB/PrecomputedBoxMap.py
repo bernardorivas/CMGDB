@@ -30,9 +30,12 @@ class PrecomputedBoxMap:
 
        f must map an (m, dim) NumPy array of points to an (m, dim) array of
        image points (the BoxMapBatch convention). If PyTorch is in use and f
-       is a torch.nn.Module, it is evaluated in float32 on device ('auto'
-       selects mps, then cuda, then cpu) in eval mode, and afterwards returned
-       to its own device and modes; torch is never imported otherwise.
+       is a torch.nn.Module, it is evaluated in eval mode on device ('auto'
+       selects mps, then cuda, then cpu; mps, which has no float64, is passed
+       over for a float64 module), in the dtype of its floating-point
+       parameters and buffers (float32 if it has none), and afterwards
+       returned to its own device and modes; torch is never imported
+       otherwise.
 
        Typical use:
            F = CMGDB.PrecomputedBoxMap(f, lower_bounds, upper_bounds, subdiv_max)
@@ -122,8 +125,12 @@ class PrecomputedBoxMap:
         if torch is None or not isinstance(f, torch.nn.Module):
             yield lambda points: f(points)
             return
+        # The points go in the dtype of the module's floating-point tensors
+        floating = next((t for t in itertools.chain(f.parameters(), f.buffers())
+                         if t.is_floating_point()), None)
+        dtype = torch.float32 if floating is None else floating.dtype
         if device == 'auto':
-            if torch.backends.mps.is_available():
+            if torch.backends.mps.is_available() and dtype != torch.float64:
                 device = 'mps'
             elif torch.cuda.is_available():
                 device = 'cuda'
@@ -142,8 +149,9 @@ class PrecomputedBoxMap:
 
             def evaluator(points):
                 with torch.no_grad():
-                    x = torch.as_tensor(points, dtype=torch.float32, device=device)
-                    return module(x).detach().cpu().numpy().astype(float)
+                    x = torch.as_tensor(points, dtype=dtype, device=device)
+                    # Widened on the CPU: MPS has no float64, NumPy no bfloat16
+                    return module(x).detach().cpu().to(torch.float64).numpy()
             yield evaluator
         finally:
             if home is not None:

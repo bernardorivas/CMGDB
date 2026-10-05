@@ -264,7 +264,7 @@ box_map = CMGDB.make_precomputed_box_map(
     eval_mode="corners",   # sampling rule: corners | center | random
     padding=False,
     batch_points="auto",
-    device="auto",   # Torch only: mps, then cuda, then cpu
+    device="auto",   # Torch only: mps (not for float64), then cuda, then cpu
 )
 
 model = CMGDB.Model(
