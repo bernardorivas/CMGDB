@@ -9,9 +9,11 @@ and 4D.
 Every scenario carries a frozen reference of its mathematical output (Morse
 sets, reachability edges, Conley indices). A run that does not reproduce its
 reference exactly is reported as FAILED and its timings are not to be
-trusted. References live in benchmarks/references.json and are regenerated
-only with --update-refs, which is legitimate only when the mathematical
-output is *intended* to change.
+trusted. References live in benchmarks/references.json, which pins the size
+and the minimum box of each Morse set, and benchmarks/references.digests.json,
+which pins the boxes themselves for the scenarios it lists. Both are
+regenerated only with --update-refs, which is legitimate only when the
+mathematical output is *intended* to change.
 
 Usage:
   python benchmark.py                 # quick suite
@@ -33,6 +35,7 @@ diagnostic for evaluating map-evaluation optimizations.
 
 import argparse
 import gc
+import hashlib
 import json
 import math
 import os
@@ -145,7 +148,23 @@ class CountingBatchMap:
 # ranks of the grid tree, which are deterministic for a given grid), and all
 # data is expressed in canonical labels. edges_unreduced is the full
 # reachability relation -- the strongest invariant available.
+#
+# The size and the minimum box of a Morse set do not determine its other
+# boxes, so morse_set_digests adds a sha256 of each set's sorted box indices
+# (decimal, comma-separated). The child process splits them off the
+# reference: they are checked against a digest file beside the references
+# file (references.digests.json for references.json), which keeps
+# references.json unchanged.
 # ---------------------------------------------------------------------------
+
+def morse_set_digest(boxes):
+    return hashlib.sha256(",".join(map(str, boxes)).encode("ascii")).hexdigest()
+
+
+def digests_path_for(refs_path):
+    """The Morse set digest file that goes with a references file."""
+    return refs_path.with_name(refs_path.stem + ".digests.json")
+
 
 def extract_reference(morse_graph, map_graph=None):
     import CMGDB  # noqa: F401  (morse_graph is a CMGDB object)
@@ -161,6 +180,7 @@ def extract_reference(morse_graph, map_graph=None):
         "edges_unreduced": sorted(
             [relabel[u], relabel[w]] for u, w in morse_graph.edges_unreduced()
         ),
+        "morse_set_digests": [morse_set_digest(morse_sets[v]) for v in canonical],
     }
     annotations = [list(morse_graph.annotations(v)) for v in canonical]
     if any(annotations):
@@ -607,6 +627,7 @@ def run_child(name, repeat, out_path):
         maxrss_mb = maxrss / 1e6 if sys.platform == "darwin" else maxrss / 1e3
     else:
         maxrss_mb = 0.0  # not measured on Windows
+    digests = reference.pop("morse_set_digests")
     payload = {
         "scenario": name,
         "wall_times": wall_times,
@@ -614,6 +635,7 @@ def run_child(name, repeat, out_path):
         "map_seconds": map_seconds,
         "maxrss_mb": maxrss_mb,
         "reference": reference,
+        "morse_set_digests": digests,
     }
     Path(out_path).write_text(json.dumps(payload))
     return 0
@@ -701,6 +723,15 @@ def diff_references(expected, actual):
     return "\n".join(lines) or "  (no field differences found)"
 
 
+def diff_digests(expected, actual):
+    """Human-readable summary of how two lists of Morse set digests differ."""
+    if len(expected) != len(actual):
+        return f"  morse_set_digests: length {len(expected)} -> {len(actual)}"
+    changed = [i for i, (exp, act) in enumerate(zip(expected, actual)) if exp != act]
+    return (f"  morse_set_digests: other boxes in Morse sets {changed} "
+            f"(canonical order)")
+
+
 def median(values):
     values = sorted(values)
     n = len(values)
@@ -775,6 +806,9 @@ def main():
                         help="write references for the selected scenarios")
     parser.add_argument("--refs", default=str(DEFAULT_REFS_PATH),
                         help="path to references file")
+    parser.add_argument("--digests",
+                        help="path to Morse set digests file (default: "
+                             "<refs stem>.digests.json beside the references file)")
     parser.add_argument("--no-validate", action="store_true",
                         help="skip reference validation (calibration only)")
     parser.add_argument("--timeout", type=int, default=3600,
@@ -814,6 +848,8 @@ def main():
 
     refs_path = Path(args.refs)
     references = json.loads(refs_path.read_text()) if refs_path.exists() else {}
+    digests_path = Path(args.digests) if args.digests else digests_path_for(refs_path)
+    digests = json.loads(digests_path.read_text()) if digests_path.exists() else {}
 
     results = {}
     failed = False
@@ -829,6 +865,7 @@ def main():
             continue
         if args.update_refs:
             references[name] = payload["reference"]
+            digests[name] = payload["morse_set_digests"]
             payload["status"] = "NEW-REF"
         elif args.no_validate:
             payload["status"] = "NOVAL"
@@ -836,18 +873,29 @@ def main():
             payload["status"] = "NO-REF"
             failed = True
             print(f"  no reference for {name}; run with --update-refs to create one")
-        elif payload["reference"] != references[name]:
-            payload["status"] = "FAILED"
-            failed = True
-            print(f"  VALIDATION FAILED for {name}:")
-            print(diff_references(references[name], payload["reference"]))
         else:
-            payload["status"] = "OK"
+            differences = []
+            if payload["reference"] != references[name]:
+                differences.append(diff_references(references[name], payload["reference"]))
+            if name not in digests:
+                print(f"  no Morse set digests for {name}; only the sizes and "
+                      f"minimum boxes of its Morse sets were checked")
+            elif payload["morse_set_digests"] != digests[name]:
+                differences.append(diff_digests(digests[name], payload["morse_set_digests"]))
+            if differences:
+                payload["status"] = "FAILED"
+                failed = True
+                print(f"  VALIDATION FAILED for {name}:")
+                print("\n".join(differences))
+            else:
+                payload["status"] = "OK"
         results[name] = payload
 
     if args.update_refs:
         refs_path.write_text(json.dumps(references, indent=1))
         print(f"references written to {refs_path}")
+        digests_path.write_text(json.dumps(digests, indent=1))
+        print(f"Morse set digests written to {digests_path}")
 
     print()
     print_results_table(results)

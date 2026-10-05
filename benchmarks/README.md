@@ -4,6 +4,10 @@ A timed, correctness-validated benchmark suite for CMGDB. Every scenario
 checks its mathematical output (Morse sets, reachability edges, Conley
 indices) against a frozen reference before its timings can be trusted —
 a performance change that alters the computed dynamics fails loudly.
+`references.json` holds the size and the minimum box of each Morse set, and
+`references.digests.json` a SHA-256 digest of its boxes. A scenario missing
+from the digest file is checked only on sizes and minimum boxes, and the
+run says so.
 
 ## Running
 
@@ -121,10 +125,13 @@ installation to compile.
 python benchmarks/benchmark.py --all --update-refs
 ```
 
-This overwrites `references.json` for the selected scenarios. It is only
-legitimate when the mathematical output is *intended* to change (new
-scenario, changed scenario parameters). If an optimization changes a
-reference, that optimization has a bug — the entire point of the gate.
+This overwrites the selected scenarios' entries in `references.json` and
+`references.digests.json`. It is only legitimate when the mathematical output
+is *intended* to change (new scenario, changed scenario parameters). If an
+optimization changes a reference, that optimization has a bug — the entire
+point of the gate.
 
 `--no-validate` skips the reference check (for calibrating new scenarios);
-`--refs PATH` points at an alternative references file.
+`--refs PATH` points at an alternative references file, whose digests are
+read from and written to `<stem>.digests.json` beside it (`--digests PATH`
+names another digest file).
