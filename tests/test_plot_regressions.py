@@ -268,3 +268,50 @@ def test_translucent_sets_do_not_darken_along_their_edges(kwargs):
     assert np.abs(pixel(image, ax, 1.0, 0.5) - interior).max() <= 2       # the seam
     assert np.abs(pixel(image, ax, 0.0, 0.5, dx=1) - interior).max() <= 2  # inside the rim
     plt.close(fig)
+
+
+def stacked_rows():
+    """3-D boxes over a 10x10 grid in (x, y), one deep for x < 0.5, six deep beyond."""
+    return [[i * H, j * H, k * H, (i + 1) * H, (j + 1) * H, (k + 1) * H, 0]
+            for i in range(10) for j in range(10) for k in range(1 if i < 5 else 6)]
+
+
+@pytest.mark.parametrize("kwargs", [{'alpha': 0.3}, {'clist': ['#1f77b44d']}])
+def test_translucent_projection_shows_where_boxes_stack(kwargs):
+    # C19: a translucent set projected from 3-D was merged into one flat
+    # outline, while drawn box by box it is darker where boxes stack, as the
+    # merge_boxes docstring says the two pictures are the same.
+    fig, ax = CMGDB.PlotMorseSets(stacked_rows(), show=False, **kwargs)
+    fig_b, ax_b = CMGDB.PlotMorseSets(stacked_rows(), merge_boxes=False, show=False, **kwargs)
+    image, per_box = render(fig), render(fig_b)
+    assert (pixel(image, ax, 0.75, 0.55) < pixel(image, ax, 0.25, 0.55)).all()
+    assert (np.abs(image - per_box).max(axis=2) > 8).mean() < 0.005
+    plt.close(fig)
+    plt.close(fig_b)
+    # An opaque projection still merges: there is nothing to accumulate.
+    fig, ax = CMGDB.PlotMorseSets(stacked_rows(), show=False)
+    assert len(ax.patches) == 1 and len(ax.collections) == 0
+    plt.close(fig)
+
+
+def test_translucent_color_keeps_inflated_overlaps():
+    # C19: only a scalar alpha counted as translucent, so a color carrying its
+    # own alpha merged its inflated boxes and lost the overlaps.
+    rows = [[i * H, 0, (i + 1) * H, H, 0] for i in range(0, 10, 2)]
+    fig, ax = CMGDB.PlotMorseSets(rows, clist=['#1f77b480'], scale_factor=[3], show=False)
+    assert len(ax.patches) == 0 and len(ax.collections) == 1
+    image = render(fig)
+    overlap, single = pixel(image, ax, 0.15, 0.05), pixel(image, ax, 0.25, 0.05)
+    assert (overlap < single).all()
+    plt.close(fig)
+
+
+def test_translucent_unscaled_set_still_merges():
+    # C19: only sets whose boxes overlap leave the merged path. Here the
+    # inflated set 0 does, and set 1, unscaled and with no cell repeated,
+    # does not.
+    rows = [[i * H, j * H, (i + 1) * H, (j + 1) * H, 0] for i in range(3) for j in range(3)]
+    rows += [[i * H, j * H, (i + 1) * H, (j + 1) * H, 1] for i in range(5, 8) for j in range(3)]
+    fig, ax = CMGDB.PlotMorseSets(rows, scale_factor=[1.5, 1], alpha=0.5, show=False)
+    assert len(ax.patches) == 1 and len(ax.collections) == 1
+    plt.close(fig)

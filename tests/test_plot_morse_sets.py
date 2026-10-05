@@ -100,7 +100,9 @@ def test_zoom_inset_uses_merged_paths():
     ({'merge_boxes': False}, 0, 2),
     ({'edge_clr': 'k'}, 0, 2),             # outlined boxes are drawn one by one
     ({'scale_factor': [1.5, 1]}, 2, 0),    # an inflated set merges on a refined grid
-    ({'scale_factor': [1.5, 1], 'alpha': 0.5}, 1, 1),   # translucent overlaps must show
+    # Translucent overlaps must show: set 0's inflated boxes overlap, and set 1
+    # has cells that blob_rows draws more than once.
+    ({'scale_factor': [1.5, 1], 'alpha': 0.5}, 0, 2),
     ({'scale_factor': [np.pi, 1]}, 1, 1),  # a factor off any small grid falls back
 ])
 def test_per_box_fallbacks(kwargs, merged, per_box):

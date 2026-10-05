@@ -413,7 +413,7 @@ def _outline_loops(index):
     return [loop + (i0, j0) for loop in _stitch_loops(np.concatenate(sides))]
 
 
-def _merged_outline(lower, upper, factor=1):
+def _merged_outline(lower, upper, factor=1, disjoint=False):
     """One compound path covering the union of aligned boxes, or None.
 
        Drawing a Morse set as the outline of its boxes rather than as the boxes
@@ -426,11 +426,17 @@ def _merged_outline(lower, upper, factor=1):
        cover on a refined one (see _scaled_runs) instead of cell by cell. The
        union is what a caller drawing the boxes one by one already sees,
        provided the fill is opaque.
+
+       disjoint=True, for a translucent fill, also returns None when two boxes
+       share a cell, as boxes projected from a higher dimension do: drawn one
+       by one they are darker there, and their union is not.
     """
     grid = _grid_index(lower, upper)
     if grid is None:
         return None
     origin, cell, index = grid
+    if disjoint and len(np.unique(index, axis=0)) < len(index):
+        return None
     if factor == 1:
         loops, step = _outline_loops(index), cell
     else:
@@ -456,9 +462,9 @@ def _draw_boxes(ax, rows, morse_nodes, dim, d1, d2, cmap, cmap_norm,
        boxes (see _merged_outline), inflated boxes included. The boxes are
        drawn one by one, as a PatchCollection, when merging is switched off,
        when the boxes do not share one grid, when an explicit edge_clr asks for
-       each box to be outlined, or when inflated boxes are drawn translucent:
-       their union is what a per-box drawing shows only where the overlaps do
-       not accumulate alpha.
+       each box to be outlined, or when overlapping boxes -- inflated, or
+       projected onto one cell -- are drawn translucent: their union is what a
+       per-box drawing shows only where the overlaps do not accumulate alpha.
     """
     drawn = []
     for morse_node in morse_nodes:
@@ -478,14 +484,14 @@ def _draw_boxes(ax, rows, morse_nodes, dim, d1, d2, cmap, cmap_norm,
         if translucent and edge_clr == None:
             edges = 'none'
         path = None
-        # Unscaled boxes tile the grid, so their union is what a per-box drawing
-        # shows whatever the alpha. Inflated ones overlap, and a translucent
-        # fill accumulates over an overlap where the union does not.
-        opaque = alpha == None or alpha == 1
-        if merge_boxes and edge_clr == None and (factor == 1 or opaque):
+        # A translucent fill accumulates over an overlap where the union does
+        # not. Inflated boxes overlap, and so do unscaled ones that a projection
+        # stacks onto one cell, so a translucent set merges only when it is
+        # unscaled and no cell repeats.
+        if merge_boxes and edge_clr == None and (factor == 1 or not translucent):
             boxes = np.asarray([[float(v) for v in rect] for rect in morse_set])
             path = _merged_outline(boxes[:, [d1, d2]], boxes[:, [dim + d1, dim + d2]],
-                                   factor)
+                                   factor, disjoint=translucent)
         if path is not None:
             artist = PathPatch(path, facecolor=clr, edgecolor=edges, linewidth=linewidth,
                                alpha=alpha, rasterized=rasterize)
@@ -654,8 +660,11 @@ def PlotMorseSets(morse_sets, morse_nodes=None, proj_dims=None, cmap=None, clist
        10^5 boxes becomes a few polygons, so the file is orders of magnitude
        smaller and opens at once. Set it False to draw the boxes one by one
        as before; that also happens by itself when the boxes do not share one
-       grid, when a scale_factor other than 1 moves them off it, or when an
-       explicit edge_clr asks for each box to be outlined.
+       grid, when a scale_factor that is not a ratio of small whole numbers
+       moves them off it, when an explicit edge_clr asks for each box to be
+       outlined, or when a translucent set has boxes that overlap -- inflated,
+       or projected onto one cell -- whose overlaps only the boxes drawn one by
+       one show darker.
 
        rasterize draws the boxes as a raster image inside the vector figure,
        at dpi (600 by default when rasterizing). With merge_boxes the vector
