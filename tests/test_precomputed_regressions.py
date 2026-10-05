@@ -320,6 +320,29 @@ def test_factories_leave_torch_module_as_it_was(device):
     assert module_state(net) == before
 
 
+def test_factory_lends_torch_module_once_per_table():
+    # C40: the evaluator lends the module for each call, which on an
+    # accelerator moves it to the device and back every time, and the
+    # table build called it once per chunk
+    torch = pytest.importorskip("torch")
+    moves = []
+
+    class CountingNet(torch.nn.Sequential):
+        def to(self, *args, **kwargs):
+            moves.append(args)
+            return super().to(*args, **kwargs)
+
+    torch.manual_seed(0)
+    net = CountingNet(torch.nn.Linear(2, 8), torch.nn.Tanh(), torch.nn.Linear(8, 2))
+    # 81 nodes, in 11 chunks of at most 8
+    CMGDB.make_precomputed_box_map(net, [0.0, 0.0], [1.0, 1.0], subdiv_max=6,
+                                   batch_points=8, device="cpu")
+    assert len(moves) == 2
+    moves.clear()
+    precomputed_grid.as_batched_evaluator(net, device="cpu")(np.zeros((3, 2)))
+    assert len(moves) == 2
+
+
 def typed_net(torch, dtype):
     torch.manual_seed(0)
     return torch.nn.Sequential(torch.nn.Linear(2, 8), torch.nn.Tanh(),

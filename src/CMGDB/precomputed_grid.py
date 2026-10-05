@@ -178,6 +178,24 @@ def _lent_module(module: Any, device: Any):
             submodule.training = training
 
 
+@contextlib.contextmanager
+def _module_evaluation(torch: Any, module: Any, device: Any, dtype: Any):
+    """Lend ``module`` to ``device`` (see :func:`_lent_module`) and yield a
+    function evaluating it on ``(n, d)`` float64 arrays, in ``dtype``, as
+    ``float64`` NumPy data."""
+    with _lent_module(module, device) as lent:
+
+        def evaluate(points: np.ndarray) -> np.ndarray:
+            points = np.asarray(points, dtype=np.float64)
+            with torch.no_grad():
+                x = torch.as_tensor(points, dtype=dtype, device=device)
+                # Widened on the CPU: MPS has no float64, NumPy no bfloat16
+                values = lent(x).detach().cpu().to(torch.float64).numpy()
+            return _validate_batched_output(values, len(points))
+
+        yield evaluate
+
+
 def as_batched_evaluator(f: Any, *, device: Any = "auto"):
     """Return a callable that maps ``(n, d)`` float64 NumPy arrays to arrays.
 
@@ -186,7 +204,9 @@ def as_batched_evaluator(f: Any, *, device: Any = "auto"):
     the module on ``device`` in eval mode, in the dtype of its floating-point
     parameters and buffers (``float32`` if it has none), and returns
     ``float64`` NumPy data. After each call the module is back on its own
-    device and in its own modes.
+    device and in its own modes, so each call moves a module that lives on
+    another device to ``device`` and back; for many calls, keep the module
+    on ``device``, where nothing is moved.
     """
     torch = _import_torch(required=False)
     if torch is not None and isinstance(f, torch.nn.Module):
@@ -197,16 +217,17 @@ def as_batched_evaluator(f: Any, *, device: Any = "auto"):
         dtype = torch.float32 if floating is None else floating.dtype
         torch_device = select_torch_device(device, dtype=dtype)
 
+        def lend():
+            return _module_evaluation(torch, f, torch_device, dtype)
+
         def torch_evaluator(points: np.ndarray) -> np.ndarray:
-            points = np.asarray(points, dtype=np.float64)
-            with _lent_module(f, torch_device) as module, torch.no_grad():
-                x = torch.as_tensor(points, dtype=dtype, device=torch_device)
-                # Widened on the CPU: MPS has no float64, NumPy no bfloat16
-                values = module(x).detach().cpu().to(torch.float64).numpy()
-            return _validate_batched_output(values, len(points))
+            with lend() as evaluate:
+                return evaluate(points)
 
         torch_evaluator._cmgdb_torch_device = torch_device
         torch_evaluator._cmgdb_width = _max_linear_width(f)
+        # For precompute_corner_grid, which lends the module once per table
+        torch_evaluator._cmgdb_lend = lend
         return torch_evaluator
 
     def numpy_evaluator(points: np.ndarray) -> np.ndarray:
@@ -352,25 +373,30 @@ def precompute_corner_grid(
     ys_flat: Optional[np.ndarray] = None
     out_dim = -1
 
-    for start in range(0, n_total, chunk_size):
-        end = min(start + chunk_size, n_total)
-        flat_idx = np.arange(start, end, dtype=np.int64)
-        multi_idx = np.stack(np.unravel_index(flat_idx, shape), axis=-1).astype(np.float64)
-        # The last node of a refined axis is the upper bound itself, as on
-        # CMGDB's grid: lower + (c - 1) * step rounds to either side of it on
-        # many domains, and above it f may be undefined
-        points = np.where(multi & (multi_idx == counts - 1), upper,
-                          lower + multi_idx * step)
-        values = evaluator(points)
-        if ys_flat is None:
-            out_dim = int(values.shape[1])
-            ys_flat = np.empty((n_total, out_dim), dtype=np.float64)
-        if values.shape[1] != out_dim:
-            raise ValueError(
-                "batched evaluator output dimension changed between chunks: "
-                f"expected {out_dim}, got {values.shape[1]}"
-            )
-        ys_flat[start:end] = values
+    # A torch module is lent to its device once for all the chunks: the
+    # evaluator alone lends it for each call, moving it there and back
+    lend = getattr(evaluator, "_cmgdb_lend", None)
+    evaluation = lend() if lend is not None else contextlib.nullcontext(evaluator)
+    with evaluation as evaluate:
+        for start in range(0, n_total, chunk_size):
+            end = min(start + chunk_size, n_total)
+            flat_idx = np.arange(start, end, dtype=np.int64)
+            multi_idx = np.stack(np.unravel_index(flat_idx, shape), axis=-1).astype(np.float64)
+            # The last node of a refined axis is the upper bound itself, as on
+            # CMGDB's grid: lower + (c - 1) * step rounds to either side of it
+            # on many domains, and above it f may be undefined
+            points = np.where(multi & (multi_idx == counts - 1), upper,
+                              lower + multi_idx * step)
+            values = evaluate(points)
+            if ys_flat is None:
+                out_dim = int(values.shape[1])
+                ys_flat = np.empty((n_total, out_dim), dtype=np.float64)
+            if values.shape[1] != out_dim:
+                raise ValueError(
+                    "batched evaluator output dimension changed between chunks: "
+                    f"expected {out_dim}, got {values.shape[1]}"
+                )
+            ys_flat[start:end] = values
 
     if ys_flat is None:
         raise RuntimeError("corner grid unexpectedly had no points")
