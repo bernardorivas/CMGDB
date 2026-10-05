@@ -160,7 +160,7 @@ def _drawn_span(rows, morse_nodes, dim, d, scale_factor):
             continue
         a, b = rect[d], rect[dim + d]
         if scale_factor != None:
-            factor = scale_factor[node] if node in scale_factor else 1.0
+            factor = scale_factor[node]
             centre, half = (a + b) / 2, (b - a) * factor / 2
             a, b = centre - half, centre + half
         lo = a if lo == None or a < lo else lo
