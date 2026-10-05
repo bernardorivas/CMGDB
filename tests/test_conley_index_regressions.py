@@ -3,12 +3,12 @@
 C37: a Morse set away from the boundary of the phase space got an undefined
 Conley index (``annotations(v) == []``) when the whole image of one of its
 exit boxes lies beyond an upper face of the phase space. The cover clips such
-an image to nothing (it clamps one below a lower face onto the layer of boxes
-along that face), which leaves a fiber of the graph of the map without its
-relative part. The index is now recomputed with the images that miss the
-phase space projected onto it; the expected values below are the indices of
-the hyperbolic fixed points, which the same boxes on a larger phase space
-also give.
+an image to nothing (it clamps one below a lower face onto the bottom layer
+of the complex, which spans the boxes of the index pair), which leaves a
+fiber of the graph of the map without its relative part. The index is now
+recomputed with the images that miss the phase space projected onto it; the
+expected values below are the indices of the hyperbolic fixed points, which
+the same boxes on a larger phase space also give.
 """
 
 import subprocess

@@ -219,14 +219,15 @@ the graph of the box map fails its fiber checks: a fiber is not acyclic, or a
 chain lifted into it has no preboundary.
 
 The usual cause is the boundary of the phase space. In this computation, a
-cover clips an image to the phase space, and an image that lies wholly beyond
-an upper face of the phase space gets an empty cover (one wholly below a lower
-face is clamped onto the layer of boxes along that face instead). An empty
+cover clips an image to the smallest box that holds the index pair, which lies
+in the phase space. An image that lies wholly beyond an upper face of the
+phase space gets an empty cover; one wholly below a lower face is clamped onto
+the bottom layer of that box instead. An empty
 cover of the image of a box next to a Morse set can leave the index of the set
 undefined. If the set does not touch the boundary, the fork then recomputes
 its index with each image that misses the phase space projected onto it. The
-result is the Conley index of the box map itself, the one that the same boxes
-give on a larger phase space; upstream leaves it undefined. The index of a
+result is the index that the same boxes give on a larger phase space, where no
+image is clipped; upstream leaves it undefined. The index of a
 Morse set that touches the boundary stays undefined, because there it depends
 on how the boundary is treated. Other failures stay undefined too, for
 instance with `mode="center"` box maps, whose images of neighboring boxes need

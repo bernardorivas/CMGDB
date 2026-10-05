@@ -178,15 +178,15 @@ ConleyIndex ( ConleyIndex_t * output,
   // A fiber chain with no preboundary arises when the images of the cubes
   // of A around a cell of cl(A) lie beyond an upper face of the phase
   // space: the cover clips such an image away (it clamps one below a lower
-  // face onto the layer of cubes along that face), and the fiber over that
-  // cell then lacks its relative part. If S stays off the boundary of the
-  // phase space, redo the computation for r o f, where r is the projection
-  // onto the phase space. The images of the cubes of S do not change, and
-  // the projected images of the cubes of A land in cubes on the boundary,
-  // which lie in A; so (X, A) is an index pair for r o f. Near the
-  // invariant set r o f equals f, so the two have the same Conley index.
-  // If S touches the boundary, neither need hold, and the index is left
-  // undefined.
+  // face onto the bottom layer of the complex, which spans the cubes of X),
+  // and the fiber over that cell then lacks its relative part. If S stays
+  // off the boundary of the phase space, redo the computation for r o f,
+  // where r is the projection onto the phase space. The images of the
+  // cubes of S do not change, and the projected images of the cubes of A
+  // land in cubes on the boundary, which lie in A; so (X, A) is an index
+  // pair for r o f. Near the invariant set r o f equals f, so the two have
+  // the same Conley index. If S touches the boundary, neither need hold,
+  // and the index is left undefined.
   if ( error_code == 2 && not TouchesPhaseSpaceBoundary ( grid, S_geometries ) ) {
     output -> data () . clear ();
     error_code = RelativeMapHomology ( &(output -> data ()), grid, X, A, grid, X, A, F, depth, true );
