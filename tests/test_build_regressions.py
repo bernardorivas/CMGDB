@@ -9,6 +9,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+from packaging.requirements import Requirement
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -134,3 +135,14 @@ def test_finds_a_boost_that_has_no_cmake_package_file(configured, tmp_path):
     assert result.returncode == 0, result.stderr[-2000:]
     assert cache_entry(tmp_path, "Boost_DIR") == "Boost_DIR-NOTFOUND"
     assert cache_entry(tmp_path, "Boost_INCLUDE_DIR")
+
+
+def test_matplotlib_requirement_excludes_releases_without_poly3d_shade():
+    # PlotMorseSets3D passes Poly3DCollection the shade keyword, which
+    # matplotlib 3.7 added; pyproject.toml admitted 3.6, where every call
+    # raised AttributeError (C03, C56). Every plotting test passes on 3.7.0.
+    requirement = next(Requirement(line) for line in pyproject()["project"]["dependencies"]
+                       if Requirement(line).name == "matplotlib")
+    assert not requirement.specifier.contains("3.6.0")
+    assert not requirement.specifier.contains("3.6.3")
+    assert requirement.specifier.contains("3.7.0")
