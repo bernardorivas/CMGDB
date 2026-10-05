@@ -106,14 +106,15 @@ def test_build_cache_called_from_the_map_raises_inside_it():
 # ---------------------------------------------------------------------------
 
 def front_loaded_model(depth=14):
-    """1D map on [0, 1] whose boxes left of 1/16 have images 400 times wider
-    than elsewhere, so the tree-order sweep meets the dense part first."""
+    """1D map on [0, 1] that moves every box to the right; the images of the
+    boxes left of 1/16 are 400 times wider than the others, so the
+    tree-order sweep meets the dense part of the graph first."""
     def F(rect):
         a, b = rect
         h = b - a
-        lo = a + 0.25 * h
+        lo = min(a + 2.25 * h, 1.0 - 0.5 * h)
         width = 100.0 * h if a < 1.0 / 16 else 0.25 * h
-        return [lo, min(1.0 - 0.1 * h, lo + width)]
+        return [lo, min(1.0, lo + width)]
 
     return CMGDB.Model(depth, depth, depth, 10000, [0.0], [1.0], F)
 
