@@ -352,7 +352,9 @@ RelativeMapHomology (RelativeMapHomology_t * output,
 
 
         if ( fiber . size () == 0 ) {
+#ifdef CMG_VERBOSE
           std::cout << "UNEXPECTED: CANT LIFT CHAIN DUE TO EMPTY FIBER.\n";
+#endif
           acyclic_map = false;
           break;
         }
@@ -797,7 +799,9 @@ int RelativeSelfMapHomology (RelativeMapHomology_t * output,
         FiberComplex fiber ( X_nbs, A_nbs, full_domain, full_codomain, F );
 
         if ( fiber . size () == 0 ) {
+#ifdef CMG_VERBOSE
           std::cout << "UNEXPECTED: CANT LIFT CHAIN DUE TO EMPTY FIBER." << std::endl;
+#endif
           acyclic_map = false;
           break;
         }
@@ -876,7 +880,9 @@ int RelativeSelfMapHomology (RelativeMapHomology_t * output,
   }  // Main Loop: for ( int d = 0; d <= D; ++ d )
 
   if ( not acyclic_map ) {
+#ifdef CMG_VERBOSE
     std::cout << "Returning no answer due to lack of acyclicity in map." << std::endl;
+#endif
     return 1;
   }
 

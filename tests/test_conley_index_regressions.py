@@ -11,6 +11,10 @@ the hyperbolic fixed points, which the same boxes on a larger phase space
 also give.
 """
 
+import subprocess
+import sys
+import textwrap
+
 import numpy as np
 import pytest
 
@@ -91,3 +95,24 @@ def test_morse_set_on_the_boundary_stays_undefined():
     # can land in the set), so its index is deliberately left undefined.
     f = lambda x: [10.0 * x[0], 0.5 * x[1]]
     assert _index_at([0.0, 0.0], _morse_sets(f, [-1.0, 0.0], [1.0, 1.0], 6)) == []
+
+
+def test_undefined_index_is_silent():
+    # The C++ core prints only under CMG_VERBOSE. ComputeConleyIndex printed
+    # "Problem computing conley index" and the reason to stdout whenever it
+    # returned an undefined index. The cases are 1D index pairs with S = {2}:
+    # an exit cube with an empty image, a fiber that is not acyclic, and an
+    # empty fiber.
+    script = textwrap.dedent("""
+        import CMGDB
+        cases = [
+            ([1, 2, 3], [1, 3], {1: [], 2: [1, 2, 3], 3: [3]}),
+            ([0, 1, 2, 3, 4], [0, 1, 3, 4], {0: [0], 1: [0], 2: [0, 2, 4], 3: [4], 4: [4]}),
+            ([1, 2, 3], [1, 3], {1: [1], 2: [], 3: [3]}),
+        ]
+        for X, A, F in cases:
+            print(CMGDB.ComputeConleyIndex(X, A, [5], [False], F, True))
+    """)
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True,
+                            text=True, check=True)
+    assert result.stdout == "[]\n[]\n[]\n"

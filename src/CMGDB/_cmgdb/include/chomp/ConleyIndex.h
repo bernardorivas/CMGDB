@@ -359,7 +359,9 @@ void CombinatorialConleyIndex ( ConleyIndex_t * output,
   // Computes the Conley index (the relative homology map)
   int error_code = RelativeSelfMapHomology ( &(output -> data ()), X_cubes, A_cubes, sizes, periodic, F, acyclic_check );
   if ( error_code != 0 ) {
+#ifdef CMG_VERBOSE
     std::cout << "Problem computing conley index. Returning undefined result" << std::endl;
+#endif
     output -> undefined () = true;
     return;
   }
