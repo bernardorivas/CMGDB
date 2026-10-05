@@ -2,7 +2,12 @@ cmake_minimum_required(VERSION 3.15...3.26)
 
 project(${SKBUILD_PROJECT_NAME} VERSION ${SKBUILD_PROJECT_VERSION} LANGUAGES CXX)
 
-cmake_policy(SET CMP0144 NEW)
+# CMP0144 (CMake 3.27) lets find_package honor an upper-case BOOST_ROOT,
+# which the CI workflows set. scikit-build-core accepts any CMake from the
+# minimum above, and an older one stops at a policy it does not know.
+if(POLICY CMP0144)
+  cmake_policy(SET CMP0144 NEW)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
