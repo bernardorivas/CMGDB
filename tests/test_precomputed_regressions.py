@@ -203,18 +203,20 @@ def ratio_map_scalar(x):
     return list(ratio_map(np.array([x]))[0])
 
 
-def test_off_lattice_box_error_does_not_blame_subdiv_max():
+def test_off_lattice_box_error_blames_neither_depth_nor_bounds():
     # C42: a rectangle off the lattice but wider than a finest cell is not a
     # box of the subdivision grid at any depth, so no subdiv_max serves it;
     # the error asked whether subdiv_max was deep enough. This one is from
-    # the Conley phase of the adaptive run below
+    # the Conley phase of the adaptive run below, whose Model has the
+    # table's bounds, so the error must not blame other bounds either
     F = CMGDB.PrecomputedBoxMap(ratio_map, [0.0, 0.0], [1.2, 1.2], 10)
     rect = [0.0, 0.875, 0.15, 1.0]
     for call in (lambda: F(rect), lambda: F.batch([[0.0, 0.0, 0.6, 0.6], rect])):
         with pytest.raises(ValueError, match="not a box of the subdivision grid") as info:
             call()
-        assert "subdiv_max=" not in str(info.value)
-        assert str(rect) in str(info.value)
+        message = str(info.value)
+        assert "subdiv_max=" not in message and "same bounds" not in message
+        assert str(rect) in message
 
 
 def test_box_finer_than_lattice_error_names_subdiv_max():
@@ -240,9 +242,11 @@ def conley_signature(morse_graph, map_graph):
     }
 
 
-@pytest.mark.xfail(raises=ValueError, strict=False,
+@pytest.mark.xfail(raises=ValueError, strict=True,
                    reason="TreeGrid::relativeComplex gives the Conley phase "
-                          "rectangles off the grid on this adaptive run")
+                          "rectangles off the grid on this adaptive run (C43); "
+                          "strict, so that merging its fix has to remove this "
+                          "marker")
 @pytest.mark.parametrize("use_batch", [False, True])
 def test_conley_morse_graph_on_adaptive_grid_matches_live(use_batch):
     # C42: the adaptive (6, 10, 4) run of tests/test_conley_batch.py

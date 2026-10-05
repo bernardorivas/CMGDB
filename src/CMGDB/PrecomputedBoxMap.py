@@ -209,9 +209,9 @@ class PrecomputedBoxMap:
             raise ValueError(
                 f"Box {box} is not a box of the subdivision grid over "
                 "[lower_bounds, upper_bounds]: its bounds lie "
-                f"{box_deviation.max():.3g} finest cells off the lattice. "
-                "PrecomputedBoxMap serves only the boxes of a Model over the "
-                "same bounds; BoxMap and BoxMapBatch map any rectangle")
+                f"{box_deviation.max():.3g} finest cells off the lattice, so "
+                "the precomputed table has no image for it (BoxMap and "
+                "BoxMapBatch map any rectangle)")
         return i_lower, i_upper
 
     def __call__(self, rect):
