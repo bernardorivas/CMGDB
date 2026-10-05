@@ -1,5 +1,6 @@
 import numpy as np
 import itertools
+import math
 import CMGDB
 
 # Returns corner points of a rectangle
@@ -25,6 +26,13 @@ def SamplePoints(lower_bounds, upper_bounds, num_pts):
     dim = len(lower_bounds)
     X = np.random.uniform(lower_bounds, upper_bounds, size=(num_pts,dim))
     return list(X)
+
+# A NaN image has no enclosing box: Python's min and max would skip it unless
+# it came first, ndarray.min and max would return NaN, and C++ cannot cover a
+# NaN bound, so BoxMap and BoxMapBatch both raise
+def _nan_image_message(rect):
+    return (f"f returned NaN at a sample point of the rectangle "
+            f"{[float(v) for v in rect]}, so its box image is undefined")
 
 # Evaluate f on an (m, dim) array of points, as an (m, dim) array. An (m,)
 # result is taken from a map of one variable; any other shape raises, since
@@ -80,6 +88,10 @@ def BoxMapBatch(f, rects, mode='corners', padding=False):
         Y_upper = Y.copy()
     else: # Unknown mode
         raise ValueError("BoxMapBatch supports modes 'corners' and 'center'")
+    # ndarray.min propagates NaN, so every NaN image shows in Y_lower
+    nan_rows = np.isnan(Y_lower).any(axis=1)
+    if nan_rows.any():
+        raise ValueError(_nan_image_message(rects[np.argmax(nan_rows)]))
     if padding:
         pad = upper - lower
         Y_lower = Y_lower - pad
@@ -103,6 +115,8 @@ def BoxMap(f, rect, mode='corners', padding=False, num_pts=10):
         return []
     # Evaluate f at point in X
     Y = [f(x) for x in X]
+    if any(map(math.isnan, itertools.chain.from_iterable(Y))):
+        raise ValueError(_nan_image_message(rect))
     # Get lower and upper bounds of Y
     Y_l_bounds = [min([y[d] for y in Y]) - ((rect[d + dim] - rect[d]) if padding else 0) for d in range(dim)]
     Y_u_bounds = [max([y[d] for y in Y]) + ((rect[d + dim] - rect[d]) if padding else 0) for d in range(dim)]

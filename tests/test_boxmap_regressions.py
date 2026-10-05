@@ -52,3 +52,56 @@ def test_one_dimensional_center_batch_map_matches_scalar_map():
     model = build()
     model.set_batch_map(lambda rects: CMGDB.BoxMapBatch(logistic, rects, mode="center"))
     assert morse_sets(model) == morse_sets(build())
+
+
+def sqrt_map(X):
+    # Undefined (NaN) for coordinates above 1
+    return np.sqrt(1.0 - X)
+
+
+def sqrt_map_scalar(x):
+    return list(sqrt_map(np.array([x]))[0])
+
+
+@pytest.mark.filterwarnings("ignore:invalid value encountered in sqrt")
+@pytest.mark.parametrize("mode, rect", [
+    ("corners", [0.5, 0.5, 1.5, 1.5]),   # NaN at every corner but the first
+    ("corners", [0.5, 1.2, 1.5, 1.5]),
+    ("corners", [1.2, 1.2, 1.5, 1.5]),   # NaN at every corner
+    ("center", [0.5, 1.2, 1.5, 1.5]),
+    ("center", [1.2, 1.2, 1.5, 1.5]),
+])
+def test_nan_image_raises_in_both_box_maps(mode, rect):
+    # C45: BoxMap's Python min/max skipped a NaN unless it came first, while
+    # BoxMapBatch's ndarray.min/max propagated it, so the two disagreed on
+    # these boxes; and a NaN bound cannot be covered
+    with pytest.raises(ValueError, match="NaN"):
+        CMGDB.BoxMap(sqrt_map_scalar, rect, mode=mode)
+    with pytest.raises(ValueError, match="NaN"):
+        CMGDB.BoxMapBatch(sqrt_map, np.array([[0.0, 0.0, 0.5, 0.5], rect]), mode=mode)
+
+
+@pytest.mark.filterwarnings("ignore:invalid value encountered in sqrt")
+@pytest.mark.parametrize("use_batch", [False, True])
+def test_nan_image_stops_the_morse_graph_computation(use_batch):
+    # C45: the two paths sent different NaN rectangles to C++, where the
+    # cover of a NaN bound is undefined (a slab at the lower boundary on
+    # arm64), and the batch map turned 1 Morse set into 5
+    model = CMGDB.Model(4, 8, [0.0, 0.0], [1.5, 1.5],
+                        lambda rect: CMGDB.BoxMap(sqrt_map_scalar, rect))
+    if use_batch:
+        model.set_batch_map(lambda rects: CMGDB.BoxMapBatch(sqrt_map, rects))
+    with pytest.raises(ValueError, match="NaN"):
+        CMGDB.ComputeMorseGraph(model)
+
+
+def test_infinite_images_still_map():
+    # An infinite image (an orbit escaping) is not an error
+    def f(X):
+        return 1.0 / X
+
+    rect = [0.0, 0.25, 0.5, 0.5]
+    expected = [2.0, 2.0, np.inf, 4.0]
+    with np.errstate(divide="ignore"):
+        assert CMGDB.BoxMap(lambda x: list(f(np.array([x]))[0]), rect) == expected
+        assert CMGDB.BoxMapBatch(f, np.array([rect])).tolist() == [expected]
