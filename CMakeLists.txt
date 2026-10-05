@@ -62,7 +62,12 @@ if(APPLE)
   link_directories(/opt/homebrew/lib)
 endif()
 
-# USER_PROJECT_PATH is set in pyproject.toml
+# pyproject.toml passes USER_PROJECT_PATH in cmake.args, but a cmake.args
+# given at build time (-C cmake.args=... or SKBUILD_CMAKE_ARGS) replaces
+# that list instead of extending it, so default it here.
+if(NOT DEFINED USER_PROJECT_PATH)
+  set(USER_PROJECT_PATH src/CMGDB/_cmgdb)
+endif()
 include_directories(${CMAKE_SOURCE_DIR}/${USER_PROJECT_PATH}/include)
 include_directories(${CMAKE_SOURCE_DIR}/${USER_PROJECT_PATH}/include/database)
 # include_directories(${CMAKE_SOURCE_DIR}/src/CMGDB/_cmgdb/include)
