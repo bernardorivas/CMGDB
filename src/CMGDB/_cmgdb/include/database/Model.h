@@ -18,6 +18,7 @@
 #include <cstdlib>
 #include <exception>
 #include <functional>
+#include <string>
 
 #define PHASE_GRID PointerGrid
 #define PARAMETER_GRID UniformGrid
@@ -643,10 +644,27 @@ ModelBinding(py::module &m) {
             throw std::runtime_error (
               "The batch map must return an array-like of doubles" );
           }
-          if ( (uint64_t) images_array . size () != count * 2 * dim ) {
+          // Accept a (count, 2*dim) array, which is what a list of count rows
+          // becomes, or a flat array of 2*dim values when count == 1. Any
+          // other shape is refused even with the right number of values:
+          // read row by row, a transposed or stacked result mixes the bounds
+          // of different rectangles, and so does a flat result for several
+          // rectangles unless it is in row order, which cannot be checked
+          // (np.hstack of 1-D arrays gives all lower bounds, then all upper
+          // bounds). Only the shape is checked: a transposed result still
+          // passes when count == 2*dim, since it then has the expected shape.
+          bool rows = images_array . ndim () == 2
+                      and (uint64_t) images_array . shape ( 0 ) == count
+                      and (uint64_t) images_array . shape ( 1 ) == 2 * dim;
+          bool single = images_array . ndim () == 1 and count == 1
+                        and (uint64_t) images_array . shape ( 0 ) == 2 * dim;
+          if ( not rows and not single ) {
             throw std::runtime_error (
-              "The batch map returned the wrong number of values: "
-              "expected an array of shape (count, 2*dim)" );
+              "The batch map returned a result of shape "
+              + std::string ( py::str ( images_array . attr ( "shape" ) ) )
+              + "; expected shape (count, 2*dim) = ("
+              + std::to_string ( count ) + ", " + std::to_string ( 2 * dim )
+              + "), one row per rectangle (lower bounds, then upper bounds)" );
           }
           const double * data = images_array . data ();
           images . assign ( data, data + count * 2 * dim );
@@ -657,7 +675,13 @@ ModelBinding(py::module &m) {
     "(count, 2*dim), one rectangle per row (dim lower bounds, then dim upper "
     "bounds); the array is a copy, which the evaluator may keep. The "
     "evaluator must return the image rectangles in the same layout, as an "
-    "array or a list of lists, and must agree with F on every rectangle.")
+    "array of shape (count, 2*dim) or a list of count rows of 2*dim values; "
+    "when count == 1, a flat array of 2*dim values also works. Any other "
+    "shape raises RuntimeError, a flat array of count*2*dim values for "
+    "count > 1 included, since its order cannot be checked. Only the shape "
+    "is checked, not the order of the values: a transposed (2*dim, count) "
+    "result, for example, passes when count == 2*dim. The evaluator must "
+    "agree with F on every rectangle.")
     .def("param_dim", &Model::param_dim)
     .def("phase_dim", &Model::phase_dim)
     .def("phase_subdiv_min", &Model::phase_subdiv_min)
