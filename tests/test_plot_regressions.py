@@ -86,3 +86,16 @@ def test_numpy_scale_factors_merge_like_floats(dtype):
         assert np.allclose(patch.get_path().vertices, reference.get_path().vertices)
     plt.close(fig)
     plt.close(fig_f)
+
+
+def test_boxes_scatter_takes_one_dimensional_boxes():
+    # C04: 1.3.2's PlotBoxesScatter lifted 1-D boxes to two dimensions itself;
+    # the lift had moved to PlotMorseSetsScatter, so a direct call failed its
+    # projection assertion.
+    rows = [[0.0, 0.1, 0], [0.1, 0.2, 0], [0.5, 0.6, 1]]
+    fig, ax = CMGDB.PlotBoxesScatter(rows, show=False)
+    # Each box [a, b] is drawn as the square [a, b] x [0, b - a].
+    assert len(ax.collections) == 2
+    assert np.allclose(ax.collections[0].get_offsets(), [[0.05, 0.05], [0.15, 0.05]])
+    assert np.allclose(ax.collections[1].get_offsets(), [[0.55, 0.05]])
+    plt.close(fig)

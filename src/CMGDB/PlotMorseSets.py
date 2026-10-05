@@ -1037,11 +1037,6 @@ def PlotMorseSetsScatter(morse_sets, morse_nodes=None, proj_dims=None, cmap=None
        Returns (fig, ax).
     """
     rows, num_morse_sets = _load_morse_sets(morse_sets)
-    dim = _box_dim(rows)
-    if dim == 1:
-        # Add extra fake dimension to plot
-        rows = [[x0_min, 0, x0_max, x0_max - x0_min, node] for x0_min, x0_max, node in rows]
-        dim = 2
     return PlotBoxesScatter(rows, num_morse_sets=num_morse_sets, morse_nodes=morse_nodes,
                             proj_dims=proj_dims, cmap=cmap, clist=clist,
                             scale_factor=scale_factor, fig_w=fig_w, fig_h=fig_h,
@@ -1057,6 +1052,10 @@ def PlotBoxesScatter(morse_sets, num_morse_sets=None, morse_nodes=None, proj_dim
     """Scatter plot of labelled boxes, markers sized in data units."""
     rows = list(morse_sets)
     dim = _box_dim(rows)
+    if dim == 1:
+        # Add extra fake dimension to plot
+        rows = [[x0_min, 0, x0_max, x0_max - x0_min, node] for x0_min, x0_max, node in rows]
+        dim = 2
     num_morse_sets, morse_nodes, scale_factor, cmap, cmap_norm = _resolve_plot_setup(
         rows, num_morse_sets, morse_nodes, cmap, clist, scale_factor)
     if proj_dims == None:
