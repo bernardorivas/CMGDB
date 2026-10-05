@@ -99,9 +99,12 @@ class BoxMapData:
            for inf, NaN and bounds 2^63 or more bins away from the data (x86-64
            gives INT64_MIN, i.e. bin 0, which lost every point above it)."""
         coords = np.floor((np.asarray(bounds, dtype=float) - self._x_min) / self._bin_widths)
-        # A NaN bound contains no point, whichever bins are scanned
-        coords = np.nan_to_num(coords, nan=0.0)
-        return np.clip(coords, 0, self._bins_per_dim - 1).astype(np.int64)
+        # fmax and fmin return the number when the other operand is NaN, so a
+        # NaN bound, which contains no point whichever bins are scanned, goes
+        # to bin 0
+        np.fmax(coords, 0, out=coords)
+        np.fmin(coords, self._bins_per_dim - 1, out=coords)
+        return coords.astype(np.int64)
 
     def _candidate_indices(self, l_bounds, u_bounds):
         """Return the (sorted) indices of all points in bins overlapping the given
