@@ -8,8 +8,14 @@
   map on boxes of the wrong dimension.
 - C27: batch_chunk_size bounds the rectangles per call of the batch map,
   as it does in ComputeConleyMorseGraph.
+- C28: a cell set S whose pair X = cover(F(S)), A = X \\ S is not an index
+  pair (a cell of A maps into X \\ A) is refused with ValueError instead of
+  returning the homology of that pair. The index of a set that passes is
+  computed by chomp::ConleyIndex, as the annotations are.
 """
 
+import itertools
+import math
 import subprocess
 import sys
 
@@ -52,6 +58,32 @@ def cubic_model(subdiv=8):
 
 def cubic_batch(rects):
     return CMGDB.BoxMapBatch(cubic, rects)
+
+
+def pitchfork_model():
+    """f(x) = x + x(1 - x^2)/2 on a uniform grid of 256 cells on [-1.5, 1.5].
+
+    Morse sets: the repeller {0} = cells 127, 128; attractors at -1 and 1;
+    and single cells 125, 126, 129, 130 next to the repeller.
+    """
+    def f(x):
+        return [x[0] + 0.5 * x[0] * (1.0 - x[0] * x[0])]
+
+    def F(rect):
+        return CMGDB.BoxMap(f, rect)
+
+    return CMGDB.Model(8, 8, 8, 10000, [-1.5], [1.5], F)
+
+
+def exit_cells_mapping_back(map_graph, cells):
+    """The cells a of A = X \\ S, X = F(S), with F(a) meeting X \\ A."""
+    S = set(cells)
+    X = set()
+    for s in S:
+        X.update(map_graph.adjacencies(s))
+    A = X - S
+    return sorted(a for a in A
+                  if any(c in X and c not in A for c in map_graph.adjacencies(a)))
 
 
 # Runs in a subprocess, so that a race that corrupts the heap or trips the
@@ -167,3 +199,85 @@ def test_batch_chunk_size_bounds_rows_per_batch_call():
         model, morse_graph, cells, batch_chunk_size=8)
     assert index == expected
     assert rows and max(rows) <= 8
+
+
+def test_union_of_morse_sets_without_index_pair_is_refused():
+    model = pitchfork_model()
+    morse_graph, map_graph = CMGDB.ComputeConleyMorseGraph(model)
+    assert sorted(morse_graph.morse_set(6)) == [127, 128]
+    # The repeller and the cell 130 leave out the cell 129 between them,
+    # which 128 maps into and which maps into 130. The pair's homology is
+    # rank 2 in degree 1, while the invariant set is the repeller.
+    with pytest.raises(ValueError,
+                       match="cell 129 of A maps into cell 130 of S"):
+        CMGDB.ComputeConleyIndexForCells(model, morse_graph, [127, 128, 130])
+    path_cells = CMGDB.MorseDirectedPathCells(map_graph, morse_graph, [6], [4])
+    assert sorted(path_cells) == [127, 128, 129, 130]
+    assert CMGDB.ComputeConleyIndexForCells(
+        model, morse_graph, path_cells) == ["0", "x-1"]
+
+
+def test_index_pair_check_matches_the_definition():
+    model = pitchfork_model()
+    morse_graph, map_graph = CMGDB.ComputeConleyMorseGraph(model)
+    vertices = range(morse_graph.num_vertices())
+    refused = 0
+    for k in range(1, len(vertices) + 1):
+        for union in itertools.combinations(vertices, k):
+            cells = sorted(c for v in union for c in morse_graph.morse_set(v))
+            if exit_cells_mapping_back(map_graph, cells):
+                refused += 1
+                with pytest.raises(ValueError, match="index pair"):
+                    CMGDB.ComputeConleyIndexForCells(model, morse_graph, cells)
+            else:
+                index = CMGDB.ComputeConleyIndexForCells(
+                    model, morse_graph, cells)
+                if k == 1:
+                    assert index == list(morse_graph.annotations(union[0]))
+    assert refused > 0
+
+
+def test_adaptive_morse_set_that_is_not_isolated_is_refused():
+    # Corner sampling misses the maximum of the first component on the
+    # coarse boxes, so this run never refines the cell [45, 90] x [0, 70]:
+    # the finer cells of Morse set 0 map into it, and it maps back into the
+    # set. Its annotation, computed on that same pair, is ['0', 'x+1', '0'];
+    # the 16/18 run annotates the attractor ['x-1', '0', '0'].
+    theta = [19.6, 23.68]
+
+    def f(x):
+        s = x[0] + x[1]
+        return [(theta[0] * x[0] + theta[1] * x[1]) * math.exp(-0.1 * s),
+                0.7 * x[0]]
+
+    def F(rect):
+        return CMGDB.BoxMap(f, rect)
+
+    model = CMGDB.Model(12, 14, [-0.001, -0.001], [90.0, 70.0], F)
+    morse_graph, map_graph = CMGDB.ComputeConleyMorseGraph(model)
+    for v in range(morse_graph.num_vertices()):
+        cells = morse_graph.morse_set(v)
+        if exit_cells_mapping_back(map_graph, cells):
+            with pytest.raises(ValueError, match="index pair"):
+                CMGDB.ComputeConleyIndexForCells(model, morse_graph, cells)
+        else:
+            assert CMGDB.ComputeConleyIndexForCells(
+                model, morse_graph, cells) == list(morse_graph.annotations(v))
+    assert exit_cells_mapping_back(map_graph, morse_graph.morse_set(0))
+
+
+def test_index_is_computed_as_for_the_annotations():
+    # Both come from chomp::ConleyIndex, also where an exit box of the Morse
+    # set has its whole image outside the phase space: the Morse set {0} of
+    # f(x) = 10x or -10x on [-1, 1] is the cells 7 and 8, and the cell 9,
+    # [0.125, 0.25], maps onto [1.25, 2.5] or [-2.5, -1.25].
+    for slope in (10.0, -10.0):
+        def F(rect, slope=slope):
+            return CMGDB.BoxMap(lambda x: [slope * x[0]], rect)
+
+        model = CMGDB.Model(4, 4, 4, 10000, [-1.0], [1.0], F)
+        morse_graph, _ = CMGDB.ComputeConleyMorseGraph(model)
+        assert [sorted(morse_graph.morse_set(v))
+                for v in range(morse_graph.num_vertices())] == [[7, 8]]
+        assert CMGDB.ComputeConleyIndexForCells(
+            model, morse_graph, [7, 8]) == list(morse_graph.annotations(0))

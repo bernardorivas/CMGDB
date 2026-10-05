@@ -221,7 +221,9 @@ def test_conley_index_for_cells_matches_annotations_uniform():
 def test_conley_index_for_cells_matches_annotations_adaptive():
     # Adaptive run: the final joined grid holds cells at mixed depths, so
     # this exercises the common-refinement path of the chomp machinery.
-    model = leslie_model()
+    # At 16/18 every Morse set gives an index pair; at the default 12/14 one
+    # does not and is refused (tests/test_conley_cells_regressions.py).
+    model = leslie_model(16, 18)
     morse_graph, _ = CMGDB.ComputeConleyMorseGraph(model)
     assert morse_graph.num_vertices() > 0
     for v in range(morse_graph.num_vertices()):

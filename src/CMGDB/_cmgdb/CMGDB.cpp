@@ -262,16 +262,71 @@ ComputeConleyIndex ( const std::vector < uint64_t > & X_cubes,
   return conleyIndexString ( conley_index );
 }
 
+// The map that ComputeConleyIndexForCells hands to chomp::ConleyIndex: the
+// ChompMap, except that the evaluation on the rectangles `domain`, the
+// cells of S, returns `images`. ConleyIndex builds its pair from that one
+// evaluation, so with the images of the index-pair check it builds the
+// pair that was checked, and it does not evaluate the map on S again.
+class ChompMapWithImages {
+public:
+  ChompMapWithImages ( const ChompMap & map,
+                       const std::vector < std::shared_ptr < Geo > > & domain,
+                       const std::vector < std::shared_ptr < Geo > > & images )
+    : map_ ( map ), domain_ ( domain ), images_ ( images ) {}
+  chomp::Rect operator () ( const chomp::Rect & rect ) const {
+    return map_ ( rect );
+  }
+  std::shared_ptr < Geo > operator () ( const std::shared_ptr < Geo > & geo ) const {
+    return map_ ( geo );
+  }
+  std::vector < chomp::Rect >
+  images ( const std::vector < chomp::Rect > & rects ) const {
+    return map_ . images ( rects );
+  }
+  std::vector < std::shared_ptr < Geo > >
+  images ( const std::vector < std::shared_ptr < Geo > > & geos ) const {
+    if ( isDomain ( geos ) ) return images_;
+    return map_ . images ( geos );
+  }
+private:
+  bool isDomain ( const std::vector < std::shared_ptr < Geo > > & geos ) const {
+    if ( geos . size () != domain_ . size () ) return false;
+    for ( size_t k = 0; k < geos . size (); ++ k ) {
+      std::shared_ptr < RectGeo > rect =
+        std::dynamic_pointer_cast < RectGeo > ( geos [ k ] );
+      std::shared_ptr < RectGeo > cell =
+        std::dynamic_pointer_cast < RectGeo > ( domain_ [ k ] );
+      if ( not rect or not cell or
+           rect -> lower_bounds != cell -> lower_bounds or
+           rect -> upper_bounds != cell -> upper_bounds ) {
+        return false;
+      }
+    }
+    return true;
+  }
+  const ChompMap & map_;
+  const std::vector < std::shared_ptr < Geo > > & domain_;
+  const std::vector < std::shared_ptr < Geo > > & images_;
+};
+
 std::vector < std::string >
 ComputeConleyIndexForCells (
     const Model & model,
     MorseGraph & morse_graph,
     std::vector < uint64_t > cells,
     uint64_t batch_chunk_size = 65536 ) {
-  // Conley index of an arbitrary cell subset of the final phase-space grid.
-  // Mixed-depth (adaptive-grid) cell sets are supported: the chomp machinery
-  // refines every cell to the finest depth present in the set, preserving
-  // the region exactly.
+  // Conley index of a cell set S of the final phase-space grid, from the
+  // pair X = cover(F(S)), A = X \ S that chomp::ConleyIndex builds for a
+  // Morse set. Of the index-pair conditions, F(X \ A) \subset X holds for
+  // every S, since X \ A is part of S, but F(A) \cap X \subset A fails
+  // when a cell of A maps into X \ A; the proof in chomp/ConleyIndex.h
+  // derives it from S being a Morse set. That condition is checked here;
+  // chomp::ConleyIndex then computes the index, as for the annotations of
+  // ComputeConleyMorseGraph, from the same images of S.
+  // Mixed-depth (adaptive-grid) cell sets are supported: the relative
+  // complex subdivides the cells to the finest depth present in S, and
+  // replaces cells of A deeper than that by their ancestors at that depth.
+  // The check is made on the cells, not on those cubes.
   std::shared_ptr < const Map > map = model . map ();
   if ( not map ) {
     throw std::invalid_argument (
@@ -304,10 +359,72 @@ ComputeConleyIndexForCells (
     }
   }
 
-  chomp::ConleyIndex_t conley_index;
+  const TreeGrid & grid = * phase_space_chomp;
   ChompMap chomp_map ( map, batch_chunk_size );
-  chomp::ConleyIndex (
-    & conley_index, * phase_space_chomp, cells, chomp_map );
+  std::vector < std::shared_ptr < Geo > > S_geometries;
+  S_geometries . reserve ( cells . size () );
+  for ( const uint64_t cell : cells ) {
+    S_geometries . push_back ( grid . geometry ( cell ) );
+  }
+  const std::vector < std::shared_ptr < Geo > > S_images =
+    chomp_map . images ( S_geometries );
+  std::vector < uint64_t > X;
+  for ( const std::shared_ptr < Geo > & image : S_images ) {
+    const std::vector < Grid::GridElement > image_cells = grid . cover ( image );
+    X . insert ( X . end (), image_cells . begin (), image_cells . end () );
+  }
+  std::sort ( X . begin (), X . end () );
+  X . erase ( std::unique ( X . begin (), X . end () ), X . end () );
+  std::vector < uint64_t > A;
+  for ( const uint64_t cell : X ) {
+    if ( not std::binary_search ( cells . begin (), cells . end (), cell ) ) {
+      A . push_back ( cell );
+    }
+  }
+
+  // No cell of A may map into X \ A, the cells of S in X.
+  std::vector < std::shared_ptr < Geo > > A_geometries;
+  A_geometries . reserve ( A . size () );
+  for ( const uint64_t cell : A ) {
+    A_geometries . push_back ( grid . geometry ( cell ) );
+  }
+  const std::vector < std::shared_ptr < Geo > > exit_images =
+    chomp_map . images ( A_geometries );
+  uint64_t reentering = 0;
+  uint64_t exit_cell = 0;
+  uint64_t target_cell = 0;
+  for ( size_t k = 0; k < A . size (); ++ k ) {
+    std::vector < Grid::GridElement > targets = grid . cover ( exit_images [ k ] );
+    std::sort ( targets . begin (), targets . end () );
+    for ( const Grid::GridElement target : targets ) {
+      if ( std::binary_search ( cells . begin (), cells . end (), target ) and
+           std::binary_search ( X . begin (), X . end (), target ) ) {
+        if ( reentering == 0 ) {
+          exit_cell = A [ k ];
+          target_cell = target;
+        }
+        ++ reentering;
+        break;
+      }
+    }
+  }
+  if ( reentering > 0 ) {
+    std::ostringstream message;
+    message
+      << "ComputeConleyIndexForCells: the cells S do not give an index pair. "
+      << "With X = cover(F(S)) and A = X \\ S, no cell of A may map into "
+      << "X \\ A, but cell " << exit_cell << " of A maps into cell "
+      << target_cell << " of S (cells of A that map into X \\ A: "
+      << reentering << " of " << A . size () << "). Sets that contain every "
+      << "cell on a path between two of their cells pass, for example the "
+      << "Morse sets of a run with equal initial, minimum and maximum "
+      << "subdivision and the cells from MorseDirectedPathCells.";
+    throw std::invalid_argument ( message . str () );
+  }
+
+  chomp::ConleyIndex_t conley_index;
+  ChompMapWithImages map_with_images ( chomp_map, S_geometries, S_images );
+  chomp::ConleyIndex ( & conley_index, grid, cells, map_with_images );
   return conleyIndexString ( conley_index );
 }
 
@@ -1603,10 +1720,31 @@ released during the computation.
     py::arg ( "morse_graph" ),
     py::arg ( "cells" ),
     py::arg ( "batch_chunk_size" ) = 65536,
-    "Compute the Conley index of an arbitrary phase-space cell subset. With "
-    "a batch map attached (model.set_batch_map), each call of it takes at "
-    "most batch_chunk_size rectangles, as in ComputeConleyMorseGraph (0 "
-    "means no limit)." );
+    R"doc(
+Compute the homological Conley index of a set S of cells of the final
+phase-space grid (``cells``, indices as in ``morse_graph.morse_set``) as
+ComputeConleyMorseGraph computes it for its Morse sets, from the pair
+X = cover(F(S)), A = X \ S.
+
+The pair is an index pair exactly when no cell of A maps into X \ A, and
+for cells of one depth the result is then the Conley index of the invariant
+set in S. Otherwise the function raises ``ValueError``, naming a cell of A
+and the cell of S it maps into. A set that contains every cell on a path
+between two of its cells passes: the Morse sets of a run with equal initial,
+minimum and maximum subdivision, and the cells returned by
+``MorseDirectedPathCells``. A Morse set of an adaptive run can fail, since
+the image of a small box under a sampled box map need not lie in the image
+of the larger box that contains it.
+
+For cells of different depths the homology is computed at the finest depth
+among the cells of S: coarser cells are subdivided to it, and cells of A
+deeper than it are replaced by their ancestors at that depth. The check is
+made on the cells, not on these cubes. With a batch map attached
+(``model.set_batch_map``), each of its calls takes at most
+``batch_chunk_size`` rectangles, as in ``ComputeConleyMorseGraph`` (``0``
+means no limit). Raises ``ValueError`` for a Model without a map or of
+another dimension than the grid. The GIL is released during the computation.
+)doc" );
   m.def(
     "MorseDirectedPathCells",
     [] ( const MapGraph & map_graph,
