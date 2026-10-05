@@ -56,3 +56,46 @@ def test_index_matches_linear_scan_on_tiny_spread_coordinate():
             rect = [x0, y0, x0 + 0.25, y0 + 0.25]
             assert np.array_equal(indexed.map_points(rect), linear.map_points(rect))
             assert indexed.compute(rect) == linear.compute(rect)
+
+
+@pytest.fixture(scope="module")
+def two_datasets():
+    rng = np.random.default_rng(0)
+    X0 = rng.uniform(0.0, 1.0, (2000, 2))
+    X1 = rng.uniform(2.0, 3.0, (2000, 2))
+    return X0, X1
+
+
+def test_reassigned_data_rebuilds_the_index(two_datasets):
+    # C49: the index was built once in __init__, so after F.X, F.Y = X1, Y1
+    # the queries looked up the new points in the bins of the old ones
+    X0, X1 = two_datasets
+    F = CMGDB.BoxMapData(X0, 0.5 * X0, domain_padding=False)
+    assert F._use_index
+    F.X, F.Y = X1, 0.5 * X1
+    linear = CMGDB.BoxMapDataLinear(X1, 0.5 * X1, domain_padding=False)
+    rect = [2.0, 2.0, 2.5, 2.5]
+    assert np.array_equal(F.map_points(rect), linear.map_points(rect))
+    assert F.compute(rect) == linear.compute(rect)
+
+
+@pytest.mark.parametrize("num_points", [1500, 500])
+def test_shrunk_data_rebuilds_the_index(two_datasets, num_points):
+    # C49: with fewer points the stale index raised IndexError or picked
+    # wrong rows; below the 'auto' threshold the index is dropped
+    X0, _ = two_datasets
+    F = CMGDB.BoxMapData(X0, 0.5 * X0, domain_padding=False)
+    F.X, F.Y = X0[:num_points], 0.5 * X0[:num_points]
+    assert F._use_index == (num_points > 1000)
+    linear = CMGDB.BoxMapDataLinear(X0[:num_points], 0.5 * X0[:num_points],
+                                    domain_padding=False)
+    rect = [0.0, 0.0, 0.5, 0.5]
+    assert np.array_equal(F.map_points(rect), linear.map_points(rect))
+
+
+def test_data_points_cannot_change_in_place(two_datasets):
+    # C49: an in-place change of F.X left the index stale too, so it raises
+    X0, X1 = two_datasets
+    F = CMGDB.BoxMapData(X0, 0.5 * X0)
+    with pytest.raises(ValueError):
+        F.X[:] = X1

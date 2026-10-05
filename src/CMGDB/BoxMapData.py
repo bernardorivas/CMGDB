@@ -13,11 +13,12 @@ class BoxMapData:
        interpolation to compute the image.
 
        The points inside a rectangle are found with a uniform-grid spatial index
-       built once over X: each query gathers candidate points from only the grid
+       built over X: each query gathers candidate points from only the grid
        bins the rectangle overlaps, then applies the exact containment test to the
        candidates. The selected points -- and therefore all results -- are identical
        to the linear-scan reference implementation BoxMapDataLinear, but each query
-       costs O(candidates) instead of a scan of the full dataset.
+       costs O(candidates) instead of a scan of the full dataset. Assigning new
+       points to X rebuilds the index; X is read-only, so it cannot change in place.
 
        With use_index='auto' (the default) small datasets skip the index and scan
        directly, since below about a thousand points a single vectorized scan is
@@ -32,20 +33,35 @@ class BoxMapData:
             raise ValueError("Invalid value for map_empty. Allowed values are: 'interp', 'outside', or 'terminate'")
         if map_empty == 'outside' and (lower_bounds is None or upper_bounds is None):
             raise ValueError("The bounds lower_bounds and upper_bounds must be provided if map_empty is 'outside'")
-        self.X = np.array(X)
+        self._use_index_option = use_index
+        self._points_per_bin = points_per_bin
+        self.X = X  # Builds the index (see the X setter)
         self.Y = np.array(Y)
         self.map_empty = map_empty
         self.lower_bounds = lower_bounds
         self.upper_bounds = upper_bounds
         self.domain_padding = domain_padding
         self.padding = padding
+
+    @property
+    def X(self):
+        """The points whose images are Y. Assigning new points rebuilds the
+           index; the array itself is read-only, since the index would not
+           see a change made in place."""
+        return self._X
+
+    @X.setter
+    def X(self, X):
+        self._X = np.array(X)
+        self._X.flags.writeable = False
         # num_pts, dim = self.X.shape
-        self.dim = self.X.shape[1]
+        self.dim = self._X.shape[1]
+        use_index = self._use_index_option
         if use_index == 'auto':
-            use_index = self.X.shape[0] > self._INDEX_THRESHOLD
+            use_index = self._X.shape[0] > self._INDEX_THRESHOLD
         self._use_index = bool(use_index)
         if self._use_index:
-            self._build_index(points_per_bin)
+            self._build_index(self._points_per_bin)
 
     def _build_index(self, points_per_bin):
         """Build the uniform-grid index over X: assign each point an integer bin,
