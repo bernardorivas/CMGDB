@@ -671,6 +671,18 @@ def PlotMorseSets(morse_sets, morse_nodes=None, proj_dims=None, cmap=None, clist
     return _finish(fig, ax, fig_fname, dpi, show, rasterize)
 
 
+def _merge_intervals(intervals, tol):
+    """Maximal unions of intervals sorted by left end, joining any that touch
+       within tol."""
+    merged = []
+    for a, b in intervals:
+        if merged and a <= merged[-1][1] + tol:
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    return merged
+
+
 def PlotMorseSets1D(morse_sets, morse_nodes=None, cmap=None, clist=None, scale_factor=None,
                     fig_w=8, fig_h=None, xlim=None, axis_labels=True, xlabel='$x$',
                     axis_arrow=True, fontsize=15, height=0.18, edge_clr=None,
@@ -703,6 +715,9 @@ def PlotMorseSets1D(morse_sets, morse_nodes=None, cmap=None, clist=None, scale_f
        into maximal intervals -- within merge_tol, since CMGDB's grid gives
        exactly abutting endpoints -- so each piece is one rectangle and each is
        labelled, rather than labelling a midpoint that may fall in a gap.
+       scale_factor scales each box about its own center, as PlotMorseSets
+       does, and the union of the scaled boxes is drawn; a piece keeps its one
+       label.
 
        Returns (fig, ax).
     """
@@ -722,26 +737,34 @@ def PlotMorseSets1D(morse_sets, morse_nodes=None, cmap=None, clist=None, scale_f
         if not intervals:
             continue
         factor = scale_factor[morse_node]
+        # scale_factor scales each box about its own center, as the 2-D and
+        # 3-D plots do. Scaling a whole piece instead would lengthen a piece of
+        # n boxes by n * (factor - 1) boxes rather than by factor - 1.
+        scaled = intervals
+        if factor != 1:
+            scaled = [((a + b) / 2 - (b - a) * factor / 2, (a + b) / 2 + (b - a) * factor / 2)
+                      for a, b in intervals]
         # Merge boxes that touch into maximal pieces, so each disjoint piece of
-        # the Morse set is one rectangle of the correct length.
-        pieces = [list(intervals[0])]
-        for a, b in intervals[1:]:
-            if a <= pieces[-1][1] + merge_tol:
-                pieces[-1][1] = max(pieces[-1][1], b)
+        # the Morse set is one rectangle of the correct length; scaled boxes
+        # are drawn as the pieces of their union. Each piece of the set keeps
+        # one label, centered on the span its own scaled boxes cover.
+        pieces = []                 # [reach, low, high]: true end, scaled span
+        for (a, b), (low, high) in zip(intervals, scaled):
+            if pieces and a <= pieces[-1][0] + merge_tol:
+                piece = pieces[-1]
+                piece[:] = [max(piece[0], b), min(piece[1], low), max(piece[2], high)]
             else:
-                pieces.append([a, b])
+                pieces.append([b, low, high])
         clr = matplotlib.colors.to_hex(cmap(cmap_norm(morse_node)), keep_alpha=True)
         edges = clr if edge_clr == None else edge_clr
         patches = []
-        for a, b in pieces:
-            if factor != 1:
-                centre, half = (a + b) / 2, (b - a) * factor / 2
-                a, b = centre - half, centre + half
+        for a, b in _merge_intervals(sorted(scaled), merge_tol):
             patches.append(Rectangle((a, -height / 2), b - a, height))
             x_lo = a if x_lo == None else min(x_lo, a)
             x_hi = b if x_hi == None else max(x_hi, b)
-            if label_sets:
-                ax.text((a + b) / 2, height / 2 + 0.06, f'{morse_node}', ha='center',
+        if label_sets:
+            for _, low, high in pieces:
+                ax.text((low + high) / 2, height / 2 + 0.06, f'{morse_node}', ha='center',
                         va='bottom', color='black', fontsize=fontsize)
         # zorder below the spines and ticks so the axis line runs over the
         # boxes rather than being hidden by them.

@@ -127,3 +127,25 @@ def test_one_dimensional_dispatch_forwards_scale_and_edges():
     assert low < 0.40 and high > 0.43           # set 0 is drawn inflated
     plt.close(fig)
     plt.close(fig_1)
+
+
+def set_labels(ax):
+    """The set numbers printed over the 1-D pieces, with their x positions."""
+    return sorted((t.get_text(), round(t.get_position()[0], 9)) for t in ax.texts
+                  if t.get_text().isdigit())
+
+
+def test_one_dimensional_scale_factor_scales_each_box():
+    # C06: a piece was scaled as a whole, so three touching boxes inflated 5x
+    # covered 15 boxes, [0.34, 0.49], where the per-box union every other plot
+    # draws is [0.38, 0.45].
+    fig, ax = CMGDB.PlotMorseSets1D(line_rows(), scale_factor=[5, 1], show=False)
+    assert x_extents(ax.collections[0]) == [(0.38, 0.45)]
+    assert set_labels(ax) == [('0', 0.415), ('1', 0.905)]
+    plt.close(fig)
+    # Shrunk boxes come apart; the piece still has one label.
+    fig, ax = CMGDB.PlotMorseSets1D(line_rows(), scale_factor=[0.5, 1], show=False)
+    assert x_extents(ax.collections[0]) == [(0.4025, 0.4075), (0.4125, 0.4175),
+                                            (0.4225, 0.4275)]
+    assert set_labels(ax) == [('0', 0.415), ('1', 0.905)]
+    plt.close(fig)
