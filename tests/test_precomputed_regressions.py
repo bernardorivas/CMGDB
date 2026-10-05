@@ -242,11 +242,6 @@ def conley_signature(morse_graph, map_graph):
     }
 
 
-@pytest.mark.xfail(raises=ValueError, strict=True,
-                   reason="TreeGrid::relativeComplex gives the Conley phase "
-                          "rectangles off the grid on this adaptive run (C43); "
-                          "strict, so that merging its fix has to remove this "
-                          "marker")
 @pytest.mark.parametrize("use_batch", [False, True])
 def test_conley_morse_graph_on_adaptive_grid_matches_live(use_batch):
     # C42: the adaptive (6, 10, 4) run of tests/test_conley_batch.py
