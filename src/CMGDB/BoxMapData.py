@@ -71,15 +71,23 @@ class BoxMapData:
         sorted_bins = bin_ids[self._sorted_idx]
         self._bin_offsets = np.searchsorted(sorted_bins, np.arange(self._num_bins + 1))
 
+    def _bin_coords(self, bounds):
+        """Integer bin coordinates of rectangle bounds, clamped to the edge bins.
+           The clamp is done in floating point: the cast to int64 is undefined
+           for inf, NaN and bounds 2^63 or more bins away from the data (x86-64
+           gives INT64_MIN, i.e. bin 0, which lost every point above it)."""
+        coords = np.floor((np.asarray(bounds, dtype=float) - self._x_min) / self._bin_widths)
+        # A NaN bound contains no point, whichever bins are scanned
+        coords = np.nan_to_num(coords, nan=0.0)
+        return np.clip(coords, 0, self._bins_per_dim - 1).astype(np.int64)
+
     def _candidate_indices(self, l_bounds, u_bounds):
         """Return the (sorted) indices of all points in bins overlapping the given
            rectangle. This is a superset of the points inside the rectangle; the
            exact containment test is applied by the caller. Rectangles reaching
            outside the data range clamp to the edge bins."""
-        lo = np.floor((np.asarray(l_bounds, dtype=float) - self._x_min) / self._bin_widths).astype(np.int64)
-        hi = np.floor((np.asarray(u_bounds, dtype=float) - self._x_min) / self._bin_widths).astype(np.int64)
-        np.clip(lo, 0, self._bins_per_dim - 1, out=lo)
-        np.clip(hi, 0, self._bins_per_dim - 1, out=hi)
+        lo = self._bin_coords(l_bounds)
+        hi = self._bin_coords(u_bounds)
         # Rectangles covering every bin (e.g. from interpolate's doubling loop)
         # degrade to the full dataset
         if np.all(lo == 0) and np.all(hi == self._bins_per_dim - 1):
