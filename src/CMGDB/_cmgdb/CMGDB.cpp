@@ -271,11 +271,24 @@ ComputeConleyIndexForCells (
   // Mixed-depth (adaptive-grid) cell sets are supported: the chomp machinery
   // refines every cell to the finest depth present in the set, preserving
   // the region exactly.
+  std::shared_ptr < const Map > map = model . map ();
+  if ( not map ) {
+    throw std::invalid_argument (
+      "ComputeConleyIndexForCells requires a Model with a map" );
+  }
   std::shared_ptr < TreeGrid > phase_space_chomp =
     std::dynamic_pointer_cast<TreeGrid> ( morse_graph . phaseSpace () );
   if ( not phase_space_chomp ) {
     throw std::runtime_error (
       "ComputeConleyIndexForCells requires a TreeGrid-backed Morse graph" );
+  }
+  if ( model . phase_dim () != phase_space_chomp -> dimension () ) {
+    std::ostringstream message;
+    message
+      << "ComputeConleyIndexForCells: the Model's phase space has dimension "
+      << model . phase_dim () << " but the Morse graph's grid has dimension "
+      << phase_space_chomp -> dimension ();
+    throw std::invalid_argument ( message . str () );
   }
 
   std::sort ( cells . begin (), cells . end () );
@@ -291,7 +304,7 @@ ComputeConleyIndexForCells (
   }
 
   chomp::ConleyIndex_t conley_index;
-  ChompMap chomp_map ( model . map () );
+  ChompMap chomp_map ( map );
   chomp::ConleyIndex (
     & conley_index, * phase_space_chomp, cells, chomp_map );
   return conleyIndexString ( conley_index );

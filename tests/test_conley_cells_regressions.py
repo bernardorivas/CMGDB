@@ -3,10 +3,30 @@
 - C23/C36: the call releases the GIL, so it may run TreeGrid::cover at the
   same time as another thread; cover must not share scratch state between
   threads.
+- C29: a Model without a map, or of another dimension than the Morse
+  graph, is refused with ValueError instead of crashing or evaluating the
+  map on boxes of the wrong dimension.
 """
 
 import subprocess
 import sys
+
+import pytest
+
+import CMGDB
+
+
+def product_model(dim=2, subdiv=6):
+    """Uniform grid on [0, 1.2]^dim, map x -> x/(2-x) on every axis."""
+    def f(x):
+        return [x[d] / (2.0 - x[d]) for d in range(dim)]
+
+    def F(rect):
+        return CMGDB.BoxMap(f, rect)
+
+    return CMGDB.Model(subdiv, subdiv, subdiv, 10000,
+                       [0.0] * dim, [1.2] * dim, F)
+
 
 # Runs in a subprocess, so that a race that corrupts the heap or trips the
 # abort() guards of TreeGrid::coverAccept fails this test instead of killing
@@ -83,3 +103,20 @@ def test_concurrent_calls_do_not_share_cover_state():
     status, output = completed.returncode, completed.stdout + completed.stderr
     assert status == 0, f"exit status {status}\n{output}"
     assert completed.stdout.strip() == "ok", output
+
+
+def test_model_without_map_is_refused():
+    morse_graph, _ = CMGDB.ComputeConleyMorseGraph(product_model())
+    with pytest.raises(ValueError, match="requires a Model with a map"):
+        CMGDB.ComputeConleyIndexForCells(
+            CMGDB.Model(), morse_graph, morse_graph.morse_set(0))
+
+
+def test_model_of_another_dimension_is_refused():
+    morse_graph, _ = CMGDB.ComputeConleyMorseGraph(product_model(dim=2))
+    # The identity box map accepts boxes of any dimension, so nothing but
+    # the dimension check stops the 1D model from running on 2D boxes.
+    model = CMGDB.Model(6, 6, 6, 10000, [0.0], [1.2], lambda rect: rect)
+    with pytest.raises(ValueError, match="dimension 1.*dimension 2"):
+        CMGDB.ComputeConleyIndexForCells(
+            model, morse_graph, morse_graph.morse_set(0))
