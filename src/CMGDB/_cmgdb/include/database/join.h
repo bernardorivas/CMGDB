@@ -69,8 +69,7 @@ struct joinImpl < Atlas, InputIterator > {
 	    						  InputIterator stop ) { 
 
 		//std::cout << "Atlas join.\n";
-		output -> clear ();
-		if ( start == stop ) return;
+		if ( start == stop ) { output -> clear (); return; }
 		std::shared_ptr<Atlas> start_ptr = std::dynamic_pointer_cast<Atlas> ( *start );
 		// assert ( start_ptr );
 		// Note: It appears we must be joining Atlases with same chart structure
@@ -79,6 +78,10 @@ struct joinImpl < Atlas, InputIterator > {
 			chart_ids . push_back ( pair . first );
 		}
 
+		// Collect every input chart before clearing the output: the output
+		// may be one of the inputs (Compute_Morse_Graph joins a decomposition
+		// node's grid into itself), and clearing it first would drop its charts.
+		std::vector<std::vector<std::shared_ptr<TreeGrid> > > charts_by_id;
 		for ( Atlas::size_type chart_id : chart_ids ) {
 			//std::cout << "Atlas join, top of loop, chart_id=" << chart_id << ".\n";
 
@@ -98,6 +101,13 @@ struct joinImpl < Atlas, InputIterator > {
 			                       			 " a nonconformant chart.\n" );
 				}
 			}
+			charts_by_id . push_back ( charts );
+		}
+
+		output -> clear ();
+		for ( size_t i = 0; i < chart_ids . size (); ++ i ) {
+			Atlas::size_type chart_id = chart_ids [ i ];
+			std::vector<std::shared_ptr<TreeGrid> > const& charts = charts_by_id [ i ];
 			//std::cout << "Atlas join about to reset\n";
 			output -> chart ( chart_id ) . reset ( new PointerGrid );
 			//std::cout << "Atlas join about to recurse on join\n";
