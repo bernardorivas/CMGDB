@@ -1,8 +1,19 @@
 // Deterministic native checks for Atlas selected-dyadic active grids.
 //
-// Build:
-//   c++ -std=c++17 -I src/CMGDB/_cmgdb/include/database \
-//     tests/cpp/test_atlas_active_subgrid.cpp -o atlas_active_test
+// Build from the repository root (Homebrew paths for Boost and pybind11; adjust
+// them for other installations):
+//   c++ -std=c++20 -DCMGDB_USE_ATLAS \
+//     -I src/CMGDB/_cmgdb/include/database -I src/CMGDB/_cmgdb/include \
+//     -I src/CMGDB/_cmgdb/third_party/sdsl-lite/include \
+//     $(python3-config --includes) -I /opt/homebrew/include \
+//     tests/cpp/test_atlas_active_subgrid.cpp \
+//     -L/opt/homebrew/lib -lboost_serialization \
+//     $(python3-config --ldflags --embed) -o atlas_active_test
+//
+// CMGDB_USE_ATLAS enables joinImpl<Atlas> in join.h; without it the test
+// aborts with "joinImpl specialization not written". The vendored sdsl-lite v3
+// must come before /opt/homebrew/include, which may hold sdsl v2. MapGraph.h
+// carries its pybind11 bindings, hence the Python flags.
 
 #include <cmath>
 #include <cstdio>

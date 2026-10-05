@@ -5,12 +5,12 @@ global dynamics of discrete dynamical systems.
 
 > **This is a fork of [CMGDB](https://github.com/marciogameiro/CMGDB) by Marcio Gameiro.**
 > For the official, PyPI-released package, install upstream with `pip install CMGDB`.
-> This fork adds a few performance and analysis features (see
+> This fork is kept merged with upstream (it currently includes upstream
+> v1.5.2) and adds a few performance and analysis features (see
 > [What this fork adds](#what-this-fork-adds)). It is not published to PyPI;
-> install the current development tree from source as shown below. Prebuilt
-> wheels remain available for the older `fork.3` feature baseline. The
-> mathematical output of the inherited CMGDB algorithms is unchanged from
-> upstream.
+> prebuilt wheels are attached to the fork's GitHub releases, and the current
+> tree installs from source as shown below. The mathematical output of the
+> inherited CMGDB algorithms is unchanged from upstream.
 
 ## Overview
 
@@ -21,42 +21,56 @@ of each Morse set.
 
 ## What this fork adds
 
-Relative to the upstream release, this fork adds the following. None of it
-changes the Morse graph, Conley indices, or subdivision semantics that upstream
-computes — these are additive helpers and a build-flag change.
+Relative to upstream, this fork adds the following. None of it changes the
+Morse graph, Conley indices, or subdivision semantics that upstream computes.
+Batched map evaluation (`Model.set_batch_map`), the transition-graph cache,
+the native reachability queries, `ComputeConleyIndexForCells`, and
+`PrecomputedBoxMap` are upstream features; see
+[Performance options](#performance-options-and-the-transition-graph-cache) and
+[Precomputed box maps](#precomputed-box-maps).
 
-- **Precomputed / batched box maps** — `CMGDB.make_precomputed_box_map(...)`
-  evaluates an expensive map on the finest corner lattice in bounded chunks and
-  returns a standard `box_map(rect)` callable, amortizing the per-box evaluation
-  cost of maps that are slow to call one box at a time (e.g. neural-network or
-  GPU-resident maps).
-- **Batched adjacency construction** — `Model.set_batch_map(...)` plus a CSR
-  adjacency cache in `MapGraph` let CMGDB build the map graph with far fewer
-  Python calls.
+- **Grid-layout precomputed box maps** — `CMGDB.make_precomputed_box_map(...)`
+  complements upstream's `CMGDB.PrecomputedBoxMap` class with a uniform-grid
+  layout, a reproducible `random` sampling mode, and memory-aware chunking of
+  the lattice evaluation.
 - **Compact MapGraph checkpoints** — `MapGraph.csr_view()` exposes the native
   cached CSR as read-only zero-copy NumPy arrays, and
   `write_map_graph_csr_checkpoint(...)` atomically persists mmap-ready `int64`
   offsets plus `int32`/`int64` targets with explicit caps and strict
-  configuration/content fingerprints. The scalar construction path used by
-  `AtlasModel` now appends directly to CSR instead of retaining and copying a
-  second per-row edge store. See
+  configuration/content fingerprints. See
   [the MapGraph CSR documentation](docs/map_graph_csr.md).
+- **A cached `map_graph` by default** — `ComputeMorseGraph` and
+  `ComputeConleyMorseGraph` return a cached `map_graph` unless
+  `cache_map_graph=False`, `CMGDB_MAPGRAPH_CACHE=0`, or a `max_cached_edges`
+  limit is exceeded (upstream returns a lazy one by default), so `csr_view`,
+  the checkpoints and the native reachability queries work on the default
+  result. The default result therefore holds the graph's full CSR (see
+  [Cache sizing](#cache-sizing)), and building it and copying it once on
+  return raise the call's peak memory: in one measurement with the `henon3d`
+  benchmark model, whose CSR is 316 MB, the peak was about 1.2 GB, against
+  0.27 GB with `cache_map_graph=False`. Runs that do not use the `map_graph`
+  should pass `cache_map_graph=False` or call the `*Only` variants below.
+- **Environment controls for the MapGraph cache** — allocation hints, opt-in
+  hard limits, and `CMGDB_MAPGRAPH_CACHE`, which sets the default of the cache
+  keyword arguments; see [Cache sizing](#cache-sizing).
 - **Regions of attraction** — `CMGDB.cmgdb_roa` and `CMGDB.morse_graph_parser`
   provide exact region-of-attraction labels computed on the `MapGraph` returned
   during the Morse stage, plus a standalone parser for CMGDB's DOT output.
-- **Conley indices for connection-complete cell sets** —
-  `CMGDB.ComputeConleyIndexForCells(model, morse_graph, cells)` applies the
-  same TreeGrid/CHOMP computation used for ordinary Morse-node annotations to
-  an arbitrary phase-space cell subset. This supports Conley-index
-  recomputation after collapsing an order-convex collection of Morse nodes and
-  adding the cells on connections internal to that quotient fiber.
+- **Morse-graph lattices** — `CMGDB.morse_lattice` builds the lattices of
+  attractors and repellers and the nontrivial Conley-Morse graph from a parsed
+  Morse graph, and `CMGDB.plot_derived_graph` renders them with graphviz.
 - **Explicit relative-chain-complex bridge** —
   `CMGDB.ComputeRelativeHomologyShiftClass(...)` accepts a finite based
   relative chain complex and an explicit chain endomorphism without pretending
   that noncubical cells are boxes. It validates the chain-complex and chain-map
   equations over F_5, computes the induced homology maps, and applies CMGDB's
-  existing Frobenius/shift-class reduction. See
+  existing Frobenius/shift-class reduction. `CMGDB.ComputeRelativeShiftClass`
+  takes the same arguments and computes the shift class by linear algebra. See
   [the explicit-chain API documentation](docs/explicit_relative_chain_maps.md).
+- **Carrier chain maps** — `CMGDB.ComputeCarrierChainMap(...)` computes the
+  chain map over F_5 induced by an acyclic carrier between simplicial
+  complexes, after checking that every carrier is nonempty and acyclic and that
+  the exit subcomplex is mapped into the exit subcomplex.
 - **Tagged finite-union box maps** — `CMGDB.AtlasModel(...)` runs the native
   adaptive SCC/Morse pipeline on a disjoint union of rectangular charts. Its
   callback returns separately covered `(target_chart, bounds)` pieces, which
@@ -67,10 +81,6 @@ computes — these are additive helpers and a build-flag change.
   allocating its full rectangular refinement; inactive targets are explicit
   exits with no implicit cemetery vertex. The legacy TreeGrid/CHOMP Conley path
   is disabled. See [the AtlasModel documentation](docs/atlas_model.md).
-- **A correctness-validating benchmark harness** — `tests/bench.py` checks the
-  expected Morse-graph output before reporting timings.
-- **Quieter default output** — per-run progress prints are gated behind a
-  `CMG_VERBOSE` build flag (off by default).
 - **Fixed-subdivision Morse-set reachability verification** —
   `CMGDB.ComputeMorseSetReachability(model, morse_graph, phase_subdiv=s, ...)`
   independently verifies the reachability relation of an adaptive
@@ -86,32 +96,43 @@ computes — these are additive helpers and a build-flag change.
   `CMGDB.ComputeMorseSetReachabilityStudy(...)` repeats the verification at
   several subdivisions and classifies pairs as agreeing, unstable, or
   unresolved. The input `MorseGraph` is never mutated.
+- **Morse graphs without the returned MapGraph** —
+  `CMGDB.ComputeMorseGraphOnly(model)` and
+  `CMGDB.ComputeConleyMorseGraphOnly(model)` skip the extra box-map pass that
+  builds the returned `MapGraph`, for runs that do not use it.
+- **A correctness-validating benchmark harness** — `tests/bench.py` checks the
+  expected Morse-graph output before reporting timings.
 
 ## Installation
 
-The Atlas, compact-CSR, and explicit-chain APIs documented above are currently
-on `master` and have not yet been packaged in a release wheel. Build the
-current source with a C++ compiler and
-[Boost](https://www.boost.org/) (>= 1.56), [GMP](https://gmplib.org/), and
-[SDSL](https://github.com/xxsds/sdsl-lite) v3:
+Prebuilt wheels are attached to each
+[fork release](https://github.com/bernardorivas/CMGDB/releases) for CPython
+3.11-3.13 on manylinux x86_64 and macOS arm64. To install the most recent
+release, `1.3.3+fork.6`:
+
+	pip install cmgdb==1.3.3+fork.6 \
+	  --find-links https://github.com/bernardorivas/CMGDB/releases/expanded_assets/v1.3.3%2Bfork.6
+
+The version pin is what selects this fork; `--find-links` only tells pip where
+to look. Release `1.3.3+fork.6` predates the merge with upstream v1.5.2; until
+a newer release is published, build from source to get the upstream features.
+
+To build the current tree from source you need a C++ compiler with C++20
+support and [Boost](https://www.boost.org/) 1.70 or later (chrono, thread and
+serialization; CMake finds it through its `BoostConfig.cmake`). sdsl-lite is
+vendored, and GMP is not needed. Install the current tree directly with:
+
+	pip install git+https://github.com/bernardorivas/CMGDB.git
+
+Alternatively, clone the repository and install with:
 
 	git clone https://github.com/bernardorivas/CMGDB.git
 	cd CMGDB
-	./install.sh
+	pip install .
 
-Or install the current tree directly with pip:
-
-	pip install --force-reinstall --no-deps --no-cache-dir git+https://github.com/bernardorivas/CMGDB.git@master
-
-Prebuilt wheels of the most recent release, `fork.4`, which includes the Atlas,
-compact-CSR, and explicit-chain APIs, are available for CPython 3.11-3.13 on
-manylinux x86_64 and macOS arm64:
-
-	pip install cmgdb==1.3.3+fork.4 \
-	  --find-links https://github.com/bernardorivas/CMGDB/releases/expanded_assets/v1.3.3%2Bfork.4
-
-The version pin is what selects this fork; `--find-links` only tells pip where
-to look.
+In a [uv](https://docs.astral.sh/uv/) environment, use `uv pip install .`
+instead. Rendering the `graphviz.Source` objects returned by `PlotMorseGraph`
+and `plot_derived_graph` needs Graphviz's `dot` program on `PATH`.
 
 To uninstall:
 
@@ -138,12 +159,48 @@ For background, see this
 [survey](http://chomp.rutgers.edu/Projects/survey/cmdbSurvey.pdf) and
 [talk](http://chomp.rutgers.edu/Projects/Databases_for_the_Global_Dynamics/software/LorentzCenterAugust2014.pdf).
 
+## Performance options and the transition-graph cache
+
+`ComputeMorseGraph` and `ComputeConleyMorseGraph` return a pair `(morse_graph, map_graph)` and accept keyword arguments controlling the transition-graph machinery (the defaults are right for most runs):
+
+* `cache_transition_graph` (default `None`: cache unless `CMGDB_MAPGRAPH_CACHE=0`) — cache the per-level transition graph used internally by the SCC/reachability passes, halving the map evaluations per subdivision level. Set `False` for a memory-lean run that re-evaluates the map on demand; since the returned `map_graph` is cached by default, such a run also needs `cache_map_graph=False` (or `CMGDB_MAPGRAPH_CACHE=0`, which makes both flags default to `False`).
+* `batch_chunk_size` (default `65536`) — rectangles per batched map call when a batch map is attached with `model.set_batch_map` (`0` means one call for the whole grid). The Conley-index phase of `ComputeConleyMorseGraph` (and `ComputeConleyIndexForCells`) also gathers its map evaluations into these chunks, evaluating each rectangle exactly once — without a batch map the evaluations are scalar but still deduplicated, so attaching a batch map speeds up every phase, not just the transition graph.
+* `max_cached_edges` (default `0` = unlimited) — abandon a cache measured (or confidently projected) to exceed this many edges and fall back to on-demand evaluation.
+* `reserve_edges` / `reserve_min_edges` (defaults `0` / `2**24`) — up-front sizing of the flat edge array. By default the final edge count is projected from the first chunk and twice that is reserved, which avoids the reallocation spikes of multi-gigabyte graphs on deep grids; a positive `reserve_edges` reserves exactly that many instead. Reservation only engages once the projection reaches `reserve_min_edges`.
+* `cache_map_graph` (default `None`: cache unless `CMGDB_MAPGRAPH_CACHE=0`; upstream's default is `False`) — eagerly cache the **returned** `map_graph` (one extra full batched map pass over the final grid, after which its adjacency queries are O(1) array lookups). `False` returns a lazy `map_graph` that evaluates the map per `adjacencies` query; `map_graph.build_cache()` upgrades it to the cached form later. `map_graph.has_cache()` and `map_graph.num_cached_edges()` report the state.
+
+An explicit `True` or `False` for either cache flag always wins over `CMGDB_MAPGRAPH_CACHE`. `ComputeMorseGraphOnly` and `ComputeConleyMorseGraphOnly` take the same keyword arguments except `cache_map_graph`, since they return no `map_graph`. The `AtlasModel` overloads take no keyword arguments; their caches follow `CMGDB_MAPGRAPH_CACHE`.
+
+A batch map attached with `model.set_batch_map(g)` receives a read-only NumPy array of shape `(count, 2*dim)`, one rectangle per row (lower bounds, then upper bounds), and must return the image rectangles in the same layout, as an array or a list of lists. It must agree with the model's scalar map on every rectangle.
+
+A cached `map_graph` also unlocks the native post-processing queries (all of which release the GIL and refuse a lazy graph):
+
+* `MorseReachabilityMasks(map_graph, morse_graph, cells)` — for each queried cell, a `uint64` bitmask of the Morse nodes reachable through the box dynamics (bit `i` = Morse node `i`); the basin-of-attraction primitive.
+* `MorseSingletonReachability(map_graph, morse_graph, cells)` — per cell, the single reachable Morse node id, `-1` for none, `-2` for several.
+* `MorseDirectedPathCells(map_graph, morse_graph, sources, targets)` — the cells lying on some directed path from the source Morse nodes to the target Morse nodes (candidate connecting-orbit regions).
+* `ComputeConleyIndexForCells(model, morse_graph, cells)` — the homological Conley index of an arbitrary cell subset of the final grid (cells of different sizes from adaptive runs are handled exactly, by common refinement).
+
+The C++ core is silent by default; rebuild with the `CMG_VERBOSE` preprocessor define (uncomment it at the top of `src/CMGDB/_cmgdb/CMGDB.cpp`) to restore the progress and diagnostic prints.
+
 ## Precomputed box maps
 
-For maps that are expensive to evaluate one box at a time,
-`CMGDB.make_precomputed_box_map` evaluates a batched map on the finest lattice
-in bounded chunks, then returns a standard `box_map(rect)` callable for
-`CMGDB.Model`.
+For maps that are expensive to evaluate one box at a time, CMGDB can evaluate
+a batched map once on the finest lattice, in bounded chunks, and then serve
+every box query from that table. There are two entry points.
+
+Upstream's `CMGDB.PrecomputedBoxMap` class serves the adaptive subdivision tree
+with corner or center sampling:
+
+```python
+F = CMGDB.PrecomputedBoxMap(f, lower_bounds, upper_bounds, subdiv_max,
+                            mode="corners",   # sampling rule: corners | center
+                            padding=False)
+model = CMGDB.Model(subdiv_min, subdiv_max, lower_bounds, upper_bounds, F)
+model.set_batch_map(F.batch)
+```
+
+This fork's `CMGDB.make_precomputed_box_map` also serves uniform grids and
+random sampling:
 
 ```python
 box_map = CMGDB.make_precomputed_box_map(
@@ -167,15 +224,24 @@ model = CMGDB.Model(
     upper_bounds,
     box_map,
 )
-```
-
-The returned object is still callable, and it also exposes `batch(rects)`. When
-a batched rectangle callback is available, install it on the model so CMGDB can
-build cached adjacencies with fewer Python calls:
-
-```python
 model.set_batch_map(box_map.batch)
 ```
+
+On the adaptive grid with corner or center sampling the two build the same
+table and return the same image boxes. They differ as follows:
+
+| | `PrecomputedBoxMap` | `make_precomputed_box_map` |
+|---|---|---|
+| `mode` | sampling rule (`corners`, `center`) | grid layout (`adaptive`, `uniform`); the sampling rule is `eval_mode` |
+| `padding` default | `False` | `True` |
+| box off the `subdiv_max` lattice, or finer than it | raises `ValueError` | snapped to the lattice |
+| `batch(rects)` returns | `(N, 2*dim)` NumPy array | list of lists |
+| `batch_points="auto"` | chunks of `2**20` points | sized from available memory (SLURM aware) |
+| Torch | used only if `torch` is already imported | imported when installed |
+
+The helpers `precompute_corner_grid`, `evaluation_offsets`,
+`resolve_batch_points`, `as_batched_evaluator` and `select_torch_device` are
+importable from `CMGDB` and from `CMGDB.PrecomputedBoxMap`.
 
 For a finite tagged chart family, use the separate Atlas lookup.  It preserves
 every tagged target piece (including an explicit empty union), rejects exact
@@ -213,17 +279,24 @@ offsets; 64 edges per cell would add 8 GiB of edge storage.
 
 Two optional environment variables tune allocation. Neither refuses anything:
 
-- `CMGDB_MAPGRAPH_RESERVE_EDGES` is unset by default. Set it to allocate the
-  edge buffer once instead of growing it geometrically, avoiding a transient
-  capacity peak. A reserve smaller than the real edge count is not an error;
-  the buffer simply grows past it.
+- `CMGDB_MAPGRAPH_RESERVE_EDGES` is unset by default. Set it to reserve the
+  edge buffer up front, before the first box is evaluated, instead of growing
+  it geometrically. A reserve smaller than the real edge count is not an
+  error; the buffer simply grows past it. A call with `max_cached_edges` set
+  caps this reserve at that many edges.
 - `CMGDB_MAPGRAPH_RESERVE_MIN_VERTICES` defaults to `16777216`. The explicit
   reserve applies only to graphs at least this large, so coarse intermediate
   MapGraphs do not each take a multi-gigabyte allocation.
 
 Both must be positive base-10 integers; a malformed value is an error rather
 than being silently ignored, since ignoring it would drop the hint you asked
-for.
+for. A malformed value of these variables, or of the hard limits below, fails
+before the first map evaluation of any call that builds a cache. The projected
+reservation of the `reserve_edges` / `reserve_min_edges` keyword arguments (see
+[Performance options](#performance-options-and-the-transition-graph-cache))
+still applies after the first chunk: once the projected edge count reaches
+`reserve_min_edges`, it enlarges a smaller buffer to twice the projection, or
+to exactly `reserve_edges` when that is set.
 
 Three separate opt-in variables stop native CSR growth before its next reserve
 or append:
@@ -246,7 +319,10 @@ CMGDB_MAPGRAPH_RESERVE_EDGES=1200000000 \
 python ...
 ```
 
-The 1.2-billion-edge reserve is about 8.94 GiB, allocated once.
+The 1.2-billion-edge reserve is about 8.94 GiB. The projected reservation
+described above can still enlarge the buffer to twice the projected edge count
+after the first chunk; a `reserve_min_edges` above any projected edge count
+(for example `2**62`) turns it off.
 
 To trade speed for memory, disable the cache outright:
 
@@ -255,22 +331,28 @@ CMGDB_MAPGRAPH_CACHE=0 python ...
 ```
 
 The lazy path recomputes adjacencies through the map on every query -- far
-slower, but it never materializes the edge array. This is the supported way to
-ask for a memory-lean run; earlier versions required setting an artificially
-low edge cap to provoke the same fallback, which also refused unrelated runs
-that would have fit. Accepted values are `0`/`1`, `off`/`on`, `false`/`true`.
+slower, but it never materializes the edge array. Accepted values are
+`0`/`1`, `off`/`on`, `false`/`true`. `CMGDB_MAPGRAPH_CACHE` only sets the
+default: an explicit `cache_transition_graph=True` or `cache_map_graph=True`,
+or `map_graph.build_cache()`, still builds the cache (subject to
+`max_cached_edges`). The keyword arguments `cache_transition_graph=False`,
+`cache_map_graph=False` and `max_cached_edges` described under
+[Performance options](#performance-options-and-the-transition-graph-cache)
+trade speed for memory per call. A memory-lean call needs both cache flags
+`False`: `cache_transition_graph=False` alone still caches the returned
+`map_graph`.
 
 > Removed in this fork: the old `CMGDB_MAPGRAPH_MAX_VERTICES` and
 > `CMGDB_MAPGRAPH_MAX_EDGES`. They are read by nothing and setting them has no
 > effect. The explicitly named `CMGDB_MAPGRAPH_HARD_*` limits above have
-> fail-fast semantics and never select a lazy fallback. The Python
-> `max_table_points` argument is likewise gone.
+> fail-fast semantics and never select a lazy fallback. The `max_table_points`
+> argument of `make_precomputed_box_map` is likewise gone.
 
 ### Evaluation modes
 
-`eval_mode` selects where inside each box the map is sampled, mirroring
-`CMGDB.ComputeBoxMap.BoxMap`. It is independent of `mode`, which selects the
-grid layout:
+`eval_mode` selects where inside each box `make_precomputed_box_map` samples
+the map, mirroring `CMGDB.ComputeBoxMap.BoxMap`. It is independent of `mode`,
+which selects the grid layout:
 
 ```python
 box_map = CMGDB.make_precomputed_box_map(
@@ -302,13 +384,13 @@ Two consequences worth knowing:
 - `center` forces `padding=True`, as upstream `BoxMap` does. One sample gives a
   degenerate image box, which encloses nothing without padding.
 - `random` draws its offsets **once** and reuses them for every box, so sibling
-  boxes are probed at the same relative positions. Upstream instead calls
-  `np.random.uniform` afresh on each invocation, which makes its box map a
+  boxes are probed at the same relative positions. Upstream `BoxMap` instead
+  calls `np.random.uniform` afresh on each invocation, which makes its box map a
   non-deterministic function of the rectangle and its Morse graphs
   irreproducible. Fixed offsets are both precomputable and reproducible.
 
-For exact Marcio-style basin membership on selected cells, use the native CSR
-query:
+For exact basin membership on selected cells, use the native CSR query on a
+cached `map_graph`:
 
 ```python
 summary = CMGDB.MorseSingletonReachability(
@@ -326,8 +408,8 @@ additionally returns exact all-node `uint64` masks when the Morse graph has at
 most 64 nodes.
 
 Torch is not a required dependency. If Torch is installed and `f` is a
-`torch.nn.Module`, the helper evaluates it on `mps`, then `cuda`, then `cpu`
-when `device="auto"`.
+`torch.nn.Module`, both entry points evaluate it on `mps`, then `cuda`, then
+`cpu` when `device="auto"`.
 
 ## Benchmarks
 
@@ -341,9 +423,30 @@ python tests/bench.py --scenarios py_medium,reach_4d --repeats 5 --warmup 1
 
 The harness validates expected Morse-graph outputs before reporting timings. It
 is useful for checking changes to `MapGraph`, reachability, and Python map
-callback paths.
+callback paths. Upstream's benchmark suite is in [benchmarks](benchmarks); see
+[benchmarks/README.md](benchmarks/README.md).
+
+Upstream's scenarios call `ComputeMorseGraph` and `ComputeConleyMorseGraph`
+without the cache keyword arguments, so under this fork's cached `map_graph`
+default each of these runs makes one extra map pass over its final grid and
+caches the returned graph. The suite's map-call counts, timings and peak
+memory (the MB column) therefore include that pass and are not comparable with
+upstream's results, such as the committed `baseline_857ec8b.json`,
+`optimized_857ec8b.json` and `version_compare.md`. Measured on one machine,
+`henon3d` peaked at about 1.2 GB, against 0.4 GB for upstream v1.5.2. The
+~10 GB that [benchmarks/README.md](benchmarks/README.md) gives for
+`chafee3d_uniform_24` is upstream's figure; the same computation at
+subdivision 22 peaked at 5.8 GB, against 3.7 GB for upstream. No
+`CMGDB_MAPGRAPH_CACHE` setting restores upstream's defaults, because
+`CMGDB_MAPGRAPH_CACHE=0` also turns off the transition-graph cache.
 
 ## License
 
 MIT, Copyright (c) 2020 Marcio Gameiro (see [LICENSE](LICENSE)). This fork is
-maintained by Bernardo Rivas and retains the upstream license.
+maintained by Bernardo Rivas and retains the upstream license. The extension
+also compiles in the vendored header-only
+[sdsl-lite](src/CMGDB/_cmgdb/third_party/sdsl-lite) v3, which is BSD-3-Clause
+licensed (see [licenses/sdsl-lite-xxsds-LICENSE](licenses/sdsl-lite-xxsds-LICENSE)),
+and [CHOMP](src/CMGDB/_cmgdb/include/chomp), which is MIT licensed, Copyright
+(c) 2015 Shaun Harker (see [licenses/chomp-LICENSE](licenses/chomp-LICENSE)).
+Both notices ship with every wheel.

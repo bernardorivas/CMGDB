@@ -8,7 +8,6 @@ on:
     branches: [master, wheels-ci]
     paths:
       - "CMakeLists.txt"
-      - "setup.py"
       - "pyproject.toml"
       - "src/**"
       - "tools/**"
@@ -37,14 +36,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: pypa/cibuildwheel@v4.1.1
+      - uses: pypa/cibuildwheel@v4.2.1
 
       - name: Report wheel tags and libstdc++ requirements
         if: runner.os == 'Linux'
         # The wheels are meant to run on distributions older than the build
         # image (Google Colab currently ships libstdc++ 12.3, i.e. GLIBCXX up to
-        # 3.4.30). Static libstdc++ should leave no versioned reference at all;
-        # fail here rather than at a reader's import.
+        # 3.4.30). libstdc++ is linked dynamically (see pyproject.toml), so the
+        # extension carries versioned GLIBCXX references; fail here, rather
+        # than at a reader's import, if any is newer than GLIBCXX_3.4.30.
         run: |
           for whl in wheelhouse/*.whl; do
             echo "=== $whl"
@@ -104,4 +104,4 @@ jobs:
 
             No source distribution is attached on purpose: a missing wheel for
             your interpreter should fail loudly rather than start a build that
-            needs Boost, GMP and a C++ toolchain.
+            needs Boost and a C++ toolchain.

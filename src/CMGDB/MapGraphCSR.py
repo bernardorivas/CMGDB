@@ -252,7 +252,9 @@ def write_map_graph_csr_checkpoint(
         raise TypeError("map_graph does not expose the cached native CSR interface")
     if not bool(map_graph.has_cache()):
         raise RuntimeError(
-            "CSR checkpoint requires CMGDB_MAPGRAPH_CACHE to be enabled"
+            "CSR checkpoint requires a cached MapGraph (CMGDB_MAPGRAPH_CACHE "
+            "enabled, cache_map_graph=True, or build_cache(); a graph over "
+            "max_cached_edges stays lazy)"
         )
     vertices = _exact_nonnegative_integer(
         map_graph.num_vertices(), label="MapGraph vertex count"

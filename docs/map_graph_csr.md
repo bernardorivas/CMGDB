@@ -14,9 +14,14 @@ offsets, targets = map_graph.csr_view()
 Both arrays are read-only `int64` NumPy views. They do not own a second edge
 buffer: their NumPy base retains the immutable native `MapGraph`, so the views
 stay valid even if the caller drops its original graph variable. Export
-requires the eager cache (`CMGDB_MAPGRAPH_CACHE=1`, the default). Before the
-view is returned, CMGDB checks that offsets are consistent and every row is
-in-range, strictly increasing, and duplicate-free.
+requires a cached `MapGraph`. The `map_graph` returned by `ComputeMorseGraph`
+(for a `Model` or an `AtlasModel`) or by `ComputeConleyMorseGraph` is cached
+by default, unless `CMGDB_MAPGRAPH_CACHE=0`; the `Model` keyword argument
+`cache_map_graph=True`, or `map_graph.build_cache()`, caches it whatever
+`CMGDB_MAPGRAPH_CACHE` says. In every case, a graph whose edge count exceeds
+the `Model` keyword argument `max_cached_edges` stays lazy: the cache is
+abandoned. Before the view is returned, CMGDB checks that offsets are
+consistent and every row is in-range, strictly increasing, and duplicate-free.
 
 The scalar MapGraph construction path now also appends rows directly to CSR.
 This matters for `AtlasModel`, whose Python-backed tagged-union map does not

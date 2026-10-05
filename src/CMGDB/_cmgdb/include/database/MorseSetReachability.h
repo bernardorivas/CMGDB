@@ -25,6 +25,7 @@
 #include "UnionGeo.h"
 #include "IntersectionGeo.h"
 #include "Map.h"
+#include "ChompMap.h"
 #include "Model.h"
 #include "TreeGrid.h"
 #include "PointerGrid.h"
@@ -349,11 +350,12 @@ public:
     }
 
     map_evaluations_ += sources . size ();
-    if ( map_ -> has_optimized_batch () ) ++ map_batches_;
+    if ( map_ -> has_batch () ) ++ map_batches_;
 
     std::vector<std::shared_ptr<Geo>> images;
     try {
-      images = map_ -> batch_map ( geos );
+      // One flat batched call for the whole source set (chunk size 0).
+      images = ChompMap ( map_, 0 ) . images ( geos );
     } catch ( MorseSetReachabilityMapError const& ) {
       throw;
     } catch ( pybind11::error_already_set & error ) {
@@ -722,13 +724,13 @@ ComputeMorseSetReachability (
     prov . phase_subdiv_max = model . phase_subdiv_max ();
     prov . phase_subdiv_limit = model . phase_subdiv_limit ();
     prov . configuration_hash = core_options . configuration_sha;
-    prov . map_kind = map -> has_optimized_batch ()
+    prov . map_kind = map -> has_batch ()
       ? "python_rectangle_map_with_optimized_batch"
       : "python_rectangle_map";
     prov . map_fingerprint = options . map_fingerprint;
     prov . map_fingerprint_kind = options . map_fingerprint . empty ()
       ? "unavailable" : "caller_supplied";
-    prov . evaluation_mode = map -> has_optimized_batch ()
+    prov . evaluation_mode = map -> has_batch ()
       ? "optimized_batch" : "scalar";
     prov . phase_subdiv = phase_subdiv;
     prov . has_max_visited_grid_elements =

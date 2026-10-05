@@ -3,6 +3,7 @@
 #ifndef CMDP_MAPGRAPH_H
 #define CMDP_MAPGRAPH_H
 
+#include <cstdint>
 #include <exception>
 #include <vector>
 #include <iterator>
@@ -22,39 +23,89 @@
 #include "boost/foreach.hpp"
 
 #include "Grid.h"
+#include "Map.h"
+#include "RectGeo.h"
 
-#ifdef CMDB_STORE_GRAPH
-#include "ComputeGraph.h"
-#endif
+/// struct MapGraphOptions
+///    Controls whether (and how) a MapGraph stores the transition graph.
+///    With cache == true the full adjacency structure is computed once at
+///    construction, in chunks of chunk_size rectangles, and stored in
+///    compressed sparse row (CSR) form; subsequent adjacency queries never
+///    evaluate the map again. max_cached_edges bounds the cache: if the edge
+///    count exceeds it (or is confidently projected to) the cache is
+///    abandoned and the MapGraph falls back to on-demand evaluation
+///    (0 means unlimited).
+///    reserve_edges controls the up-front reservation of the flat edge
+///    array. 0 (the default) reserves twice the final edge count projected
+///    from the chunks seen so far, which avoids the repeated-doubling
+///    reallocation of multi-gigabyte edge arrays (a transient ~3x memory
+///    peak on deep uniform grids); a positive value reserves exactly that
+///    many edges instead. Reservation only engages once the projected edge
+///    count reaches reserve_min_edges, so small graphs -- including the
+///    per-Morse-set subgraphs built during adaptive runs -- never
+///    over-allocate.
+///    The environment variables read by build_cache (see cmgdb_detail
+///    below) add opt-in hard limits, which raise instead of falling back,
+///    and an up-front reservation hint.
+struct MapGraphOptions {
+  bool cache;
+  uint64_t chunk_size;
+  uint64_t max_cached_edges;
+  uint64_t reserve_edges;
+  uint64_t reserve_min_edges;
+  MapGraphOptions ( void )
+    : cache ( false ), chunk_size ( 65536 ), max_cached_edges ( 0 ),
+      reserve_edges ( 0 ), reserve_min_edges ( uint64_t ( 1 ) << 24 ) {}
+  explicit MapGraphOptions ( bool cache_,
+                             uint64_t chunk_size_ = 65536,
+                             uint64_t max_cached_edges_ = 0,
+                             uint64_t reserve_edges_ = 0,
+                             uint64_t reserve_min_edges_ = uint64_t ( 1 ) << 24 )
+    : cache ( cache_ ), chunk_size ( chunk_size_ ),
+      max_cached_edges ( max_cached_edges_ ),
+      reserve_edges ( reserve_edges_ ),
+      reserve_min_edges ( reserve_min_edges_ ) {}
+};
 
 /// class MapGraph
 ///    This class is used to created an object suitable for graph algorithms
-///    given a grid and a map object. By default "adjacencies" is computed on demand
-///    in order to avoid storing the adjacency lists.
+///    given a grid and a map object. The transition graph is stored in CSR
+///    form when the options ask for it (each rectangle's image is then
+///    computed exactly once); otherwise "adjacencies" is computed on demand
+///    in order to avoid storing the adjacency lists. The two-argument
+///    constructor caches unless CMGDB_MAPGRAPH_CACHE=0.
 class MapGraph {
 public:
   // Typedefs
   typedef Grid::size_type size_type;
   typedef Grid::GridElement Vertex;
 
-  struct AdjacencyView {
-    typedef const Vertex *iterator;
-    typedef const Vertex *const_iterator;
-    const Vertex *begin_;
-    const Vertex *end_;
-    size_t size_;
-    const Vertex *begin() const { return begin_; }
-    const Vertex *end() const { return end_; }
-    size_t size() const { return size_; }
-    bool empty() const { return size_ == 0; }
+  /// AdjacencySpan
+  ///    Non-owning view over the out-edges of a vertex. When the CSR cache
+  ///    is present it points into the flat edge array; otherwise it points
+  ///    into a scratch buffer that is overwritten by the next adjacency
+  ///    query, so a span must be consumed before the next query is made.
+  struct AdjacencySpan {
+    typedef const Vertex * iterator;
+    typedef const Vertex * const_iterator;
+    const Vertex * begin_;
+    const Vertex * end_;
+    const Vertex * begin ( void ) const { return begin_; }
+    const Vertex * end ( void ) const { return end_; }
+    size_t size ( void ) const { return end_ - begin_; }
+    bool empty ( void ) const { return begin_ == end_; }
   };
+  /// AdjacencyView: the fork's name for AdjacencySpan.
+  typedef AdjacencySpan AdjacencyView;
 
-  // Constructor. Requires Grid and Map.
+  // Constructor. Requires Grid and Map. Caches the transition graph unless
+  // CMGDB_MAPGRAPH_CACHE=0.
   MapGraph ( std::shared_ptr<const Grid> grid,
              std::shared_ptr<const Map> f );
 
-  // MapGraph ( std::shared_ptr<const Grid> grid,
-  //            std::shared_ptr<const Model> model );
+  MapGraph ( std::shared_ptr<const Grid> grid,
+             std::shared_ptr<const Map> f,
+             MapGraphOptions options );
 
   void initialize ( void );
 
@@ -62,19 +113,38 @@ public:
   ///   Return vector of Vertices which are out-edge adjacencies of input v
   std::vector<Vertex> adjacencies ( const Vertex & v ) const;
 
-  /// adjacencies_view
-  ///   Return a non-owning view over out-edge adjacencies. When the CSR
-  ///   cache is populated, this points directly into the flat edge buffer.
-  AdjacencyView adjacencies_view ( const Vertex & v ) const;
-  
+  /// adjacency_span
+  ///   Return a non-owning view of the out-edge adjacencies of input v.
+  ///   Avoids a copy when the transition graph is cached. See AdjacencySpan
+  ///   for the lifetime rule in the uncached case.
+  AdjacencySpan adjacency_span ( const Vertex & v ) const;
+
+  /// adjacencies_view: the fork's name for adjacency_span.
+  AdjacencyView adjacencies_view ( const Vertex & v ) const {
+    return adjacency_span ( v );
+  }
+
   /// num_vertices
   ///   Return number of vertices
   size_type num_vertices ( void ) const;
 
-  bool has_cache ( void ) const { return stored_graph; }
-  size_t num_cached_edges ( void ) const {
-    return stored_graph ? csr_edges_ . size () : 0;
+  /// has_cache
+  ///   Return true if the transition graph is stored in the CSR cache.
+  bool has_cache ( void ) const { return cached_; }
+
+  /// num_cached_edges
+  ///   Return the number of edges held in the CSR cache (0 if uncached).
+  uint64_t num_cached_edges ( void ) const {
+    return cached_ ? (uint64_t) csr_edges_ . size () : 0;
   }
+
+  /// build_cache
+  ///   Build the CSR transition-graph cache now (a no-op if it is already
+  ///   built). Lets a MapGraph constructed lazily -- e.g. the map_graph
+  ///   returned by ComputeMorseGraph with cache_map_graph=False -- be
+  ///   upgraded to a cached one after the fact, at the cost of one full
+  ///   (batched, if available) pass of map evaluations over the grid.
+  void build_cache ( void );
 
   /// validate_cached_csr
   ///   Validate the invariants required by the read-only NumPy CSR view.
@@ -82,7 +152,7 @@ public:
   ///   therefore duplicate-free.  This does not evaluate the map.
   void validate_cached_csr ( void ) const;
 
-  const size_t * csr_offsets_data ( void ) const {
+  const uint64_t * csr_offsets_data ( void ) const {
     return csr_offsets_ . data ();
   }
   const Vertex * csr_edges_data ( void ) const {
@@ -92,17 +162,14 @@ public:
 private:
   // Private methods
   std::vector<size_type> compute_adjacencies ( const size_type & v ) const;
-  std::vector<std::vector<size_type> > compute_adjacencies_batch (
-    const std::vector<size_type> & sources ) const;
-  void build_csr_from_staging ( std::vector<std::vector<Vertex> > & staging );
   // Private data
   std::shared_ptr<const Grid> grid_;
   std::shared_ptr<const Map> f_;
-  // Variables used if graph is stored in memory. (See CMDB_STORE_GRAPH define)
-  bool stored_graph;
-  std::vector<std::vector<Vertex> > adjacency_lists_;
-  std::vector<size_t> csr_offsets_;
+  MapGraphOptions options_;
+  bool cached_;
+  std::vector<uint64_t> csr_offsets_;
   std::vector<Vertex> csr_edges_;
+  mutable std::vector<Vertex> scratch_;
 };
 
 namespace cmgdb_detail {
@@ -170,15 +237,50 @@ map_graph_hard_limit_from_env ( const char * name ) {
   return static_cast<size_t> ( parsed );
 }
 
+/// MapGraphEnv
+///   The CMGDB_MAPGRAPH_RESERVE_* allocation hints and the opt-in
+///   CMGDB_MAPGRAPH_HARD_MAX_* limits that build_cache applies.
+struct MapGraphEnv {
+  size_t reserve_edges;          // 0: no up-front reservation
+  size_t reserve_min_vertices;
+  size_t hard_max_vertices;      // SIZE_MAX: no limit
+  size_t hard_max_edges;
+  size_t hard_max_cache_bytes;
+};
+
+/// map_graph_env
+///   Read those variables; a malformed value throws std::invalid_argument.
+///   build_cache reads them on every build. ComputeMorseGraph and
+///   ComputeConleyMorseGraph (Model) also call this before computing
+///   whenever a cache will be built, so that a malformed value fails before
+///   the first map evaluation even when the first cache built is the
+///   returned map_graph's (lazy transition graphs).
+inline MapGraphEnv
+map_graph_env ( void ) {
+  MapGraphEnv env;
+  env . reserve_edges = map_graph_size_from_env (
+    "CMGDB_MAPGRAPH_RESERVE_EDGES", 0 );
+  env . reserve_min_vertices = map_graph_size_from_env (
+    "CMGDB_MAPGRAPH_RESERVE_MIN_VERTICES", size_t ( 1 ) << 24 );
+  env . hard_max_vertices = map_graph_hard_limit_from_env (
+    "CMGDB_MAPGRAPH_HARD_MAX_VERTICES" );
+  env . hard_max_edges = map_graph_hard_limit_from_env (
+    "CMGDB_MAPGRAPH_HARD_MAX_EDGES" );
+  env . hard_max_cache_bytes = map_graph_hard_limit_from_env (
+    "CMGDB_MAPGRAPH_HARD_MAX_CACHE_BYTES" );
+  return env;
+}
+
 /// map_graph_cache_enabled
-///   Whether to build the eager CSR adjacency cache. Defaults to enabled.
+///   Whether to build the eager CSR adjacency cache when the caller did not
+///   say. Defaults to enabled.
 ///
 ///   Setting CMGDB_MAPGRAPH_CACHE=0 selects the lazy path, which recomputes
 ///   adjacencies through the map on every query: far slower, but it never
 ///   materializes the edge array. This is the explicit way to ask for a
-///   memory-lean run. It replaces the old practice of setting an artificially
-///   low edge cap to provoke the same fallback -- a cap that also refused
-///   unrelated runs that would have fit.
+///   memory-lean run. An explicit request (cache_map_graph=True,
+///   cache_transition_graph=True, MapGraph(grid, map, cache=True) or
+///   build_cache()) still builds the cache.
 inline bool
 map_graph_cache_enabled ( void ) {
   const char * raw = std::getenv ( "CMGDB_MAPGRAPH_CACHE" );
@@ -206,47 +308,65 @@ MapGraph::MapGraph ( std::shared_ptr<const Grid> grid,
                      std::shared_ptr<const Map> f ) :
 grid_ ( grid ),
 f_ ( f ),
-stored_graph ( false ) {
+options_ ( cmgdb_detail::map_graph_cache_enabled () ),
+cached_ ( false ) {
   initialize ();
 }
 
-// inline
-// MapGraph::MapGraph ( std::shared_ptr<const Grid> grid,
-//                      std::shared_ptr<const Model> model ) :
-// grid_ ( grid ),
-// f_ ( model -> map () ),
-// stored_graph ( false ) {
-//   initialize ();
-// }
+inline
+MapGraph::MapGraph ( std::shared_ptr<const Grid> grid,
+                     std::shared_ptr<const Map> f,
+                     MapGraphOptions options ) :
+grid_ ( grid ),
+f_ ( f ),
+options_ ( options ),
+cached_ ( false ) {
+  initialize ();
+}
 
 inline void
 MapGraph::initialize ( void ) {
   if ( not f_ ) {
     throw std::logic_error ( "MapGraph::MapGraph. Unable to construct with uninitialized Map f\n");
   }
-
-  if ( not cmgdb_detail::map_graph_cache_enabled () ) {
-    stored_graph = false;
-    return;
+  if ( options_ . cache ) {
+    build_cache ();
   }
+}
 
-  constexpr size_t BATCH_CHUNK = 100000;
-  // Optional allocation hints. Separate opt-in hard limits below remain
-  // disabled unless the caller explicitly sets them.
-  const size_t edge_reserve = cmgdb_detail::map_graph_size_from_env (
-    "CMGDB_MAPGRAPH_RESERVE_EDGES", 0 );
-  const size_t reserve_min_vertices = cmgdb_detail::map_graph_size_from_env (
-    "CMGDB_MAPGRAPH_RESERVE_MIN_VERTICES", size_t ( 1 ) << 24 );
-  const size_t n = num_vertices ();
-  const size_t hard_max_vertices =
-    cmgdb_detail::map_graph_hard_limit_from_env (
-      "CMGDB_MAPGRAPH_HARD_MAX_VERTICES" );
-  const size_t hard_max_edges =
-    cmgdb_detail::map_graph_hard_limit_from_env (
-      "CMGDB_MAPGRAPH_HARD_MAX_EDGES" );
-  const size_t hard_max_cache_bytes =
-    cmgdb_detail::map_graph_hard_limit_from_env (
-      "CMGDB_MAPGRAPH_HARD_MAX_CACHE_BYTES" );
+/// build_cache
+///    Structural intent: evaluate the multivalued map F(v) = cover(f(geo(v)))
+///    exactly once per grid element, storing the resulting digraph in CSR
+///    form (csr_offsets_, csr_edges_). The graph algorithms (strongly
+///    connected components for the recurrent sets, reachability for the
+///    Morse graph partial order) then read this stored digraph instead of
+///    re-evaluating the map on every pass. Evaluation proceeds in chunks so
+///    that maps providing a batched interface (Map::has_batch) receive many
+///    rectangles per call -- for Python-defined maps this means one Python
+///    call per chunk instead of one per rectangle. The adjacency lists this
+///    produces are identical, element for element, to the on-demand path.
+///
+///    Limits. options_.max_cached_edges is a soft limit: the cache is
+///    abandoned and the graph stays lazy. The opt-in environment limits
+///    CMGDB_MAPGRAPH_HARD_MAX_{VERTICES,EDGES,CACHE_BYTES} are hard: they
+///    raise before the CSR grows past them (the edge array's capacity is
+///    clipped to them too). CMGDB_MAPGRAPH_RESERVE_EDGES reserves that many
+///    edges up front once the grid has CMGDB_MAPGRAPH_RESERVE_MIN_VERTICES
+///    vertices, capped at max_cached_edges when that is set. All of these
+///    are read, and malformed values rejected, on every call (see
+///    cmgdb_detail::map_graph_env).
+inline void
+MapGraph::build_cache ( void ) {
+  if ( cached_ ) return;
+  const uint64_t n = num_vertices ();
+
+  // Opt-in hard limits and the up-front reservation hint.
+  const cmgdb_detail::MapGraphEnv env = cmgdb_detail::map_graph_env ();
+  const size_t env_reserve_edges = env . reserve_edges;
+  const size_t env_reserve_min_vertices = env . reserve_min_vertices;
+  const size_t hard_max_vertices = env . hard_max_vertices;
+  const size_t hard_max_edges = env . hard_max_edges;
+  const size_t hard_max_cache_bytes = env . hard_max_cache_bytes;
   if ( n > hard_max_vertices ) {
     std::ostringstream message;
     message << "MapGraph vertex count " << n
@@ -254,14 +374,14 @@ MapGraph::initialize ( void ) {
             << hard_max_vertices;
     throw std::runtime_error ( message . str () );
   }
-  if ( n == std::numeric_limits<size_t>::max () ) {
+  if ( n >= std::numeric_limits<size_t>::max () ) {
     throw std::overflow_error ( "MapGraph vertex count cannot form V+1 offsets" );
   }
   const size_t offset_count = n + 1;
-  if ( offset_count > std::numeric_limits<size_t>::max () / sizeof ( size_t ) ) {
+  if ( offset_count > std::numeric_limits<size_t>::max () / sizeof ( uint64_t ) ) {
     throw std::overflow_error ( "MapGraph CSR offset byte count overflows size_t" );
   }
-  const size_t offset_bytes = offset_count * sizeof ( size_t );
+  const size_t offset_bytes = offset_count * sizeof ( uint64_t );
   if ( offset_bytes > hard_max_cache_bytes ) {
     std::ostringstream message;
     message << "MapGraph CSR offsets require " << offset_bytes
@@ -269,244 +389,205 @@ MapGraph::initialize ( void ) {
             << hard_max_cache_bytes;
     throw std::runtime_error ( message . str () );
   }
-  const size_t maximum_edges_by_bytes =
-    ( hard_max_cache_bytes - offset_bytes ) / sizeof ( Vertex );
-  const size_t maximum_edge_capacity =
-    std::min ( hard_max_edges, maximum_edges_by_bytes );
+  const size_t maximum_edge_capacity = std::min (
+    hard_max_edges, ( hard_max_cache_bytes - offset_bytes ) / sizeof ( Vertex ) );
+  const bool hard_limited =
+    maximum_edge_capacity != std::numeric_limits<size_t>::max ();
 
-  const auto reserve_edges_for_required =
-    [ & ] ( const size_t required_capacity ) {
-      if ( required_capacity > maximum_edge_capacity ) {
+  // Raise before a row would take the CSR past a hard limit. Under a hard
+  // limit the capacity is grown here, geometrically but clipped to the
+  // limit, so that the vector's own doubling cannot overshoot it.
+  const auto append_row = [ & ] ( const std::vector<Vertex> & targets ) {
+    const size_t edge_count = csr_edges_ . size ();
+    if ( targets . size () > hard_max_edges or
+         edge_count > hard_max_edges - targets . size () ) {
+      std::ostringstream message;
+      message << "MapGraph edge count would exceed "
+              << "CMGDB_MAPGRAPH_HARD_MAX_EDGES=" << hard_max_edges;
+      throw std::runtime_error ( message . str () );
+    }
+    const size_t required = edge_count + targets . size ();
+    if ( hard_limited ) {
+      if ( required > maximum_edge_capacity ) {
         std::ostringstream message;
-        message << "MapGraph CSR needs at least " << required_capacity
+        message << "MapGraph CSR needs at least " << required
                 << " edge slots, above the configured hard edge/cache-byte "
                    "limit of " << maximum_edge_capacity;
         throw std::runtime_error ( message . str () );
       }
-      if ( required_capacity <= csr_edges_ . capacity () ) return;
-      const size_t old_capacity = csr_edges_ . capacity ();
-      size_t grown_capacity = required_capacity;
-      if ( old_capacity <= std::numeric_limits<size_t>::max () -
-                            std::max ( old_capacity, BATCH_CHUNK ) ) {
-        grown_capacity = std::max (
-          required_capacity,
-          old_capacity + std::max ( old_capacity, BATCH_CHUNK ) );
-      }
-      csr_edges_ . reserve (
-        std::min ( grown_capacity, maximum_edge_capacity ) );
-    };
-
-  const auto checked_required_edges =
-    [ & ] ( const size_t edge_count, const size_t additional_edges ) {
-      if ( edge_count > hard_max_edges or
-           additional_edges > hard_max_edges - edge_count ) {
-        std::ostringstream message;
-        message << "MapGraph edge count would exceed "
-                << "CMGDB_MAPGRAPH_HARD_MAX_EDGES=" << hard_max_edges;
-        throw std::runtime_error ( message . str () );
-      }
-      if ( additional_edges >
-             std::numeric_limits<size_t>::max () - edge_count ) {
-        throw std::overflow_error ( "MapGraph CSR edge count overflows size_t" );
-      }
-      return edge_count + additional_edges;
-    };
-
-  if ( f_ -> has_optimized_batch () ) {
-    // Append each batch directly to CSR. The old full-size
-    // vector<vector<Vertex>> staging area alone cost 384 MiB at 2^24
-    // vertices, then duplicated all edge storage while flattening.
-    csr_offsets_ . clear ();
-    csr_edges_ . clear ();
-    csr_offsets_ . reserve ( n + 1 );
-    if ( edge_reserve > 0 and n >= reserve_min_vertices ) {
-      reserve_edges_for_required (
-        std::min ( edge_reserve, maximum_edge_capacity ) );
-    }
-    csr_offsets_ . push_back ( 0 );
-    size_t edge_count = 0;
-
-    for ( size_t start = 0; start < n; start += BATCH_CHUNK ) {
-      const size_t end = std::min ( start + BATCH_CHUNK, n );
-      std::vector<Vertex> sources;
-      sources.reserve ( end - start );
-      for ( size_t source = start; source < end; ++ source ) {
-        sources.push_back ( source );
-      }
-      std::vector<std::vector<Vertex> > chunk_adjacencies =
-        compute_adjacencies_batch ( sources );
-      size_t chunk_edge_count = 0;
-      for ( const auto & adjacency : chunk_adjacencies ) {
-        chunk_edge_count =
-          checked_required_edges ( chunk_edge_count, adjacency . size () );
-      }
-
-      // Grow geometrically rather than letting each chunk's insert reallocate
-      // on its own; an explicit hard limit, when present, clips that growth.
-      const size_t required_capacity =
-        checked_required_edges ( edge_count, chunk_edge_count );
-      reserve_edges_for_required ( required_capacity );
-
-      for ( auto & adjacency : chunk_adjacencies ) {
-        csr_edges_ . insert (
-          csr_edges_ . end (), adjacency . begin (), adjacency . end () );
-        edge_count += adjacency . size ();
-        csr_offsets_ . push_back ( edge_count );
+      if ( required > csr_edges_ . capacity () ) {
+        const size_t old_capacity = csr_edges_ . capacity ();
+        const size_t growth = std::max ( old_capacity, size_t ( 65536 ) );
+        size_t grown = required;
+        if ( old_capacity <= std::numeric_limits<size_t>::max () - growth ) {
+          grown = std::max ( required, old_capacity + growth );
+        }
+        csr_edges_ . reserve ( std::min ( grown, maximum_edge_capacity ) );
       }
     }
-    stored_graph = true;
-    return;
-  }
+    csr_edges_ . insert ( csr_edges_ . end (), targets . begin (), targets . end () );
+    csr_offsets_ . push_back ( csr_edges_ . size () );
+  };
 
-  // The scalar callback path used to retain a vector for every source and
-  // then copy the complete edge set into CSR.  Atlas callbacks currently use
-  // this path.  Append each completed row directly instead: the ordering and
-  // graph are identical, while peak memory no longer includes a second copy
-  // of every edge or a vector object for every vertex.
   csr_offsets_ . clear ();
   csr_edges_ . clear ();
   csr_offsets_ . reserve ( n + 1 );
-  if ( edge_reserve > 0 and n >= reserve_min_vertices ) {
-    reserve_edges_for_required (
-      std::min ( edge_reserve, maximum_edge_capacity ) );
-  }
   csr_offsets_ . push_back ( 0 );
-  size_t edge_count = 0;
-  for ( size_type source = 0; source < n; ++ source ) {
-    std::vector<Vertex> adjacency = compute_adjacencies ( source );
-    const size_t required_capacity =
-      checked_required_edges ( edge_count, adjacency . size () );
-    reserve_edges_for_required ( required_capacity );
-    csr_edges_ . insert (
-      csr_edges_ . end (), adjacency . begin (), adjacency . end () );
-    edge_count += adjacency . size ();
-    csr_offsets_ . push_back ( edge_count );
+  if ( env_reserve_edges > 0 and n >= env_reserve_min_vertices ) {
+    // Capped like the projected reservation below: a cache that outgrows
+    // max_cached_edges is abandoned.
+    size_t env_target = std::min ( env_reserve_edges, maximum_edge_capacity );
+    if ( options_ . max_cached_edges > 0 and
+         options_ . max_cached_edges < (uint64_t) env_target ) {
+      env_target = (size_t) options_ . max_cached_edges;
+    }
+    csr_edges_ . reserve ( env_target );
   }
-  stored_graph = true;
-  return;
-#ifdef CMDB_STORE_GRAPH
-  
-  // Determine whether it is efficient to use an MPI job to store the graph
-  if ( num_vertices () < 10000 ) {
-    stored_graph = false;
-    return;
-  }
-  stored_graph = true;
-  
-  // Make a file with required integrations
-  MapEvals evals;
-  evals . parameter () = f . parameter ();
-  for ( size_type source = 0; source < num_vertices (); ++ source ) {
-    Vertex domain_cell = lookup ( source );
-    evals . insert ( domain_cell );
-  }
-  
-  std::cout << "Saving grid to file.\n";
-  // Save the grid and a list of required evaluations to disk
-  grid_ -> save ("grid.txt");
-  evals . save ( "mapevals.txt" );
-  
-  // Call a program to compute the adjacency information
-  std::cout << "Calling MPI program to evaluate map.\n";
-  system("./COMPUTEGRAPHSCRIPT");
-  std::cout << "MPI program returned.\n";
 
-  // Load and store the adjacency information
-  evals . load ( "mapevals.txt" );
-  adjacency_lists_ . resize ( num_vertices () );
-  for ( size_type source = 0; source < num_vertices (); ++ source ) {
-    Vertex domain_cell = lookup ( source );    
-    index ( &adjacency_lists_ [ source ], evals . val ( domain_cell ) );
+  // The flat-buffer batch path requires rectangle geometry; fall back to
+  // per-element evaluation for grids with other geometry types.
+  bool use_batch = f_ -> has_batch () && n > 0 &&
+    ( std::dynamic_pointer_cast<RectGeo> ( grid_ -> geometry ( (Vertex) 0 ) ) != nullptr );
+
+  const uint64_t chunk = options_ . chunk_size > 0 ? options_ . chunk_size : n;
+  std::vector<double> rects;
+  std::vector<double> images;
+
+  // A failed build (a hard limit, a map that raises) leaves the graph lazy
+  // and releases the partial CSR.
+  try {
+  for ( uint64_t start = 0; start < n; start += chunk ) {
+    const uint64_t stop = std::min ( start + chunk, n );
+    if ( use_batch ) {
+      // Gather rectangle bounds for this chunk into a flat buffer.
+      const uint64_t count = stop - start;
+      uint64_t dim = 0;
+      rects . clear ();
+      for ( uint64_t v = start; v < stop; ++ v ) {
+        std::shared_ptr<RectGeo> rect =
+          std::dynamic_pointer_cast<RectGeo> ( grid_ -> geometry ( (Vertex) v ) );
+        if ( not rect ) {
+          throw std::logic_error ( "MapGraph::build_cache. Mixed geometry types in grid.\n" );
+        }
+        dim = rect -> dimension ();
+        rects . insert ( rects . end (), rect -> lower_bounds . begin (),
+                         rect -> lower_bounds . end () );
+        rects . insert ( rects . end (), rect -> upper_bounds . begin (),
+                         rect -> upper_bounds . end () );
+      }
+      // One map evaluation for the whole chunk.
+      f_ -> batch_map ( rects, count, dim, images );
+      // Cover each image rectangle to produce the adjacency lists.
+      RectGeo image ( dim );
+      for ( uint64_t i = 0; i < count; ++ i ) {
+        const double * bounds = images . data () + i * 2 * dim;
+        for ( uint64_t d = 0; d < dim; ++ d ) {
+          image . lower_bounds [ d ] = bounds [ d ];
+          image . upper_bounds [ d ] = bounds [ dim + d ];
+        }
+        append_row ( grid_ -> cover ( image ) );
+      }
+    } else {
+      for ( uint64_t v = start; v < stop; ++ v ) {
+        append_row ( compute_adjacencies ( (Vertex) v ) );
+      }
+    }
+    // Bound the cache: on overflow abandon it and fall back to on-demand
+    // evaluation rather than exhausting memory.
+    if ( options_ . max_cached_edges > 0 &&
+         (uint64_t) csr_edges_ . size () > options_ . max_cached_edges ) {
+      csr_offsets_ . clear ();
+      csr_edges_ . clear ();
+      csr_offsets_ . shrink_to_fit ();
+      csr_edges_ . shrink_to_fit ();
+      cached_ = false;
+      return;
+    }
+    if ( stop < n ) {
+      // Project the final edge count from the edge density seen so far.
+      // The projection sizes the up-front reservation of the flat edge
+      // array -- a deep uniform grid's multi-gigabyte edge array is then
+      // allocated (nearly) once instead of repeatedly doubled with a
+      // transient ~3x memory peak -- and lets a user-set cap fail fast
+      // instead of building a doomed cache all the way up to the cap.
+      // Chunks follow the tree order (a spatial sweep), so early density
+      // can be biased; the projection is therefore refreshed every chunk,
+      // the auto reservation doubles it for headroom, and the early cap
+      // abandon requires a 2x margin of confidence (the exact check above
+      // remains authoritative).
+      const double density = (double) csr_edges_ . size () / (double) stop;
+      const uint64_t projected = (uint64_t) ( density * (double) n ) + 1;
+      if ( options_ . max_cached_edges > 0 &&
+           projected > 2 * options_ . max_cached_edges ) {
+        csr_offsets_ . clear ();
+        csr_edges_ . clear ();
+        csr_offsets_ . shrink_to_fit ();
+        csr_edges_ . shrink_to_fit ();
+        cached_ = false;
+        return;
+      }
+      if ( projected >= options_ . reserve_min_edges ) {
+        uint64_t target = options_ . reserve_edges > 0 ?
+          options_ . reserve_edges : 2 * projected;
+        if ( options_ . max_cached_edges > 0 ) {
+          target = std::min ( target, options_ . max_cached_edges );
+        }
+        target = std::min ( target, (uint64_t) maximum_edge_capacity );
+        if ( target > (uint64_t) csr_edges_ . capacity () ) {
+          try {
+            csr_edges_ . reserve ( target );
+          } catch ( std::bad_alloc const& ) {
+            // The reservation is an optimization only; fall back to
+            // ordinary vector growth if the allocator refuses it.
+          }
+        }
+      }
+    }
   }
-  std::cout << "Map stored.\n";
-#endif
+  } catch ( ... ) {
+    csr_offsets_ . clear ();
+    csr_edges_ . clear ();
+    csr_offsets_ . shrink_to_fit ();
+    csr_edges_ . shrink_to_fit ();
+    cached_ = false;
+    throw;
+  }
+  cached_ = true;
 }
 
 inline std::vector<MapGraph::Vertex>
 MapGraph::adjacencies ( const size_type & source ) const {
-  if ( stored_graph ) {
-    size_t begin = csr_offsets_ [ source ];
-    size_t end = csr_offsets_ [ source + 1 ];
-    return std::vector<Vertex> ( csr_edges_ . begin () + begin,
-                                 csr_edges_ . begin () + end );
+  if ( cached_ ) {
+    return std::vector<Vertex> ( csr_edges_ . begin () + csr_offsets_ [ source ],
+                                 csr_edges_ . begin () + csr_offsets_ [ source + 1 ] );
   }
   return compute_adjacencies ( source );
 }
 
-inline MapGraph::AdjacencyView
-MapGraph::adjacencies_view ( const size_type & source ) const {
-  if ( stored_graph ) {
-    size_t begin = csr_offsets_ [ source ];
-    size_t end = csr_offsets_ [ source + 1 ];
-    if ( begin == end ) {
-      return { nullptr, nullptr, 0 };
-    }
+inline MapGraph::AdjacencySpan
+MapGraph::adjacency_span ( const size_type & source ) const {
+  if ( cached_ ) {
     const Vertex * base = csr_edges_ . data ();
-    return { base + begin, base + end, end - begin };
+    return { base + csr_offsets_ [ source ], base + csr_offsets_ [ source + 1 ] };
   }
-  thread_local std::vector<Vertex> lazy_adjacencies;
-  lazy_adjacencies = compute_adjacencies ( source );
-  if ( lazy_adjacencies . empty () ) {
-    return { nullptr, nullptr, 0 };
-  }
-  return { lazy_adjacencies . data (),
-           lazy_adjacencies . data () + lazy_adjacencies . size (),
-           lazy_adjacencies . size () };
+  scratch_ = compute_adjacencies ( source );
+  return { scratch_ . data (), scratch_ . data () + scratch_ . size () };
 }
 
 inline std::vector<MapGraph::Vertex>
 MapGraph::compute_adjacencies ( const Vertex & source ) const {
-  std::vector < Vertex > target = 
+  std::vector < Vertex > target =
     grid_ -> cover ( (*f_) ( grid_ -> geometry ( source ) ) ); // here is the work
   return target;
 }
 
-inline std::vector<std::vector<MapGraph::Vertex> >
-MapGraph::compute_adjacencies_batch ( const std::vector<size_type> & sources ) const {
-  std::vector<std::shared_ptr<Geo> > geos;
-  geos.reserve ( sources . size () );
-  for ( const size_type & source : sources ) {
-    geos.push_back ( grid_ -> geometry ( source ) );
-  }
-
-  std::vector<std::shared_ptr<Geo> > image_geos = f_ -> batch_map ( geos );
-  if ( image_geos . size () != sources . size () ) {
-    throw std::runtime_error ( "MapGraph::compute_adjacencies_batch received the wrong number of images" );
-  }
-
-  std::vector<std::vector<Vertex> > result;
-  result.reserve ( sources . size () );
-  for ( const auto & image_geo : image_geos ) {
-    result.push_back ( grid_ -> cover ( image_geo ) );
-  }
-  return result;
-}
-
-inline void
-MapGraph::build_csr_from_staging ( std::vector<std::vector<Vertex> > & staging ) {
-  csr_offsets_ . clear ();
-  csr_edges_ . clear ();
-  csr_offsets_ . reserve ( staging . size () + 1 );
-  csr_offsets_ . push_back ( 0 );
-
-  size_t total_edges = 0;
-  for ( const auto & adj : staging ) {
-    total_edges += adj . size ();
-    csr_offsets_ . push_back ( total_edges );
-  }
-
-  csr_edges_ . reserve ( total_edges );
-  for ( auto & adj : staging ) {
-    csr_edges_ . insert ( csr_edges_ . end (), adj . begin (), adj . end () );
-    std::vector<Vertex> () . swap ( adj );
-  }
-}
-
 inline void
 MapGraph::validate_cached_csr ( void ) const {
-  if ( not stored_graph ) {
+  if ( not cached_ ) {
     throw std::runtime_error (
-      "MapGraph CSR export requires CMGDB_MAPGRAPH_CACHE to be enabled" );
+      "MapGraph CSR export requires a cached MapGraph (CMGDB_MAPGRAPH_CACHE "
+      "enabled, cache_map_graph=True, or build_cache(); a graph over "
+      "max_cached_edges stays lazy)" );
   }
   const size_t n = static_cast<size_t> ( num_vertices () );
   if ( csr_offsets_ . size () != n + 1 or csr_offsets_ . empty () or
@@ -553,23 +634,30 @@ inline void
 MapGraphBinding(py::module &m) {
   py::class_<MapGraph, std::shared_ptr<MapGraph>>(m, "MapGraph")
     .def(py::init<std::shared_ptr<const Grid>, std::shared_ptr<const Map>>())
-    // .def(py::init<std::shared_ptr<const Grid>, std::shared_ptr<const Model>>())
+    .def(py::init([](std::shared_ptr<const Grid> grid,
+                     std::shared_ptr<const Map> f, bool cache) {
+           return new MapGraph ( grid, f, MapGraphOptions ( cache ) );
+         }),
+         py::arg("grid"), py::arg("map"), py::arg("cache"))
     .def("num_vertices", &MapGraph::num_vertices)
     .def("has_cache", &MapGraph::has_cache)
     .def("num_cached_edges", &MapGraph::num_cached_edges)
+    .def("build_cache", &MapGraph::build_cache,
+         "Build the CSR transition-graph cache now (no-op if already built). "
+         "Upgrades a lazily returned map_graph to a cached one at the cost "
+         "of one full pass of map evaluations over the grid.")
     .def(
       "csr_view",
       [] ( const std::shared_ptr<MapGraph> & graph ) {
         graph -> validate_cached_csr ();
-        if ( sizeof ( size_t ) != sizeof ( int64_t ) or
-             sizeof ( MapGraph::Vertex ) != sizeof ( int64_t ) ) {
+        if ( sizeof ( MapGraph::Vertex ) != sizeof ( int64_t ) ) {
           throw std::runtime_error (
             "MapGraph zero-copy CSR view requires 64-bit native indices" );
         }
         if ( graph -> num_vertices () >
                static_cast<uint64_t> ( std::numeric_limits<int64_t>::max () - 1 ) or
              graph -> num_cached_edges () >
-               static_cast<size_t> ( std::numeric_limits<int64_t>::max () ) ) {
+               static_cast<uint64_t> ( std::numeric_limits<int64_t>::max () ) ) {
           throw std::overflow_error (
             "MapGraph CSR does not fit signed int64 NumPy indexing" );
         }

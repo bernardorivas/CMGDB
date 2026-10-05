@@ -1,0 +1,117 @@
+# Continuous integration: build from source, run the test suite, and run
+# the benchmark quick suite as a correctness gate (it validates the computed
+# Morse graphs, reachability, and Conley indices against frozen references
+# in benchmarks/references.json and fails on any mismatch) — on every
+# platform the wheels are published for.
+#
+# Linux and macOS use system Boost/GMP (apt/brew). Windows builds Boost
+# from source and GMP via vcpkg, both cached so only the first run on a
+# given platform pays the build cost.
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm,
+             macos-latest, macos-15-intel,
+             windows-latest, windows-11-arm]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libboost-all-dev
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install boost
+
+      # x64 uses the official prebuilt MSVC binaries (minutes instead of the
+      # ~40-60 minute source build); no prebuilt exists for ARM64, which
+      # builds from source behind a cache
+      - name: Install Boost (Windows x64, prebuilt)
+        if: runner.os == 'Windows' && runner.arch == 'X64'
+        run: |
+          curl -L --fail --retry 3 -o boost_prebuilt.exe https://archives.boost.io/release/1.88.0/binaries/boost_1_88_0-msvc-14.3-64.exe
+          # The prebuilt binaries ship as an Inno Setup installer (not a 7z
+          # self-extractor); run it silently and wait for it to finish
+          powershell -Command "Start-Process -FilePath 'boost_prebuilt.exe' -ArgumentList '/VERYSILENT','/NORESTART','/SP-','/SUPPRESSMSGBOXES','/DIR=C:\boost_prebuilt' -Wait"
+          test -d /c/boost_prebuilt/lib64-msvc-14.3 || { echo "unexpected Boost layout:"; ls /c/boost_prebuilt; exit 1; }
+          echo "BOOST_ROOT=C:/boost_prebuilt" >> $GITHUB_ENV
+          echo "Boost_DIR=C:/boost_prebuilt/lib64-msvc-14.3/cmake/Boost-1.88.0" >> $GITHUB_ENV
+        shell: bash
+
+      # restore/save are split so the ~40-minute Boost build is saved as
+      # soon as it finishes, even if a later step of the job fails (the
+      # combined cache action only saves when the whole job succeeds)
+      - name: Restore Boost cache (Windows ARM)
+        if: runner.os == 'Windows' && runner.arch == 'ARM64'
+        id: cache-boost
+        uses: actions/cache/restore@v6
+        with:
+          path: C:/boost
+          key: boost-1.88.0-static-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Build Boost (Windows ARM)
+        if: runner.os == 'Windows' && runner.arch == 'ARM64' && steps.cache-boost.outputs.cache-hit != 'true'
+        run: |
+          curl -L -o boost_1_88_0.tar.bz2 https://archives.boost.io/release/1.88.0/source/boost_1_88_0.tar.bz2
+          tar --bzip2 -xf boost_1_88_0.tar.bz2
+          cd boost_1_88_0
+          ./bootstrap.sh --prefix=C:/boost
+          ./b2 install -d0 -j4 toolset=msvc architecture=arm address-model=64 \
+            link=static variant=release \
+            --with-chrono --with-thread --with-serialization --with-date_time --with-atomic
+          echo "Installed Boost libraries:"
+          ls /c/boost/lib
+        shell: bash
+
+      - name: Save Boost cache (Windows ARM)
+        if: runner.os == 'Windows' && runner.arch == 'ARM64' && steps.cache-boost.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: C:/boost
+          key: boost-1.88.0-static-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Set library roots (Windows ARM)
+        if: runner.os == 'Windows' && runner.arch == 'ARM64'
+        run: |
+          # x64 BOOST_ROOT/Boost_DIR are set by the prebuilt install step
+          echo "BOOST_ROOT=C:/boost" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Build and install
+        run: pip install .
+
+      - name: Run tests
+        run: |
+          pip install pytest
+          pytest tests/ -q
+
+      - name: Benchmark correctness gate
+        run: python benchmarks/benchmark.py --repeat 1 --timeout 900

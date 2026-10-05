@@ -10,9 +10,19 @@
 #include <cstdint>
 #include <limits>
 #include <tuple>
+#include <optional>
 
 // #define CMG_VERBOSE
 #define MEMORYBOOKKEEPING
+
+// The AtlasModel bindings need joinImpl<Atlas>, which join.h compiles only
+// under CMGDB_USE_ATLAS: without it the extension still builds, but every
+// Atlas Morse graph computation throws at run time. CMakeLists.txt defines
+// it. Atlas.h includes the vendored sdsl-lite (RankSelect.h), so this fork
+// always compiles sdsl, even though SuccinctGrid stays optional (below).
+#ifndef CMGDB_USE_ATLAS
+#error "CMGDB_USE_ATLAS must be defined: the AtlasModel bindings join Atlas grids (see CMakeLists.txt)"
+#endif
 
 #include "Model.h"
 #include "AtlasModel.h"
@@ -227,8 +237,14 @@ ComputeRelativeHomologyShiftClass (
 } // namespace
 
 #include <boost/serialization/export.hpp>
+// The succinct (sdsl-backed) grid is optional: the phase grid is
+// PointerGrid and nothing constructs a SuccinctGrid, so default builds do
+// not compile against the vendored sdsl-lite at all. Define
+// CMGDB_USE_SUCCINCT to enable it.
+#ifdef CMGDB_USE_SUCCINCT
 #include "SuccinctGrid.h"
 BOOST_CLASS_EXPORT_IMPLEMENT(SuccinctGrid);
+#endif
 #include "PointerGrid.h"
 BOOST_CLASS_EXPORT_IMPLEMENT(PointerGrid);
 
@@ -251,6 +267,10 @@ ComputeConleyIndexForCells (
     const Model & model,
     MorseGraph & morse_graph,
     std::vector < uint64_t > cells ) {
+  // Conley index of an arbitrary cell subset of the final phase-space grid.
+  // Mixed-depth (adaptive-grid) cell sets are supported: the chomp machinery
+  // refines every cell to the finest depth present in the set, preserving
+  // the region exactly.
   std::shared_ptr < TreeGrid > phase_space_chomp =
     std::dynamic_pointer_cast<TreeGrid> ( morse_graph . phaseSpace () );
   if ( not phase_space_chomp ) {
@@ -277,16 +297,20 @@ ComputeConleyIndexForCells (
   return conleyIndexString ( conley_index );
 }
 
-// Shared body of the four Compute*MorseGraph entry points.
+// Shared body of the Compute*MorseGraph entry points.
 //
 // `initial_phase_space`, when non-null, receives the grid pointer captured
 // *before* the decomposition runs. That is deliberate and must not be replaced
 // by `morsegraph.phaseSpace()`: Compute_Morse_Graph reassigns the graph's own
 // phase space to a joined master grid, so after the call the two are different
 // objects, and the historical MapGraph construction uses the original.
+//
+// `options` governs the per-level transition-graph cache; its chunk_size also
+// chunks the batched map evaluations of the Conley phase.
 static MorseGraph ComputeMorseGraphCore (
     Model const& model,
     bool compute_conley_index,
+    MapGraphOptions const& options,
     std::shared_ptr < Grid > * initial_phase_space ) {
   std::shared_ptr<const Map> map = model . map ();
   MorseGraph morsegraph ( model . phaseSpace () );
@@ -300,7 +324,8 @@ static MorseGraph ComputeMorseGraphCore (
 
   // Compute Morse graph
   Compute_Morse_Graph ( & morsegraph, phase_space, map, phase_subdiv_init,
-                        phase_subdiv_min, phase_subdiv_max, phase_subdiv_limit );
+                        phase_subdiv_min, phase_subdiv_max, phase_subdiv_limit,
+                        options );
 
   if ( compute_conley_index ) {
     std::shared_ptr < TreeGrid > phase_space_chomp =
@@ -315,7 +340,10 @@ static MorseGraph ComputeMorseGraphCore (
       Subset subset = phase_space_chomp -> subset ( * morsegraph . grid ( v ) );
       std::shared_ptr<chomp::ConleyIndex_t> conley ( new chomp::ConleyIndex_t );
       morsegraph . conleyIndex ( v ) = conley;
-      ChompMap chomp_map ( map );
+      // The Conley phase gathers its map evaluations and runs them through
+      // the batched evaluator when the model provides one, chunked by the
+      // same batch_chunk_size that governs the transition-graph passes.
+      ChompMap chomp_map ( map, options . chunk_size );
       chomp::ConleyIndex ( conley . get (), *phase_space_chomp, subset, chomp_map );
     }
   }
@@ -323,12 +351,57 @@ static MorseGraph ComputeMorseGraphCore (
   return morsegraph;
 }
 
-std::pair<MorseGraph, MapGraph> ComputeConleyMorseGraph ( Model const& model ) {
-  std::shared_ptr < Grid > phase_space;
-  MorseGraph morsegraph = ComputeMorseGraphCore ( model, true, & phase_space );
+// cache_transition_graph and cache_map_graph: None (the default) caches
+// unless CMGDB_MAPGRAPH_CACHE=0; an explicit True or False is obeyed.
+static bool ResolveCacheFlag ( std::optional<bool> const& flag ) {
+  return flag ? * flag : cmgdb_detail::map_graph_cache_enabled ();
+}
 
-  // Compute multi-valued map digraph
-  MapGraph map_graph ( phase_space, model . map () );
+static MapGraphOptions TransitionGraphOptions (
+    std::optional<bool> cache_transition_graph,
+    uint64_t batch_chunk_size,
+    uint64_t max_cached_edges,
+    uint64_t reserve_edges,
+    uint64_t reserve_min_edges ) {
+  return MapGraphOptions ( ResolveCacheFlag ( cache_transition_graph ),
+                           batch_chunk_size, max_cached_edges,
+                           reserve_edges, reserve_min_edges );
+}
+
+// Compute multi-valued map digraph on the final grid. A cached graph costs
+// one extra full (batched, if available) map pass over the grid and then
+// answers adjacency queries without the map; a lazy one evaluates the map
+// on demand per adjacency query and can be upgraded with build_cache().
+// The callers resolve cache_map_graph before the computation, so that a
+// malformed CMGDB_MAPGRAPH_CACHE fails before the first map evaluation.
+// When a cache will be built they also read the CMGDB_MAPGRAPH_RESERVE_*
+// and CMGDB_MAPGRAPH_HARD_MAX_* variables first (MapGraphEnv): with lazy
+// transition graphs this graph's build would otherwise be the first to read
+// them, after all Morse and Conley work.
+static MapGraph ReturnedMapGraph ( std::shared_ptr < Grid > phase_space,
+                                   std::shared_ptr<const Map> map,
+                                   MapGraphOptions options,
+                                   bool cache_map_graph ) {
+  options . cache = cache_map_graph;
+  return MapGraph ( phase_space, map, options );
+}
+
+std::pair<MorseGraph, MapGraph> ComputeConleyMorseGraph ( Model const& model,
+                                                          std::optional<bool> cache_transition_graph = std::nullopt,
+                                                          uint64_t batch_chunk_size = 65536,
+                                                          uint64_t max_cached_edges = 0,
+                                                          uint64_t reserve_edges = 0,
+                                                          uint64_t reserve_min_edges = uint64_t ( 1 ) << 24,
+                                                          std::optional<bool> cache_map_graph = std::nullopt ) {
+  MapGraphOptions options = TransitionGraphOptions (
+    cache_transition_graph, batch_chunk_size, max_cached_edges,
+    reserve_edges, reserve_min_edges );
+  const bool cache_returned = ResolveCacheFlag ( cache_map_graph );
+  if ( options . cache or cache_returned ) cmgdb_detail::map_graph_env ();
+  std::shared_ptr < Grid > phase_space;
+  MorseGraph morsegraph = ComputeMorseGraphCore ( model, true, options, & phase_space );
+  MapGraph map_graph = ReturnedMapGraph ( phase_space, model . map (), options,
+                                          cache_returned );
 
   return std::make_pair ( morsegraph, map_graph );
 }
@@ -339,28 +412,57 @@ std::pair<MorseGraph, MapGraph> ComputeConleyMorseGraph ( Model const& model ) {
 // space, built after all Morse and Conley work is done. Callers that do not
 // need it (for instance, anything not computing regions of attraction) were
 // paying roughly half of all box-map evaluations for an object they discard.
-MorseGraph ComputeConleyMorseGraphOnly ( Model const& model ) {
-  return ComputeMorseGraphCore ( model, true, nullptr );
+MorseGraph ComputeConleyMorseGraphOnly ( Model const& model,
+                                         std::optional<bool> cache_transition_graph = std::nullopt,
+                                         uint64_t batch_chunk_size = 65536,
+                                         uint64_t max_cached_edges = 0,
+                                         uint64_t reserve_edges = 0,
+                                         uint64_t reserve_min_edges = uint64_t ( 1 ) << 24 ) {
+  return ComputeMorseGraphCore (
+    model, true,
+    TransitionGraphOptions ( cache_transition_graph, batch_chunk_size,
+                             max_cached_edges, reserve_edges, reserve_min_edges ),
+    nullptr );
 }
 
-std::pair<MorseGraph, MapGraph> ComputeMorseGraph ( Model const& model ) {
+std::pair<MorseGraph, MapGraph> ComputeMorseGraph ( Model const& model,
+                                                    std::optional<bool> cache_transition_graph = std::nullopt,
+                                                    uint64_t batch_chunk_size = 65536,
+                                                    uint64_t max_cached_edges = 0,
+                                                    uint64_t reserve_edges = 0,
+                                                    uint64_t reserve_min_edges = uint64_t ( 1 ) << 24,
+                                                    std::optional<bool> cache_map_graph = std::nullopt ) {
+  MapGraphOptions options = TransitionGraphOptions (
+    cache_transition_graph, batch_chunk_size, max_cached_edges,
+    reserve_edges, reserve_min_edges );
+  const bool cache_returned = ResolveCacheFlag ( cache_map_graph );
+  if ( options . cache or cache_returned ) cmgdb_detail::map_graph_env ();
   std::shared_ptr < Grid > phase_space;
-  MorseGraph morsegraph = ComputeMorseGraphCore ( model, false, & phase_space );
-
-  // Compute multi-valued map digraph
-  MapGraph map_graph ( phase_space, model . map () );
+  MorseGraph morsegraph = ComputeMorseGraphCore ( model, false, options, & phase_space );
+  MapGraph map_graph = ReturnedMapGraph ( phase_space, model . map (), options,
+                                          cache_returned );
 
   return std::make_pair ( morsegraph, map_graph );
 }
 
 // As ComputeMorseGraph, but without building the returned MapGraph.
-MorseGraph ComputeMorseGraphOnly ( Model const& model ) {
-  return ComputeMorseGraphCore ( model, false, nullptr );
+MorseGraph ComputeMorseGraphOnly ( Model const& model,
+                                   std::optional<bool> cache_transition_graph = std::nullopt,
+                                   uint64_t batch_chunk_size = 65536,
+                                   uint64_t max_cached_edges = 0,
+                                   uint64_t reserve_edges = 0,
+                                   uint64_t reserve_min_edges = uint64_t ( 1 ) << 24 ) {
+  return ComputeMorseGraphCore (
+    model, false,
+    TransitionGraphOptions ( cache_transition_graph, batch_chunk_size,
+                             max_cached_edges, reserve_edges, reserve_min_edges ),
+    nullptr );
 }
 
 // Atlas-backed counterpart.  The graph construction itself is grid-generic;
 // Atlas::clone/subgrid/subdivide/join preserve chart tags throughout the
-// adaptive decomposition.
+// adaptive decomposition.  Its caches follow CMGDB_MAPGRAPH_CACHE (default
+// on) and the CMGDB_MAPGRAPH_* limits.
 static MorseGraph ComputeAtlasMorseGraphCore (
     AtlasModel const& model,
     std::shared_ptr < Grid > * initial_phase_space ) {
@@ -376,7 +478,8 @@ static MorseGraph ComputeAtlasMorseGraphCore (
     model . phase_subdiv_init (),
     model . phase_subdiv_min (),
     model . phase_subdiv_max (),
-    model . phase_subdiv_limit () );
+    model . phase_subdiv_limit (),
+    MapGraphOptions ( cmgdb_detail::map_graph_cache_enabled () ) );
   return morsegraph;
 }
 
@@ -497,8 +600,8 @@ ComputeMorseDirectedPathCells (
   while ( not vertex_stack . empty () ) {
     const uint32_t source = vertex_stack . back ();
     vertex_stack . pop_back ();
-    const MapGraph::AdjacencyView adjacency =
-      map_graph . adjacencies_view ( source );
+    const MapGraph::AdjacencySpan adjacency =
+      map_graph . adjacency_span ( source );
     for ( const uint64_t successor : adjacency ) {
       if ( successor >= n ) {
         throw std::runtime_error (
@@ -537,8 +640,8 @@ ComputeMorseDirectedPathCells (
     stack . push_back ( { static_cast<uint32_t> ( raw_vertex ), 0 } );
     while ( not stack . empty () ) {
       Frame & frame = stack . back ();
-      const MapGraph::AdjacencyView adjacency =
-        map_graph . adjacencies_view ( frame . vertex );
+      const MapGraph::AdjacencySpan adjacency =
+        map_graph . adjacency_span ( frame . vertex );
       if ( adjacency . size () > std::numeric_limits<uint32_t>::max () ) {
         throw std::runtime_error (
           "MorseDirectedPathCells found more than 2^32-1 outgoing edges "
@@ -681,8 +784,8 @@ ComputeMorseReachabilityMasks (
       stack . push_back ( { query, 0 } );
       while ( not stack . empty () ) {
         Frame & frame = stack . back ();
-        const MapGraph::AdjacencyView adjacency =
-          map_graph . adjacencies_view ( frame . vertex );
+        const MapGraph::AdjacencySpan adjacency =
+          map_graph . adjacency_span ( frame . vertex );
         if ( adjacency . size () > std::numeric_limits<uint32_t>::max () ) {
           throw std::runtime_error (
             "MorseReachabilityMasks found more than 2^32-1 outgoing edges "
@@ -761,8 +864,8 @@ ComputeMorseSingletonReachability (
 
   // A recurrent node is singleton-reachable exactly when it has no outgoing
   // edge to a distinct Morse node. Otherwise its reachable set already
-  // contains itself plus at least one other node, so MULTIPLE is sufficient;
-  // the full set is not needed for Marcio's strict singleton-basin criterion.
+  // contains itself plus at least one other node, so MULTIPLE is sufficient
+  // for the strict singleton-basin criterion.
   std::vector<int32_t> morse_summary ( number_of_morse_sets, NO_MORSE_NODE );
   for ( size_t node = 0; node < number_of_morse_sets; ++ node ) {
     morse_summary [ node ] = static_cast<int32_t> ( node );
@@ -821,8 +924,8 @@ ComputeMorseSingletonReachability (
       stack . push_back ( { query, 0 } );
       while ( not stack . empty () ) {
         Frame & frame = stack . back ();
-        const MapGraph::AdjacencyView adjacency =
-          map_graph . adjacencies_view ( frame . vertex );
+        const MapGraph::AdjacencySpan adjacency =
+          map_graph . adjacency_span ( frame . vertex );
         if ( adjacency . size () > std::numeric_limits<uint32_t>::max () ) {
           throw std::runtime_error (
             "MorseSingletonReachability found more than 2^32-1 outgoing "
@@ -882,7 +985,8 @@ void computeMorseGraph ( MorseGraph & morsegraph,
                         SINGLECMG_INIT_PHASE_SUBDIVISIONS,
                         SINGLECMG_MIN_PHASE_SUBDIVISIONS,
                         SINGLECMG_MAX_PHASE_SUBDIVISIONS,
-                        SINGLECMG_COMPLEXITY_LIMIT );
+                        SINGLECMG_COMPLEXITY_LIMIT,
+                        MapGraphOptions ( cmgdb_detail::map_graph_cache_enabled () ) );
   if ( outputfile != NULL ) {
     morsegraph . save ( outputfile );
   }
@@ -1395,6 +1499,78 @@ Only ``modulus=5`` is supported. Invalid input raises ``ValueError``,
 ``IndexError`` or ``TypeError`` naming the offending position. The GIL is
 released during the computation.
 )doc" );
+  const char * compute_kwargs_doc =
+    "cache_transition_graph: cache the per-level transition graph used "
+    "internally by the SCC/reachability passes during the computation "
+    "(halves the map evaluations per level). None (default) = on unless "
+    "CMGDB_MAPGRAPH_CACHE=0.\n"
+    "batch_chunk_size: rectangles per batched map call (0 = whole grid).\n"
+    "max_cached_edges: abandon a cache projected/measured to exceed this "
+    "many edges and fall back to on-demand evaluation (0 = unlimited). The "
+    "opt-in CMGDB_MAPGRAPH_HARD_MAX_{VERTICES,EDGES,CACHE_BYTES} limits "
+    "raise instead.\n"
+    "reserve_edges: up-front reservation for the flat edge array; 0 = "
+    "automatic (2x the edge count projected from the first chunk).\n"
+    "reserve_min_edges: reservation engages only when the projected edge "
+    "count reaches this size.\n"
+    "cache_map_graph: cache the *returned* map_graph (one extra full "
+    "batched map pass; required by the native reachability queries, "
+    "csr_view and fast Python-side adjacency sweeps). None (default) = on "
+    "unless CMGDB_MAPGRAPH_CACHE=0; False returns a lazy map_graph that "
+    "evaluates the map per adjacency query, and map_graph.build_cache() "
+    "upgrades it later. The *Only variants skip the returned map_graph.";
+  m.def("ComputeConleyMorseGraph",
+        py::overload_cast<Model const&, std::optional<bool>, uint64_t, uint64_t,
+                          uint64_t, uint64_t, std::optional<bool>> ( &ComputeConleyMorseGraph ),
+        py::arg("model"),
+        py::arg("cache_transition_graph") = py::none(),
+        py::arg("batch_chunk_size") = 65536,
+        py::arg("max_cached_edges") = 0,
+        py::arg("reserve_edges") = 0,
+        py::arg("reserve_min_edges") = uint64_t ( 1 ) << 24,
+        py::arg("cache_map_graph") = py::none(),
+        compute_kwargs_doc);
+  m.def("ComputeConleyMorseGraph",
+        py::overload_cast<AtlasModel const&> ( &ComputeConleyMorseGraph ));
+  m.def("ComputeMorseGraph",
+        py::overload_cast<Model const&, std::optional<bool>, uint64_t, uint64_t,
+                          uint64_t, uint64_t, std::optional<bool>> ( &ComputeMorseGraph ),
+        py::arg("model"),
+        py::arg("cache_transition_graph") = py::none(),
+        py::arg("batch_chunk_size") = 65536,
+        py::arg("max_cached_edges") = 0,
+        py::arg("reserve_edges") = 0,
+        py::arg("reserve_min_edges") = uint64_t ( 1 ) << 24,
+        py::arg("cache_map_graph") = py::none(),
+        compute_kwargs_doc);
+  m.def("ComputeMorseGraph",
+        py::overload_cast<AtlasModel const&> ( &ComputeMorseGraph ));
+  m.def("ComputeConleyMorseGraphOnly",
+        py::overload_cast<Model const&, std::optional<bool>, uint64_t, uint64_t,
+                          uint64_t, uint64_t> ( &ComputeConleyMorseGraphOnly ),
+        py::arg("model"),
+        py::arg("cache_transition_graph") = py::none(),
+        py::arg("batch_chunk_size") = 65536,
+        py::arg("max_cached_edges") = 0,
+        py::arg("reserve_edges") = 0,
+        py::arg("reserve_min_edges") = uint64_t ( 1 ) << 24,
+        "Conley-Morse graph without the extra returned MapGraph. Skips a full "
+        "box-map pass over the phase space; use when the MapGraph is unused.");
+  m.def("ComputeConleyMorseGraphOnly",
+        py::overload_cast<AtlasModel const&> ( &ComputeConleyMorseGraphOnly ));
+  m.def("ComputeMorseGraphOnly",
+        py::overload_cast<Model const&, std::optional<bool>, uint64_t, uint64_t,
+                          uint64_t, uint64_t> ( &ComputeMorseGraphOnly ),
+        py::arg("model"),
+        py::arg("cache_transition_graph") = py::none(),
+        py::arg("batch_chunk_size") = 65536,
+        py::arg("max_cached_edges") = 0,
+        py::arg("reserve_edges") = 0,
+        py::arg("reserve_min_edges") = uint64_t ( 1 ) << 24,
+        "Morse graph without the extra returned MapGraph. Skips a full "
+        "box-map pass over the phase space; use when the MapGraph is unused.");
+  m.def("ComputeMorseGraphOnly",
+        py::overload_cast<AtlasModel const&> ( &ComputeMorseGraphOnly ));
   m.def(
     "ComputeConleyIndexForCells",
     [] ( const Model & model,
@@ -1412,26 +1588,6 @@ released during the computation.
     py::arg ( "morse_graph" ),
     py::arg ( "cells" ),
     "Compute the Conley index of an arbitrary phase-space cell subset." );
-  m.def("ComputeConleyMorseGraph",
-        py::overload_cast<Model const&> ( &ComputeConleyMorseGraph ));
-  m.def("ComputeConleyMorseGraph",
-        py::overload_cast<AtlasModel const&> ( &ComputeConleyMorseGraph ));
-  m.def("ComputeMorseGraph",
-        py::overload_cast<Model const&> ( &ComputeMorseGraph ));
-  m.def("ComputeMorseGraph",
-        py::overload_cast<AtlasModel const&> ( &ComputeMorseGraph ));
-  m.def("ComputeConleyMorseGraphOnly",
-        py::overload_cast<Model const&> ( &ComputeConleyMorseGraphOnly ),
-        "Conley-Morse graph without the extra returned MapGraph. Skips a full "
-        "box-map pass over the phase space; use when the MapGraph is unused.");
-  m.def("ComputeConleyMorseGraphOnly",
-        py::overload_cast<AtlasModel const&> ( &ComputeConleyMorseGraphOnly ));
-  m.def("ComputeMorseGraphOnly",
-        py::overload_cast<Model const&> ( &ComputeMorseGraphOnly ),
-        "Morse graph without the extra returned MapGraph. Skips a full "
-        "box-map pass over the phase space; use when the MapGraph is unused.");
-  m.def("ComputeMorseGraphOnly",
-        py::overload_cast<AtlasModel const&> ( &ComputeMorseGraphOnly ));
   m.def(
     "MorseDirectedPathCells",
     [] ( const MapGraph & map_graph,
@@ -1454,7 +1610,10 @@ released during the computation.
     py::arg ( "map_graph" ),
     py::arg ( "morse_graph" ),
     py::arg ( "source_nodes" ),
-    py::arg ( "target_nodes" ) );
+    py::arg ( "target_nodes" ),
+    "Cells on some directed path from the source Morse nodes to the target "
+    "Morse nodes. Requires a cached map_graph (cache_map_graph=True or "
+    "map_graph.build_cache())." );
   m.def(
     "MorseReachabilityMasks",
     [] ( const MapGraph & map_graph,
@@ -1475,7 +1634,9 @@ released during the computation.
     },
     py::arg ( "map_graph" ),
     py::arg ( "morse_graph" ),
-    py::arg ( "query_vertices" ) );
+    py::arg ( "query_vertices" ),
+    "Per-query-cell uint64 bitmasks of the Morse nodes reachable through the "
+    "box dynamics (bit i = Morse node i). Requires a cached map_graph." );
   m.def(
     "MorseSingletonReachability",
     [] ( const MapGraph & map_graph,
@@ -1496,7 +1657,10 @@ released during the computation.
     },
     py::arg ( "map_graph" ),
     py::arg ( "morse_graph" ),
-    py::arg ( "query_vertices" ) );
+    py::arg ( "query_vertices" ),
+    "Per-query-cell summary of the reachable Morse nodes: the node id when "
+    "exactly one is reachable, -1 when none, -2 when several. Requires a "
+    "cached map_graph." );
   m.def("MorseGraphIntvalMap", &MorseGraphIntvalMap);
   m.def("MorseGraphMap", &MorseGraphMap);
 }

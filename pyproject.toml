@@ -1,46 +1,111 @@
 [build-system]
-requires = [
-    "setuptools>=42",
-    "wheel",
-    # CMakeLists.txt does find_package(pybind11 CONFIG REQUIRED), which an
-    # isolated build (pip's default) cannot satisfy unless pybind11 is here.
-    "pybind11>=2.12",
-    # CMake 3.30 deprecates the classic FindBoost module that
-    # find_package(Boost COMPONENTS ...) relies on; Boost < 1.70 ships no
-    # BoostConfig.cmake replacement.
-    "cmake>=3.15,<3.30",
+requires = ["scikit-build-core>=0.11", "pybind11>=2.13"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "CMGDB"
+# PEP 440 local version. The public part is the patch release after the
+# upstream release this tree contains (upstream 1.5.2 -> 1.5.3), and the
+# local label marks these artifacts as this fork's: upstream can never
+# publish a +fork.N version, so an ==X+fork.N pin stays unambiguous.
+# Between releases master carries X+fork.N.dev0.
+version = "1.5.3+fork.7.dev0"
+description = "CMGDB (Conley Morse Graph Database) Python Extension"
+readme = "README.md"
+# The extension compiles in the header-only sdsl-lite v3 (BSD-3-Clause),
+# whose rank/select support backs the Atlas grid this fork always builds
+# (CMGDB_USE_ATLAS in CMakeLists.txt). BSD-3's second clause requires its
+# notice to travel with binary redistributions. It also compiles in CHOMP
+# (MIT, Shaun Harker), whose notice in src/CMGDB/_cmgdb/include/chomp/LICENSE
+# falls under wheel.exclude below; licenses/chomp-LICENSE is a copy of it.
+license = "MIT AND BSD-3-Clause"
+license-files = ["LICENSE", "licenses/sdsl-lite-xxsds-LICENSE", "licenses/chomp-LICENSE"]
+authors = [
+  { name = "Marcio Gameiro", email = "marciogameiro@gmail.com" },
 ]
-build-backend = "setuptools.build_meta"
+maintainers = [
+  { name = "Bernardo Rivas", email = "bernardo.apr@gmail.com" },
+]
+requires-python = ">=3.11"
+dependencies = [
+  "graphviz>=0.20",
+  "matplotlib>=3.6.0",
+  "numpy>=1.23.0",
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Science/Research",
+  "Intended Audience :: Education",
+  "Programming Language :: C++",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Operating System :: POSIX",
+  "Operating System :: Unix",
+  "Operating System :: MacOS",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.urls]
+Repository = "https://github.com/bernardorivas/CMGDB"
+Upstream = "https://github.com/marciogameiro/CMGDB"
+
+[tool.scikit-build]
+cmake.build-type = "Release"
+wheel.packages = ["src/CMGDB"]
+build-dir = "build/{wheel_tag}"
+cmake.args = [
+  "-DUSER_PROJECT_PATH=src/CMGDB/_cmgdb",
+]
+# Keep the C++ source tree (including the vendored sdsl headers) out of
+# wheels; the compiled extension _cmgdb.*.so is not under the _cmgdb/
+# directory and is unaffected by this pattern.
+wheel.exclude = [
+  "**/_cmgdb/**",
+]
+# Exclude the example notebooks but keep the small .dat data files:
+# the test and benchmark suites read examples/Leslie_500.dat.
+sdist.exclude = [
+  "examples/*.ipynb",
+  ".github"
+]
 
 [tool.cibuildwheel]
 # Colab runs CPython 3.12 today; 3.11 and 3.13 are headroom in both directions.
 build = "cp311-* cp312-* cp313-*"
 skip = "*-musllinux_*"
 build-verbosity = 1
-test-requires = ["pytest", "numpy", "matplotlib", "graphviz"]
+test-extras = ["test"]
+# graphviz (the Python package) is a runtime dependency already; the `dot`
+# binary the plotting tests shell out to comes from before-all.
 test-command = "python {project}/tools/wheel_smoke_test.py && python -m pytest {project}/tests -q"
-# recursive-include src * in MANIFEST.in would otherwise package a stale
-# extension or CMake cache left behind by a local build.
-before-build = "rm -rf {project}/build {project}/src/CMGDB.egg-info {project}/src/CMGDB/_cmgdb*.so"
+# build/ holds scikit-build-core's per-tag CMake caches (build-dir above);
+# start every wheel from a fresh configure. (Stale extensions under src/ are
+# already kept out of the wheel: scikit-build-core honors .gitignore's *.so.)
+before-build = "rm -rf {project}/build"
 
 [tool.cibuildwheel.linux]
 archs = ["x86_64"]
 before-all = "bash {project}/tools/cibw_before_all_linux.sh"
-# The default manylinux_2_28 image (AlmaLinux 8) carries Boost 1.66; the older
-# manylinux2014 image is stuck on 1.53, which predates the serialization
-# headers this project includes.
+# manylinux_2_28 (AlmaLinux 8); its boost-devel is 1.66, which predates the
+# BoostConfig.cmake that CMakeLists.txt's find_package(Boost CONFIG) needs,
+# so tools/cibw_before_all_linux.sh installs EPEL's boost1.78-devel instead.
 manylinux-x86_64-image = "manylinux_2_28"
 # libstdc++ is linked dynamically, as upstream's own wheels do. Linking it
 # statically puts a second C++ runtime in the process alongside the one
-# AlmaLinux's shared Boost libraries already use, which segfaults at the first
+# the shared Boost libraries already use, which segfaults at the first
 # std::string crossing that boundary. The workflow gates on the resulting
 # GLIBCXX requirement instead.
 
 [tool.cibuildwheel.macos]
 archs = ["arm64"]
-# SDSL is not packaged by Homebrew; CMake fetches the pinned header-only
-# release when it is absent, so only Boost and GMP come from the system.
-before-all = "brew install boost gmp graphviz"
+# sdsl-lite is vendored and GMP is optional (USE_GMP), so only Boost comes
+# from the system; graphviz supplies `dot` for the plotting tests.
+before-all = "brew install boost graphviz"
 # CPython's own target is 11.0, but the Homebrew bottles this links are built
 # for the runner's macOS, so delocate refuses to vendor them into an 11.0
 # wheel. Match the runner instead.

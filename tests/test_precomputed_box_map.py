@@ -1,218 +1,200 @@
-import itertools
+"""Tests for PrecomputedBoxMap: lookups must reproduce live BoxMap evaluation
+exactly (corner mode) on every dyadic box of the subdivision tree, and the
+full Morse graph computed through the precomputed table must match the one
+computed with live batched evaluation."""
 
 import numpy as np
 import pytest
-
 import CMGDB
-import CMGDB.PrecomputedBoxMap as precomputed
+
+THETA = np.array([19.6, 23.68])
+LOWER_BOUNDS = [-0.001, -0.001]
+UPPER_BOUNDS = [90.0, 70.0]
 
 
-def vector_map(points):
-    points = np.asarray(points, dtype=np.float64)
-    x = points[:, 0]
-    y = points[:, 1]
-    return np.column_stack([x + 2.0 * y, x - y])
+def f_vec(X):
+    s = X.sum(axis=1)
+    y0 = (X @ THETA) * np.exp(-0.1 * s)
+    return np.column_stack([y0, 0.7 * X[:, 0]])
 
 
-def direct_corner_box_map(rect, *, padding=False):
-    rect = np.asarray(rect, dtype=np.float64)
-    dim = rect.size // 2
-    lower = rect[:dim]
-    upper = rect[dim:]
-    corners = np.array(list(itertools.product(*zip(lower, upper))))
-    values = vector_map(corners)
-    out_lower = values.min(axis=0)
-    out_upper = values.max(axis=0)
-    if padding:
-        box_size = upper - lower
-        out_lower = out_lower - box_size
-        out_upper = out_upper + box_size
-    return np.concatenate([out_lower, out_upper])
+def f_scalar(x):
+    return list(f_vec(np.array([x]))[0])
 
 
-def test_public_make_precomputed_box_map_uniform_matches_direct_corner_map():
-    box_map = CMGDB.make_precomputed_box_map(
-        vector_map,
-        lower_bounds=[-1.0, -1.0],
-        upper_bounds=[1.0, 1.0],
-        subdiv_max=4,
-        mode="uniform",
-        padding=False,
-    )
-
-    rect = [-0.5, 0.0, 0.0, 0.5]
-
-    np.testing.assert_allclose(box_map(rect), direct_corner_box_map(rect), atol=1e-12)
+# Map using only IEEE-exact operations (+, -, *, /): unlike np.exp -- whose
+# SIMD (large batch) and scalar (single point) code paths may differ in the
+# last ulp on some platforms -- this map is bit-identical for any evaluation
+# batching, so lookups can be asserted strictly equal to live evaluation.
+def g_vec(X):
+    return X * (90.0 - X) / 45.0
 
 
-def test_adaptive_precomputed_matches_direct_corner_map_at_odd_depth_cell():
-    box_map = CMGDB.make_precomputed_box_map(
-        vector_map,
-        lower_bounds=[-1.0, -1.0],
-        upper_bounds=[1.0, 1.0],
-        subdiv_max=5,
-        mode="adaptive",
-        padding=False,
-    )
-
-    # At depth 5 in d=2, axis 0 is split into 8 cells and axis 1 into 4.
-    rect = [-0.25, -0.5, 0.0, 0.0]
-
-    np.testing.assert_allclose(box_map(rect), direct_corner_box_map(rect), atol=1e-12)
+def g_scalar(x):
+    return list(g_vec(np.array([x]))[0])
 
 
-def test_uniform_and_adaptive_precomputed_are_equal_for_divisible_uniform_grid():
-    lower = [-1.0, -1.0]
-    upper = [1.0, 1.0]
-    uniform = CMGDB.make_precomputed_box_map(
-        vector_map, lower, upper, subdiv_max=4, mode="uniform", padding=True
-    )
-    adaptive = CMGDB.make_precomputed_box_map(
-        vector_map, lower, upper, subdiv_max=4, mode="adaptive", padding=True
-    )
-
-    rect = [0.0, -0.5, 0.5, 0.0]
-
-    np.testing.assert_array_equal(adaptive(rect), uniform(rect))
+SUBDIV_MAX = 12
 
 
-def test_precomputed_box_map_object_batches_rectangles_like_single_calls():
-    box_map = CMGDB.make_precomputed_box_map(
-        vector_map,
-        lower_bounds=[-1.0, -1.0],
-        upper_bounds=[1.0, 1.0],
-        subdiv_max=4,
-        mode="adaptive",
-        padding=False,
-    )
-    rects = [
-        [-0.5, 0.0, 0.0, 0.5],
-        [0.0, -0.5, 0.5, 0.0],
-    ]
-    expected = [box_map(rect) for rect in rects]
-    assert hasattr(box_map, "batch")
-    np.testing.assert_allclose(box_map.batch(rects), expected)
+@pytest.fixture(scope="module")
+def F_pre():
+    return CMGDB.PrecomputedBoxMap(f_vec, LOWER_BOUNDS, UPPER_BOUNDS, SUBDIV_MAX)
 
 
-def test_precomputed_box_map_batch_can_be_installed_on_model():
-    box_map = CMGDB.make_precomputed_box_map(
-        vector_map,
-        lower_bounds=[-1.0, -1.0],
-        upper_bounds=[1.0, 1.0],
-        subdiv_max=4,
-        mode="uniform",
-        padding=False,
-    )
-    model = CMGDB.Model(4, 4, 4, 10000, [-1.0, -1.0], [1.0, 1.0], box_map)
-    model.set_batch_map(box_map.batch)
-    morse_graph, _ = CMGDB.ComputeMorseGraph(model)
-    assert morse_graph.num_vertices() >= 1
+@pytest.fixture(scope="module")
+def G_pre():
+    return CMGDB.PrecomputedBoxMap(g_vec, LOWER_BOUNDS, UPPER_BOUNDS, SUBDIV_MAX)
 
 
-def test_precompute_corner_grid_splits_evaluator_calls_into_bounded_chunks():
-    sizes = []
-
-    def recording_map(points):
-        sizes.append(len(points))
-        return vector_map(points)
-
-    grid, out_dim = precomputed.precompute_corner_grid(
-        recording_map,
-        lower_bounds=[-1.0, -1.0],
-        upper_bounds=[1.0, 1.0],
-        corners_per_axis=17,
-        batch_points=64,
-    )
-
-    assert grid.shape == (17, 17, 2)
-    assert out_dim == 2
-    assert len(sizes) >= 2
-    assert max(sizes) <= 64
-    assert sum(sizes) == 289
+def dyadic_boxes(F, rng, count):
+    """Random boxes aligned to the subdiv_max lattice, at assorted depths,
+    constructed with the same arithmetic as the lattice coordinates."""
+    cells = F._cells_per_axis
+    side = F._finest_box_side
+    lower = np.asarray(LOWER_BOUNDS, dtype=float)
+    boxes = []
+    for _ in range(count):
+        spans = np.array([cells[d] >> rng.integers(0, int(cells[d]).bit_length())
+                          for d in range(2)], dtype=np.int64)
+        spans = np.maximum(spans, 1)
+        i_lower = np.array([rng.integers(0, cells[d] // spans[d]) * spans[d]
+                            for d in range(2)], dtype=np.int64)
+        i_upper = i_lower + spans
+        rect = list(lower + i_lower * side) + list(lower + i_upper * side)
+        boxes.append(rect)
+    return boxes
 
 
-def test_precompute_corner_grid_chunked_output_matches_one_shot():
-    chunked, _ = precomputed.precompute_corner_grid(
-        vector_map,
-        lower_bounds=[-1.0, -1.0],
-        upper_bounds=[1.0, 1.0],
-        corners_per_axis=17,
-        batch_points=64,
-    )
-    one_shot, _ = precomputed.precompute_corner_grid(
-        vector_map,
-        lower_bounds=[-1.0, -1.0],
-        upper_bounds=[1.0, 1.0],
-        corners_per_axis=17,
-        batch_points=10_000,
-    )
-
-    np.testing.assert_array_equal(chunked, one_shot)
+def test_corner_mode_exact_vs_live_boxmap(G_pre):
+    rng = np.random.default_rng(23)
+    for rect in dyadic_boxes(G_pre, rng, 200):
+        assert G_pre(rect) == CMGDB.BoxMap(g_scalar, rect)
 
 
-def test_precomputed_box_map_has_no_table_size_cap():
-    """No ``max_table_points``: a lattice is built, never pre-refused.
-
-    subdiv_max=10 in 2-D is a 33x33 = 1089-corner table, which the old default
-    cap of 10_000_000 permitted but a lower configured cap refused. Sizing the
-    table is the caller's call; one that does not fit fails on allocation.
-    """
-    box_map = CMGDB.make_precomputed_box_map(
-        vector_map,
-        lower_bounds=[-1.0, -1.0],
-        upper_bounds=[1.0, 1.0],
-        subdiv_max=10,
-        mode="adaptive",
-    )
-
-    out = box_map([-1.0, -1.0, -0.5, -0.5])
-    assert len(out) == 4
-    assert out[0] <= out[2] and out[1] <= out[3]
+def test_corner_mode_with_padding_exact(G_pre):
+    G_pad = CMGDB.PrecomputedBoxMap(g_vec, LOWER_BOUNDS, UPPER_BOUNDS, SUBDIV_MAX,
+                                    padding=True)
+    rng = np.random.default_rng(29)
+    for rect in dyadic_boxes(G_pad, rng, 100):
+        assert G_pad(rect) == CMGDB.BoxMap(g_scalar, rect, padding=True)
 
 
-def test_uniform_mode_rejects_non_divisible_subdivision_depth():
-    with pytest.raises(ValueError, match="divisible"):
-        CMGDB.make_precomputed_box_map(
-            vector_map,
-            lower_bounds=[-1.0, -1.0],
-            upper_bounds=[1.0, 1.0],
-            subdiv_max=3,
-            mode="uniform",
-        )
+def test_corner_mode_close_for_exp_map(F_pre):
+    # np.exp evaluated in a large batch may differ from single-point
+    # evaluation in the last ulp (SIMD vs scalar code paths), so for maps
+    # using transcendental functions the guarantee is agreement up to
+    # floating-point evaluation-batching effects
+    rng = np.random.default_rng(23)
+    for rect in dyadic_boxes(F_pre, rng, 200):
+        assert np.allclose(F_pre(rect), CMGDB.BoxMap(f_scalar, rect),
+                           rtol=1e-12, atol=1e-12)
 
 
-def test_torch_device_auto_prefers_mps_then_cuda_then_cpu(monkeypatch):
+def test_center_mode_matches_live(F_pre):
+    F_center = CMGDB.PrecomputedBoxMap(f_vec, LOWER_BOUNDS, UPPER_BOUNDS, SUBDIV_MAX,
+                                       mode='center')
+    rng = np.random.default_rng(31)
+    for rect in dyadic_boxes(F_center, rng, 100):
+        expected = CMGDB.BoxMap(f_scalar, rect, mode='center')
+        assert np.allclose(F_center(rect), expected, rtol=1e-12, atol=1e-12)
+
+
+def test_whole_domain_box(G_pre):
+    rect = list(LOWER_BOUNDS) + list(UPPER_BOUNDS)
+    assert G_pre(rect) == CMGDB.BoxMap(g_scalar, rect)
+
+
+def test_batch_matches_scalar(F_pre):
+    rng = np.random.default_rng(37)
+    rects = dyadic_boxes(F_pre, rng, 50)
+    batched = F_pre.batch(rects)
+    for i, rect in enumerate(rects):
+        assert list(batched[i]) == F_pre(rect)
+
+
+def test_chunking_identical():
+    # Chunk boundaries must not change the table (exact-arithmetic map, so
+    # SIMD batching effects cannot mask a real chunking bug)
+    small_chunks = CMGDB.PrecomputedBoxMap(g_vec, LOWER_BOUNDS, UPPER_BOUNDS, 8,
+                                           batch_points=100)
+    auto_chunks = CMGDB.PrecomputedBoxMap(g_vec, LOWER_BOUNDS, UPPER_BOUNDS, 8)
+    assert np.array_equal(small_chunks._table, auto_chunks._table)
+
+
+def test_box_finer_than_lattice_raises(F_pre):
+    side = F_pre._finest_box_side
+    rect = [0.0, 0.0, side[0] / 2, side[1] / 2]
+    with pytest.raises(ValueError):
+        F_pre(rect)
+
+
+def test_off_lattice_box_raises(F_pre):
+    side = F_pre._finest_box_side
+    rect = [0.3 * side[0], 0.0, 2.3 * side[0], side[1]]
+    with pytest.raises(ValueError):
+        F_pre(rect)
+
+
+def test_invalid_mode_raises():
+    with pytest.raises(ValueError):
+        CMGDB.PrecomputedBoxMap(f_vec, LOWER_BOUNDS, UPPER_BOUNDS, 8, mode='random')
+
+
+def morse_signature(morse_graph, map_graph):
+    num_vertices = morse_graph.num_vertices()
+    morse_sets = [sorted(morse_graph.morse_set(v)) for v in range(num_vertices)]
+    order = sorted(range(num_vertices), key=lambda v: morse_sets[v][0])
+    relabel = {v: i for i, v in enumerate(order)}
+    return {
+        "sizes": [len(morse_sets[v]) for v in order],
+        "min_box": [morse_sets[v][0] for v in order],
+        "edges": sorted((relabel[u], relabel[w])
+                        for u, w in morse_graph.edges_unreduced()),
+        "phase_size": map_graph.num_vertices(),
+    }
+
+
+def test_morse_graph_matches_live_evaluation():
+    subdiv_min, subdiv_max = 14, 16
+
+    def F_live(rect):
+        return CMGDB.BoxMap(f_scalar, rect)
+
+    def F_live_batch(rects):
+        return CMGDB.BoxMapBatch(f_vec, rects)
+
+    model = CMGDB.Model(subdiv_min, subdiv_max, LOWER_BOUNDS, UPPER_BOUNDS, F_live)
+    model.set_batch_map(F_live_batch)
+    live_mg, live_g = CMGDB.ComputeMorseGraph(model)
+
+    F = CMGDB.PrecomputedBoxMap(f_vec, LOWER_BOUNDS, UPPER_BOUNDS, subdiv_max)
+    model_pre = CMGDB.Model(subdiv_min, subdiv_max, LOWER_BOUNDS, UPPER_BOUNDS, F)
+    model_pre.set_batch_map(F.batch)
+    pre_mg, pre_g = CMGDB.ComputeMorseGraph(model_pre)
+
+    assert morse_signature(live_mg, live_g) == morse_signature(pre_mg, pre_g)
+
+
+def test_torch_module_path():
     torch = pytest.importorskip("torch")
 
-    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
-    assert precomputed.select_torch_device("auto").type == "mps"
+    class Net(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = torch.nn.Linear(2, 2)
 
-    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
-    assert precomputed.select_torch_device("auto").type == "cuda"
-
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
-    assert precomputed.select_torch_device("auto").type == "cpu"
-
-
-def test_torch_module_is_supported_without_making_torch_required():
-    torch = pytest.importorskip("torch")
-
-    class LinearMap(torch.nn.Module):
         def forward(self, x):
-            return torch.column_stack([x[:, 0] + x[:, 1], x[:, 0] - x[:, 1]])
+            return torch.sigmoid(self.linear(x)) * 50.0
 
-    box_map = CMGDB.make_precomputed_box_map(
-        LinearMap(),
-        lower_bounds=[-1.0, -1.0],
-        upper_bounds=[1.0, 1.0],
-        subdiv_max=4,
-        mode="uniform",
-        padding=False,
-        batch_points=5,
-        device="cpu",
-    )
+    torch.manual_seed(0)
+    net = Net()
 
-    rect = [-0.5, 0.0, 0.0, 0.5]
-    expected = np.array([-0.5, -1.0, 0.5, 0.0])
-    np.testing.assert_allclose(box_map(rect), expected, atol=1e-7, rtol=1e-7)
+    def f_numpy(P):
+        with torch.no_grad():
+            x = torch.as_tensor(P, dtype=torch.float32)
+            return (torch.sigmoid(net.linear(x)) * 50.0).numpy().astype(float)
+
+    F_torch = CMGDB.PrecomputedBoxMap(net, LOWER_BOUNDS, UPPER_BOUNDS, 8, device='cpu')
+    F_ref = CMGDB.PrecomputedBoxMap(f_numpy, LOWER_BOUNDS, UPPER_BOUNDS, 8)
+    assert np.array_equal(F_torch._table, F_ref._table)
