@@ -74,6 +74,13 @@ the native reachability queries, `ComputeConleyIndexForCells`, and
 - **Morse-graph lattices** — `CMGDB.morse_lattice` builds the lattices of
   attractors and repellers and the nontrivial Conley-Morse graph from a parsed
   Morse graph, and `CMGDB.plot_derived_graph` renders them with graphviz.
+- **The 1.3.2 argument order of the 2-D plots** — `PlotMorseSets`,
+  `PlotMorseSetsScatter` and `PlotBoxesScatter` take their arguments through
+  `dpi` in the order of CMGDB 1.3.2, and the options added since, `margin`
+  among them, by keyword only. Upstream v1.5.2 puts `margin` after `ylim`, so
+  a call written for v1.5.2 that passes `margin` by position binds it, and
+  each positional argument after it, to another parameter here; pass these
+  by keyword.
 - **Explicit relative-chain-complex bridge** —
   `CMGDB.ComputeRelativeHomologyShiftClass(...)` accepts a finite based
   relative chain complex and an explicit chain endomorphism without pretending
