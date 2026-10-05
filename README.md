@@ -230,7 +230,9 @@ images near it stay inside, and keep the box size: doubling the width in every
 direction and adding the dimension to each subdivision depth keeps the grid
 aligned. `ComputeConleyIndexForCells` on the larger phase space gives the index
 of a given set of boxes. A build with `CMG_VERBOSE` prints "Problem computing
-conley index" for every index it leaves undefined.
+conley index" for every index it leaves undefined. `nontrivial_cmgraph` and
+`attractor_type` in `CMGDB.morse_lattice` need every index; they raise
+`ValueError` for a node whose index is undefined.
 
 ## Precomputed box maps
 

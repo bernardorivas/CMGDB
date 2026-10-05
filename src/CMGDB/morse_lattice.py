@@ -211,13 +211,36 @@ def _conley_polynomials(label):
 def _is_trivial(morse_graph: MorseGraph, node: int) -> bool:
     polys = _conley_polynomials(morse_graph.labels.get(node))
     if polys is None:
-        raise ValueError(
-            f"Morse node {node} label {morse_graph.labels.get(node)!r} has no "
-            "Conley-index annotation; nontrivial-graph / attractor-type "
-            "computation requires a Conley Morse graph (CMGDB.PlotMorseGraph "
-            "output with annotations)"
-        )
+        raise ValueError(_missing_index_message(morse_graph, node))
     return all(p == "0" for p in polys)
+
+
+def _missing_index_message(morse_graph: MorseGraph, node: int) -> str:
+    """Say why ``node`` has no Conley index, as far as the labels tell.
+
+    ``PlotMorseGraph`` writes no annotation for a vertex whose
+    ``annotations(v)`` is ``[]``: every vertex of a graph computed without
+    Conley indices, and a vertex whose index CMGDB left undefined.
+    """
+    label = morse_graph.labels.get(node)
+    if any(_conley_polynomials(morse_graph.labels.get(n)) is not None
+           for n in morse_graph.nodes):
+        return (
+            f"Morse node {node} label {label!r} has an undefined Conley index: "
+            "other nodes of the graph are annotated, but CMGDB could not compute "
+            "this one (annotations(v) == []), for example because the Morse set "
+            "touches the boundary of the phase space; nontrivial-graph / "
+            "attractor-type computation needs the index of every node (see "
+            "'Undefined Conley indices' in the CMGDB README)"
+        )
+    return (
+        f"Morse node {node} label {label!r} has no Conley-index annotation, "
+        "and neither has any other node: the graph was computed without "
+        "Conley indices, or none of them is defined; nontrivial-graph / "
+        "attractor-type computation requires a Conley Morse graph "
+        "(CMGDB.PlotMorseGraph output of ComputeConleyMorseGraph) with "
+        "defined indices"
+    )
 
 
 def _conley_label(label) -> str:
