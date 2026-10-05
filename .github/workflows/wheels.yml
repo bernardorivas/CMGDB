@@ -11,6 +11,11 @@ on:
       - "pyproject.toml"
       - "src/**"
       - "tools/**"
+      - "tests/**"
+      - "examples/*.dat"
+      - "README.md"
+      - "LICENSE"
+      - "licenses/**"
       - ".github/workflows/wheels.yml"
   workflow_dispatch:
     inputs:
@@ -43,14 +48,15 @@ jobs:
         # The wheels are meant to run on distributions older than the build
         # image (Google Colab currently ships libstdc++ 12.3, i.e. GLIBCXX up to
         # 3.4.30). libstdc++ is linked dynamically (see pyproject.toml), so the
-        # extension carries versioned GLIBCXX references; fail here, rather
-        # than at a reader's import, if any is newer than GLIBCXX_3.4.30.
+        # extension and the Boost libraries auditwheel vendors into cmgdb.libs/
+        # carry versioned GLIBCXX references; fail here, rather than at a
+        # reader's import, if any is newer than GLIBCXX_3.4.30.
         run: |
           for whl in wheelhouse/*.whl; do
             echo "=== $whl"
             rm -rf /tmp/unpack && mkdir /tmp/unpack
             python -m zipfile -e "$whl" /tmp/unpack
-            for so in /tmp/unpack/CMGDB/*.so; do
+            for so in $(find /tmp/unpack -type f -name '*.so*'); do
               echo "--- $so"
               need=$(objdump -T "$so" | grep -o 'GLIBCXX_[0-9.]*' | sort -uV | tail -1 || true)
               echo "max GLIBCXX required: ${need:-none}"
@@ -89,9 +95,24 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
+      - name: Check that the wheels carry the tag's version
+        # A tag on a development commit would otherwise publish X+fork.N.dev0
+        # wheels that the release's ==X+fork.N pin cannot install.
+        run: |
+          version="${{ steps.meta.outputs.version }}"
+          for whl in dist/*.whl; do
+            case "$(basename "$whl")" in
+              "cmgdb-${version}-"*) ;;
+              *) echo "::error::$whl does not carry version $version"; exit 1 ;;
+            esac
+          done
+
       - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
+          # A tag that does not exist yet is created at the built commit, not at
+          # the default branch's head.
+          target_commitish: ${{ github.sha }}
           files: dist/*.whl
           fail_on_unmatched_files: true
           body: |
