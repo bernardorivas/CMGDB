@@ -239,3 +239,32 @@ def test_square_zoom_magnifies_both_axes_alike(fig_w, fig_h, zoom_pos):
     assert inset_w / main_w == pytest.approx(inset_h / main_h, rel=0.01)
     assert inset_w / main_w > 5
     plt.close(fig)
+
+
+def render(fig):
+    fig.canvas.draw()
+    return np.asarray(fig.canvas.buffer_rgba())[:, :, :3].astype(int)
+
+
+def pixel(image, ax, x, y, dx=0):
+    px, py = ax.transData.transform((x, y))
+    return image[int(image.shape[0] - py), int(px) + dx]
+
+
+@pytest.mark.parametrize("kwargs", [
+    {'alpha': 0.5, 'merge_boxes': True},
+    {'alpha': 0.5, 'merge_boxes': False},
+    {'clist': ['#1f77b480'], 'merge_boxes': False},       # alpha carried by the color
+])
+def test_translucent_sets_do_not_darken_along_their_edges(kwargs):
+    # C10: the face-colored edge was stroked over a translucent fill, and
+    # matplotlib applies alpha to each stroke, not to the set as a whole: drawn
+    # box by box, every seam came out darker than the interior, and the merged
+    # outline darkened the rim of the set.
+    rows = [[0, 0, 1, 1, 0], [1, 0, 2, 1, 0]]
+    fig, ax = CMGDB.PlotMorseSets(rows, linewidth=2, show=False, **kwargs)
+    image = render(fig)
+    interior = pixel(image, ax, 0.5, 0.5)
+    assert np.abs(pixel(image, ax, 1.0, 0.5) - interior).max() <= 2       # the seam
+    assert np.abs(pixel(image, ax, 0.0, 0.5, dx=1) - interior).max() <= 2  # inside the rim
+    plt.close(fig)

@@ -468,8 +468,15 @@ def _draw_boxes(ax, rows, morse_nodes, dim, d1, d2, cmap, cmap_norm,
         clr = matplotlib.colors.to_hex(cmap(cmap_norm(morse_node)), keep_alpha=True)
         factor = scale_factor[morse_node]
         # Edge in the face colour by default: it closes the antialiasing seam
-        # between neighbouring boxes instead of outlining each one.
+        # between neighbouring boxes instead of outlining each one. Not under a
+        # translucent fill, which a scalar alpha or the color itself can give:
+        # matplotlib applies alpha to each face and each stroke on its own, not
+        # to the set as a whole, so the edge would darken every seam it closes
+        # and the rim of the set.
+        translucent = (alpha if alpha != None else matplotlib.colors.to_rgba(clr)[3]) < 1
         edges = clr if edge_clr == None else edge_clr
+        if translucent and edge_clr == None:
+            edges = 'none'
         path = None
         # Unscaled boxes tile the grid, so their union is what a per-box drawing
         # shows whatever the alpha. Inflated ones overlap, and a translucent
@@ -631,12 +638,15 @@ def PlotMorseSets(morse_sets, morse_nodes=None, proj_dims=None, cmap=None, clist
        single region: with no edge at all, antialiasing leaves pale seams
        between neighbours. Give it a colour to outline the boxes instead.
 
-       alpha applies to the whole collection, faces and edges together, so a
-       translucent Morse set does not darken along the seams where an edge is
-       drawn over its own face. Leave it None to use the alpha carried by the
-       colours themselves: an 8-digit hex in clist such as '#1f77b480' is
-       honoured as given, and needs no unpacking. A scalar alpha overrides any
-       per-colour alpha, which is why it is not set by default.
+       alpha makes the Morse sets translucent. Leave it None to use the alpha
+       carried by the colours themselves: an 8-digit hex in clist such as
+       '#1f77b480' is honoured as given, and needs no unpacking. A scalar alpha
+       overrides any per-colour alpha, which is why it is not set by default.
+       A translucent set is drawn without the face-colored edge: matplotlib
+       applies alpha to each face and each stroke on its own, not to the set as
+       a whole, so the edge would darken it along every seam and around its
+       rim. Drawn box by box into a vector file, it can then show the faint
+       pale seams the edge closes.
 
        merge_boxes draws each Morse set as a single path, the outline of the
        union of its boxes, rather than as one rectangle per box. The picture
