@@ -144,6 +144,9 @@ public:
   ///   returned by ComputeMorseGraph with cache_map_graph=False -- be
   ///   upgraded to a cached one after the fact, at the cost of one full
   ///   (batched, if available) pass of map evaluations over the grid.
+  ///   A call made while a build of this graph is running (from another
+  ///   thread, or from the map itself) throws std::runtime_error and
+  ///   leaves that build alone.
   void build_cache ( void );
 
   /// validate_cached_csr
@@ -167,6 +170,7 @@ private:
   std::shared_ptr<const Map> f_;
   MapGraphOptions options_;
   bool cached_;
+  bool building_;
   std::vector<uint64_t> csr_offsets_;
   std::vector<Vertex> csr_edges_;
   mutable std::vector<Vertex> scratch_;
@@ -309,7 +313,8 @@ MapGraph::MapGraph ( std::shared_ptr<const Grid> grid,
 grid_ ( grid ),
 f_ ( f ),
 options_ ( cmgdb_detail::map_graph_cache_enabled () ),
-cached_ ( false ) {
+cached_ ( false ),
+building_ ( false ) {
   initialize ();
 }
 
@@ -320,7 +325,8 @@ MapGraph::MapGraph ( std::shared_ptr<const Grid> grid,
 grid_ ( grid ),
 f_ ( f ),
 options_ ( options ),
-cached_ ( false ) {
+cached_ ( false ),
+building_ ( false ) {
   initialize ();
 }
 
@@ -358,6 +364,18 @@ MapGraph::initialize ( void ) {
 inline void
 MapGraph::build_cache ( void ) {
   if ( cached_ ) return;
+  // Every map evaluation can run Python, which may let another thread call
+  // build_cache on this graph, or call it from the map itself. A second
+  // build would then interleave its rows with this one's.
+  if ( building_ ) {
+    throw std::runtime_error (
+      "MapGraph::build_cache is already running on this graph" );
+  }
+  struct BuildingGuard {
+    bool & flag;
+    explicit BuildingGuard ( bool & f ) : flag ( f ) { flag = true; }
+    ~BuildingGuard ( void ) { flag = false; }
+  } guard ( building_ );
   const uint64_t n = num_vertices ();
 
   // Opt-in hard limits and the up-front reservation hint.
@@ -394,11 +412,17 @@ MapGraph::build_cache ( void ) {
   const bool hard_limited =
     maximum_edge_capacity != std::numeric_limits<size_t>::max ();
 
+  // The CSR is built in local arrays and moved into the graph only once it
+  // is complete, so an abandoned or failed build (a hard limit, a map that
+  // raises) leaves the graph lazy and untouched.
+  std::vector<uint64_t> offsets;
+  std::vector<Vertex> edges;
+
   // Raise before a row would take the CSR past a hard limit. Under a hard
   // limit the capacity is grown here, geometrically but clipped to the
   // limit, so that the vector's own doubling cannot overshoot it.
   const auto append_row = [ & ] ( const std::vector<Vertex> & targets ) {
-    const size_t edge_count = csr_edges_ . size ();
+    const size_t edge_count = edges . size ();
     if ( targets . size () > hard_max_edges or
          edge_count > hard_max_edges - targets . size () ) {
       std::ostringstream message;
@@ -415,24 +439,22 @@ MapGraph::build_cache ( void ) {
                    "limit of " << maximum_edge_capacity;
         throw std::runtime_error ( message . str () );
       }
-      if ( required > csr_edges_ . capacity () ) {
-        const size_t old_capacity = csr_edges_ . capacity ();
+      if ( required > edges . capacity () ) {
+        const size_t old_capacity = edges . capacity ();
         const size_t growth = std::max ( old_capacity, size_t ( 65536 ) );
         size_t grown = required;
         if ( old_capacity <= std::numeric_limits<size_t>::max () - growth ) {
           grown = std::max ( required, old_capacity + growth );
         }
-        csr_edges_ . reserve ( std::min ( grown, maximum_edge_capacity ) );
+        edges . reserve ( std::min ( grown, maximum_edge_capacity ) );
       }
     }
-    csr_edges_ . insert ( csr_edges_ . end (), targets . begin (), targets . end () );
-    csr_offsets_ . push_back ( csr_edges_ . size () );
+    edges . insert ( edges . end (), targets . begin (), targets . end () );
+    offsets . push_back ( edges . size () );
   };
 
-  csr_offsets_ . clear ();
-  csr_edges_ . clear ();
-  csr_offsets_ . reserve ( n + 1 );
-  csr_offsets_ . push_back ( 0 );
+  offsets . reserve ( n + 1 );
+  offsets . push_back ( 0 );
   if ( env_reserve_edges > 0 and n >= env_reserve_min_vertices ) {
     // Capped like the projected reservation below: a cache that outgrows
     // max_cached_edges is abandoned.
@@ -441,7 +463,7 @@ MapGraph::build_cache ( void ) {
          options_ . max_cached_edges < (uint64_t) env_target ) {
       env_target = (size_t) options_ . max_cached_edges;
     }
-    csr_edges_ . reserve ( env_target );
+    edges . reserve ( env_target );
   }
 
   // The flat-buffer batch path requires rectangle geometry; fall back to
@@ -453,9 +475,6 @@ MapGraph::build_cache ( void ) {
   std::vector<double> rects;
   std::vector<double> images;
 
-  // A failed build (a hard limit, a map that raises) leaves the graph lazy
-  // and releases the partial CSR.
-  try {
   for ( uint64_t start = 0; start < n; start += chunk ) {
     const uint64_t stop = std::min ( start + chunk, n );
     if ( use_batch ) {
@@ -495,12 +514,7 @@ MapGraph::build_cache ( void ) {
     // Bound the cache: on overflow abandon it and fall back to on-demand
     // evaluation rather than exhausting memory.
     if ( options_ . max_cached_edges > 0 &&
-         (uint64_t) csr_edges_ . size () > options_ . max_cached_edges ) {
-      csr_offsets_ . clear ();
-      csr_edges_ . clear ();
-      csr_offsets_ . shrink_to_fit ();
-      csr_edges_ . shrink_to_fit ();
-      cached_ = false;
+         (uint64_t) edges . size () > options_ . max_cached_edges ) {
       return;
     }
     if ( stop < n ) {
@@ -515,15 +529,10 @@ MapGraph::build_cache ( void ) {
       // the auto reservation doubles it for headroom, and the early cap
       // abandon requires a 2x margin of confidence (the exact check above
       // remains authoritative).
-      const double density = (double) csr_edges_ . size () / (double) stop;
+      const double density = (double) edges . size () / (double) stop;
       const uint64_t projected = (uint64_t) ( density * (double) n ) + 1;
       if ( options_ . max_cached_edges > 0 &&
            projected > 2 * options_ . max_cached_edges ) {
-        csr_offsets_ . clear ();
-        csr_edges_ . clear ();
-        csr_offsets_ . shrink_to_fit ();
-        csr_edges_ . shrink_to_fit ();
-        cached_ = false;
         return;
       }
       if ( projected >= options_ . reserve_min_edges ) {
@@ -533,9 +542,9 @@ MapGraph::build_cache ( void ) {
           target = std::min ( target, options_ . max_cached_edges );
         }
         target = std::min ( target, (uint64_t) maximum_edge_capacity );
-        if ( target > (uint64_t) csr_edges_ . capacity () ) {
+        if ( target > (uint64_t) edges . capacity () ) {
           try {
-            csr_edges_ . reserve ( target );
+            edges . reserve ( target );
           } catch ( std::bad_alloc const& ) {
             // The reservation is an optimization only; fall back to
             // ordinary vector growth if the allocator refuses it.
@@ -544,14 +553,8 @@ MapGraph::build_cache ( void ) {
       }
     }
   }
-  } catch ( ... ) {
-    csr_offsets_ . clear ();
-    csr_edges_ . clear ();
-    csr_offsets_ . shrink_to_fit ();
-    csr_edges_ . shrink_to_fit ();
-    cached_ = false;
-    throw;
-  }
+  csr_offsets_ . swap ( offsets );
+  csr_edges_ . swap ( edges );
   cached_ = true;
 }
 
