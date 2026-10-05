@@ -577,12 +577,12 @@ def _add_zoom_inset(ax, rows, morse_nodes, dim, d1, d2, cmap, cmap_norm,
 
 
 def PlotMorseSets(morse_sets, morse_nodes=None, proj_dims=None, cmap=None, clist=None,
-                  scale_factor=None, fig_w=8, fig_h=8, xlim=None, ylim=None, margin=0.02,
-                  axis_labels=True, xlabel='$x$', ylabel='$y$', fontsize=15, edge_clr=None,
-                  linewidth=0.5, alpha=None, zoom_nodes=None, zoom_bounds=None,
-                  zoom_pos=None, zoom_pad=0.25, zoom_square=True, zoom_edge_clr='0.35',
-                  zoom_lw=0.8, zoom_ticks=False, merge_boxes=True, fig_fname=None,
-                  dpi=None, rasterize=False, show=None):
+                  scale_factor=None, fig_w=8, fig_h=8, xlim=None, ylim=None,
+                  axis_labels=True, xlabel='$x$', ylabel='$y$', fontsize=15, fig_fname=None,
+                  dpi=None, *, margin=0.02, edge_clr=None, linewidth=0.5, alpha=None,
+                  zoom_nodes=None, zoom_bounds=None, zoom_pos=None, zoom_pad=0.25,
+                  zoom_square=True, zoom_edge_clr='0.35', zoom_lw=0.8, zoom_ticks=False,
+                  merge_boxes=True, rasterize=False, show=None):
     """Plot Morse sets as filled rectangles, one per box.
 
        Each box is drawn at its true extent, so the picture is exact at any
@@ -648,6 +648,9 @@ def PlotMorseSets(morse_sets, morse_nodes=None, proj_dims=None, cmap=None, clist
        format keeps 300). With merge_boxes the vector output is already small,
        so this mainly serves the fallback cases above; it costs a resolution
        ceiling.
+
+       The arguments up to dpi keep their 1.3.2 positions; the rest are
+       keyword-only.
 
        Returns (fig, ax).
     """
@@ -1081,16 +1084,17 @@ def PlotMorseSets3D(morse_sets, morse_nodes=None, cmap=None, clist=None, scale_f
 
 
 def PlotMorseSetsScatter(morse_sets, morse_nodes=None, proj_dims=None, cmap=None, clist=None,
-                         scale_factor=None, fig_w=8, fig_h=8, xlim=None, ylim=None, margin=0.02,
+                         scale_factor=None, fig_w=8, fig_h=8, xlim=None, ylim=None,
                          axis_labels=True, xlabel='$x$', ylabel='$y$', fontsize=15,
-                         fig_fname=None, dpi=300, rasterize=False, show=None):
+                         fig_fname=None, dpi=300, *, margin=0.02, rasterize=False, show=None):
     """Plot Morse sets as square scatter markers sized in data units.
 
        The original Morse set plot, kept under its own name now that
        PlotMorseSets draws rectangles. Markers are square regardless of a box's
        aspect ratio and are sized by the larger side, so they can overlap; that
        is often what you want when boxes are near the resolution limit and
-       exact rectangles would vanish.
+       exact rectangles would vanish. The arguments up to dpi take the
+       positions they had in PlotMorseSets 1.3.2; the rest are keyword-only.
 
        Returns (fig, ax).
     """
@@ -1105,8 +1109,8 @@ def PlotMorseSetsScatter(morse_sets, morse_nodes=None, proj_dims=None, cmap=None
 
 def PlotBoxesScatter(morse_sets, num_morse_sets=None, morse_nodes=None, proj_dims=None, cmap=None,
                      clist=None, scale_factor=None, fig_w=8, fig_h=8, xlim=None, ylim=None,
-                     margin=0.02, axis_labels=True, xlabel='$x$', ylabel='$y$', fontsize=15,
-                     fig_fname=None, dpi=300, rasterize=False, show=None):
+                     axis_labels=True, xlabel='$x$', ylabel='$y$', fontsize=15,
+                     fig_fname=None, dpi=300, *, margin=0.02, rasterize=False, show=None):
     """Scatter plot of labelled boxes, markers sized in data units."""
     rows = list(morse_sets)
     dim = _box_dim(rows)

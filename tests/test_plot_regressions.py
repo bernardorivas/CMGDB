@@ -399,3 +399,27 @@ def test_default_dpi_rises_only_for_rasterized_vector_files(monkeypatch, tmp_pat
                                   fig_fname=str(tmp_path / 'flat.pdf'), show=False)
     assert embedded_ppi(tmp_path / 'flat.pdf') == pytest.approx(600, rel=0.01)
     plt.close(fig)
+
+
+@pytest.mark.parametrize("plot, num_morse_sets", [(CMGDB.PlotMorseSets, []),
+                                                  (CMGDB.PlotMorseSetsScatter, []),
+                                                  (CMGDB.PlotBoxesScatter, [None])])
+def test_positional_arguments_bind_as_in_1_3_2(tmp_path, plot, num_morse_sets):
+    # C16: margin was inserted after ylim, and edge_clr and the zoom options
+    # before fig_fname, so every 1.3.2 positional argument from axis_labels
+    # on bound to the parameter before it: axis_labels=False became margin=0
+    # and the labels stayed, and a full call failed on the file name taken
+    # for a font size. The 1.3.2 order is (..., xlim, ylim, axis_labels,
+    # xlabel, ylabel, fontsize, fig_fname, dpi); the new options follow it.
+    lead = [corner_rows()] + num_morse_sets + [None, None, None, None, None, 8, 8, None, None]
+    fig, ax = plot(*lead, False, show=False)
+    assert ax.get_xlabel() == '' and ax.get_ylabel() == ''
+    plt.close(fig)
+    out = tmp_path / 'positional.png'
+    fig, ax = plot(*lead, True, 'u', 'v', 12, str(out), 50, show=False)
+    assert (ax.get_xlabel(), ax.get_ylabel()) == ('u', 'v')
+    assert ax.xaxis.label.get_fontsize() == 12
+    assert png_dpi(out) == pytest.approx(50, rel=0.01)
+    plt.close(fig)
+    with pytest.raises(TypeError):                # the new options take keywords only
+        plot(*lead, True, 'u', 'v', 12, None, 50, 0.1, show=False)
