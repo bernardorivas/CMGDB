@@ -133,42 +133,53 @@ class PrecomputedBoxMap:
         return lambda points: f(points)
 
     @staticmethod
-    def _first_box(lower, upper, bad):
-        """The first box with a bad coordinate, for error messages."""
-        if lower.ndim == 2:
-            i = np.flatnonzero(bad.any(axis=1))[0]
-            lower, upper = lower[i], upper[i]
-        return np.concatenate([lower, upper]).tolist()
+    def _first_bad(bad, lower, upper, *arrays):
+        """The first box with a bad coordinate, as [lower..., upper...], and
+           its rows of arrays (one box, or one row per box), for error
+           messages."""
+        i = np.flatnonzero(np.atleast_2d(bad).any(axis=1))[0]
+        box = np.concatenate([np.atleast_2d(lower)[i], np.atleast_2d(upper)[i]])
+        return [box.tolist()] + [np.atleast_2d(a)[i] for a in arrays]
 
     def _box_indices(self, lower, upper):
         """Lattice cell indices of one or many boxes. Box bounds produced by the
            subdivision tree are dyadic up to floating point rounding, so rounding
-           to the nearest cell index is exact. A box reaching outside the domain
-           is an error, and so is a large deviation or a zero span, which means
-           the box does not live on the subdiv_max lattice (typically the model
-           subdivides deeper than subdiv_max)."""
+           to the nearest cell index is exact. Any other box is an error: one
+           reaching outside the domain, one narrower than a finest cell
+           (typically the model subdivides deeper than subdiv_max), and one
+           with bounds off the lattice, which is no box of the subdivision
+           grid over [lower_bounds, upper_bounds] at any depth."""
         raw_lower = (lower - self.lower_bounds) / self._finest_box_side
         raw_upper = (upper - self.lower_bounds) / self._finest_box_side
         # The table has no image for the part of a box outside the domain.
         # Written so that NaN bounds fail the test too
         inside = (raw_lower >= -0.01) & (raw_upper <= self._cells_per_axis + 0.01)
         if not np.all(inside):
+            box, = self._first_bad(~inside, lower, upper)
             raise ValueError(
-                f"Box {self._first_box(lower, upper, ~inside)} reaches outside "
-                "the domain [lower_bounds, upper_bounds] of the precomputed table")
+                f"Box {box} reaches outside the domain [lower_bounds, "
+                "upper_bounds] of the precomputed table")
+        narrow = raw_upper - raw_lower < 0.99
+        if np.any(narrow):
+            box, = self._first_bad(narrow, lower, upper)
+            raise ValueError(
+                f"Box {box} is finer than the subdiv_max lattice. Is "
+                f"subdiv_max={self.subdiv_max} at least the model's maximum "
+                "subdivision depth?")
         i_lower = np.round(raw_lower).astype(np.int64)
         i_upper = np.round(raw_upper).astype(np.int64)
-        deviation = max(np.abs(raw_lower - i_lower).max(), np.abs(raw_upper - i_upper).max())
-        if deviation > 0.01:
+        deviation = np.maximum(np.abs(raw_lower - i_lower), np.abs(raw_upper - i_upper))
+        off_lattice = deviation > 0.01
+        if np.any(off_lattice):
+            # A table at another depth would not help: a box at least a
+            # finest cell wide with bounds off the lattice is no grid box
+            box, box_deviation = self._first_bad(off_lattice, lower, upper, deviation)
             raise ValueError(
-                "Box bounds do not lie on the subdiv_max lattice "
-                f"(deviation {deviation:.3g} cells). Is subdiv_max={self.subdiv_max} "
-                "at least the model's maximum subdivision depth?")
-        if np.any(i_upper <= i_lower):
-            raise ValueError(
-                "Encountered a box finer than the subdiv_max lattice. "
-                f"Is subdiv_max={self.subdiv_max} at least the model's "
-                "maximum subdivision depth?")
+                f"Box {box} is not a box of the subdivision grid over "
+                "[lower_bounds, upper_bounds]: its bounds lie "
+                f"{box_deviation.max():.3g} finest cells off the lattice. "
+                "PrecomputedBoxMap serves only the boxes of a Model over the "
+                "same bounds; BoxMap and BoxMapBatch map any rectangle")
         return i_lower, i_upper
 
     def __call__(self, rect):

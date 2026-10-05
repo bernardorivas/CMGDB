@@ -123,3 +123,68 @@ def test_boxes_on_the_domain_faces_still_map():
     expected = [double(r).tolist() for r in rects]
     assert [F(r) for r in rects] == expected
     assert F.batch(rects).tolist() == expected
+
+
+def ratio_map(X):
+    return X / (2.0 - X)
+
+
+def ratio_map_scalar(x):
+    return list(ratio_map(np.array([x]))[0])
+
+
+def test_off_lattice_box_error_does_not_blame_subdiv_max():
+    # C42: a rectangle off the lattice but wider than a finest cell is not a
+    # box of the subdivision grid at any depth, so no subdiv_max serves it;
+    # the error asked whether subdiv_max was deep enough. This one is from
+    # the Conley phase of the adaptive run below
+    F = CMGDB.PrecomputedBoxMap(ratio_map, [0.0, 0.0], [1.2, 1.2], 10)
+    rect = [0.0, 0.875, 0.15, 1.0]
+    for call in (lambda: F(rect), lambda: F.batch([[0.0, 0.0, 0.6, 0.6], rect])):
+        with pytest.raises(ValueError, match="not a box of the subdivision grid") as info:
+            call()
+        assert "subdiv_max=" not in str(info.value)
+        assert str(rect) in str(info.value)
+
+
+def test_box_finer_than_lattice_error_names_subdiv_max():
+    # C42: boxes of a deeper subdivision keep the subdiv_max hint, whether or
+    # not their bounds fall on the lattice
+    F = CMGDB.PrecomputedBoxMap(ratio_map, [0.0, 0.0], [1.2, 1.2], 10)
+    side = F._finest_box_side
+    for rect in ([0.0, 0.0, side[0] / 2, side[1]],
+                 [side[0] / 2, 0.0, side[0], side[1]]):
+        with pytest.raises(ValueError, match="finer than the subdiv_max lattice.*subdiv_max=10"):
+            F(rect)
+
+
+def conley_signature(morse_graph, map_graph):
+    num_vertices = morse_graph.num_vertices()
+    morse_sets = [sorted(morse_graph.morse_set(v)) for v in range(num_vertices)]
+    order = sorted(range(num_vertices), key=lambda v: morse_sets[v][0])
+    return {
+        "sizes": [len(morse_sets[v]) for v in order],
+        "min_box": [morse_sets[v][0] for v in order],
+        "phase_size": map_graph.num_vertices(),
+        "conley": [tuple(morse_graph.annotations(v)) for v in order],
+    }
+
+
+@pytest.mark.xfail(raises=ValueError, strict=False,
+                   reason="TreeGrid::relativeComplex gives the Conley phase "
+                          "rectangles off the grid on this adaptive run")
+@pytest.mark.parametrize("use_batch", [False, True])
+def test_conley_morse_graph_on_adaptive_grid_matches_live(use_batch):
+    # C42: the adaptive (6, 10, 4) run of tests/test_conley_batch.py
+    lower, upper = [0.0, 0.0], [1.2, 1.2]
+
+    def build(F):
+        return CMGDB.Model(6, 10, 4, 10000, lower, upper, F)
+
+    live = conley_signature(*CMGDB.ComputeConleyMorseGraph(
+        build(lambda rect: CMGDB.BoxMap(ratio_map_scalar, rect))))
+    F = CMGDB.PrecomputedBoxMap(ratio_map, lower, upper, 10)
+    model = build(F)
+    if use_batch:
+        model.set_batch_map(F.batch)
+    assert conley_signature(*CMGDB.ComputeConleyMorseGraph(model)) == live
