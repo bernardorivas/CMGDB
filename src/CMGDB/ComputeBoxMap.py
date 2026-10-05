@@ -26,15 +26,29 @@ def SamplePoints(lower_bounds, upper_bounds, num_pts):
     X = np.random.uniform(lower_bounds, upper_bounds, size=(num_pts,dim))
     return list(X)
 
+# Evaluate f on an (m, dim) array of points, as an (m, dim) array. An (m,)
+# result is taken from a map of one variable; any other shape raises, since
+# reshaping it, as corners mode used to, scrambles a (dim, m) result
+def _batch_images(f, points):
+    m, dim = points.shape
+    Y = np.asarray(f(points))
+    if dim == 1 and Y.shape == (m,):
+        Y = Y.reshape(m, 1)
+    if Y.shape != (m, dim):
+        raise ValueError(f"f must return an array of shape ({m}, {dim}) for "
+                         f"{m} points of dimension {dim}; got shape {Y.shape}")
+    return Y
+
 # Vectorized version of BoxMap for use with Model.set_batch_map
 def BoxMapBatch(f, rects, mode='corners', padding=False):
     """Evaluate a box map on many rectangles at once.
 
     f must map an (m, dim) NumPy array of points to an (m, dim) array of
-    image points. rects is an (N, 2*dim) array of rectangles, each row
-    holding dim lower bounds followed by dim upper bounds. Returns an
-    (N, 2*dim) array of image rectangles, equivalent to applying
-    BoxMap(f_scalar, rect, mode, padding) to each row.
+    image points (an (m,) array is also taken when dim is 1). rects is an
+    (N, 2*dim) array of rectangles, each row holding dim lower bounds
+    followed by dim upper bounds. Returns an (N, 2*dim) array of image
+    rectangles, equivalent to applying BoxMap(f_scalar, rect, mode, padding)
+    to each row.
 
     Typical use:
         def F_batch(rects):
@@ -55,13 +69,13 @@ def BoxMapBatch(f, rects, mode='corners', padding=False):
         for k in range(num_corners):
             mask = np.array([(k >> d) & 1 for d in range(dim)], dtype=bool)
             corners[k] = np.where(mask, upper, lower)
-        Y = np.asarray(f(corners.reshape(num_corners * N, dim)))
+        Y = _batch_images(f, corners.reshape(num_corners * N, dim))
         Y = Y.reshape(num_corners, N, dim)
         Y_lower = Y.min(axis=0)
         Y_upper = Y.max(axis=0)
     elif mode == 'center': # Compute at center point
         padding = True # Must be true for this case
-        Y = np.asarray(f((lower + upper) / 2))
+        Y = _batch_images(f, (lower + upper) / 2)
         Y_lower = Y
         Y_upper = Y.copy()
     else: # Unknown mode
