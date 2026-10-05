@@ -446,3 +446,18 @@ def test_shrunk_3d_boxes_keep_every_face():
         faces, _, _ = _exposed_faces(pair, [0], [factor])
         assert len(faces) == 10
         assert len(_exposed_faces(cube_rows(), [0], [factor])[0]) == 6 * 9
+
+
+def test_unaligned_3d_set_falls_back_alone():
+    # C15: one grid was fitted to the boxes of every set, drawn or not, so a
+    # single box of another size or offset anywhere turned culling off for
+    # all sets: their interior faces were drawn too, six per box, and showed
+    # through the antialiasing seams as a dark grid. Neighbors are only
+    # looked for within a set, so each set needs a grid of its own.
+    for odd in ([[2.0, 2.0, 2.0, 2.07, 2.07, 2.07, 1]],                  # another size
+                [[2.03, 2.0, 2.0, 2.13, 2.1, 2.1, 1],                    # off the lattice
+                 [2.0, 2.0, 2.0, 2.1, 2.1, 2.1, 1]]):
+        faces, _, _ = _exposed_faces(cube_rows() + odd, [0], [1, 1])
+        assert len(faces) == 6 * 9
+        faces, labels, _ = _exposed_faces(cube_rows() + odd, [0, 1], [1, 1])
+        assert np.sum(labels == 0) == 6 * 9 and np.sum(labels == 1) == 6 * len(odd)

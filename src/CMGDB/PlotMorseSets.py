@@ -847,10 +847,13 @@ def _exposed_faces(rows, morse_nodes, scale_factor):
 
        A solid block of cells is drawn as its shell: interior faces are hidden
        by definition, so emitting them costs time and file size and changes
-       nothing on screen. Culling needs the boxes to sit on one aligned grid,
-       which is what CMGDB's subdivision produces; when they do not -- mixed
-       depths, say -- every face is emitted instead, which is correct but
-       larger.
+       nothing on screen. Culling needs the boxes of a set to sit on one
+       aligned grid, which is what CMGDB's subdivision produces; a set whose
+       boxes do not -- mixed depths, say -- emits every face instead, which is
+       larger, and its inner faces show through the antialiasing seams.
+       Neighbors are only looked for within a set, so each set is fitted to a
+       grid of its own and such a set leaves the others culled. aligned, the
+       third value returned, says whether every drawn set was culled.
 
        Faces are scaled about their own box's centre after culling, so a scaled
        set stays a closed surface rather than separating into shells. That
@@ -859,13 +862,17 @@ def _exposed_faces(rows, morse_nodes, scale_factor):
     """
     values = np.asarray([[float(v) for v in rect] for rect in rows], dtype=float)
     lower, upper, labels = values[:, :3], values[:, 3:6], values[:, 6].astype(int)
-    grid = _grid_index(lower, upper)
-    aligned = grid is not None
-    occupied = set()
-    if aligned:
-        index = grid[2]
-        occupied = {(int(l), int(i[0]), int(i[1]), int(i[2]))
-                    for l, i in zip(labels, index)}
+    drawn = set(int(node) for node in morse_nodes) & set(labels.tolist())
+    index = np.zeros((len(values), 3), dtype=np.int64)
+    gridded, occupied = set(), set()
+    for label in drawn:
+        own = np.flatnonzero(labels == label)
+        grid = _grid_index(lower[own], upper[own])
+        if grid is not None:
+            index[own] = grid[2]
+            gridded.add(label)
+            occupied.update((label, i, j, k) for i, j, k in grid[2].tolist())
+    aligned = gridded == drawn
     faces, face_labels = [], []
     for k in range(values.shape[0]):
         label = int(labels[k])
@@ -884,7 +891,7 @@ def _exposed_faces(rows, morse_nodes, scale_factor):
         factor = scale_factor[label]
         centre = (lower[k] + upper[k]) / 2 if factor != 1 else None
         for face, offset in candidates:
-            if aligned and factor >= 1:
+            if label in gridded and factor >= 1:
                 neighbour = (label, int(index[k][0]) + offset[0],
                              int(index[k][1]) + offset[1], int(index[k][2]) + offset[2])
                 if neighbour in occupied:
