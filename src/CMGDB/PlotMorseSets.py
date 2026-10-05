@@ -867,7 +867,8 @@ def _exposed_faces(rows, morse_nodes, scale_factor):
        larger, and its inner faces show through the antialiasing seams.
        Neighbors are only looked for within a set, so each set is fitted to a
        grid of its own and such a set leaves the others culled. aligned, the
-       third value returned, says whether every drawn set was culled.
+       third value returned, says whether every drawn set fits a grid of its
+       own.
 
        Faces are scaled about their own box's centre after culling, so a scaled
        set stays a closed surface rather than separating into shells. That
