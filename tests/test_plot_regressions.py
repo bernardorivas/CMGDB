@@ -171,3 +171,23 @@ def test_one_dimensional_labels_stay_inside_an_explicit_xlim(tmp_path):
         widths.append(plt.imread(out).shape[1])
         plt.close(fig)
     assert abs(widths[0] - widths[1]) <= 2
+
+
+@pytest.mark.parametrize("label_sets", [True, False])
+@pytest.mark.parametrize("height", [0.18, 1.2, 2.0])
+def test_one_dimensional_limits_follow_the_box_height(height, label_sets):
+    # C08: ylim was fixed at [-0.5, 0.78], or [-0.5, 0.5] without labels, so
+    # a box taller than 1 was cut off at the bottom of the axes.
+    fig, ax = CMGDB.PlotMorseSets1D(line_rows(), height=height, label_sets=label_sets,
+                                    show=False)
+    low, high = ax.get_ylim()
+    assert low < -height / 2 and height / 2 < high
+    if height == 0.18:                       # the default layout is unchanged
+        assert (low, high) == pytest.approx((-0.5, 0.78 if label_sets else 0.5))
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    top = ax.get_window_extent(renderer).y1
+    for text in ax.texts:
+        if text.get_text().isdigit():
+            assert text.get_window_extent(renderer).y1 <= top + 1
+    plt.close(fig)

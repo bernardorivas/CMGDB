@@ -695,11 +695,13 @@ def PlotMorseSets1D(morse_sets, morse_nodes=None, cmap=None, clist=None, scale_f
        axis and are drawn behind it, so the axis line runs through them and
        reads as the phase space itself rather than as a baseline they sit on.
 
-       height is the box height in data units. The axis line sits at the middle
-       of the boxes, so the lower half would otherwise run over the tick
-       numbers printed beneath it; the tick padding is set from height to keep
-       the numbers clear whatever height is chosen. The default is small enough
-       that the boxes read as marks on the axis rather than as a filled band.
+       height is the box height in data units, on a y axis that spans
+       [-0.5, 0.5] plus headroom for the labels and widens rather than clip a
+       taller box. The axis line sits at the middle of the boxes, so the lower
+       half would otherwise run over the tick numbers printed beneath it; the
+       tick padding is set from height to keep the numbers clear whatever
+       height is chosen. The default is small enough that the boxes read as
+       marks on the axis rather than as a filled band.
 
        Boxes are drawn as rectangles at their true endpoints. A thick line with
        projecting caps would overshoot each interval by half its linewidth in
@@ -785,8 +787,11 @@ def PlotMorseSets1D(morse_sets, morse_nodes=None, cmap=None, clist=None, scale_f
             if low <= high:
                 ax.text((low + high) / 2, height / 2 + 0.06, f'{morse_node}', ha='center',
                         va='bottom', color='black', fontsize=fontsize)
-    # Symmetric about the axis, with headroom for the labels when drawn.
-    ax.set_ylim([-0.5, 0.5 if not label_sets else 0.5 + 0.28])
+    # Symmetric about the axis, with headroom for the labels when drawn. The
+    # range widens for a box taller than 0.9 rather than clip it, and the
+    # headroom with it; the default height keeps [-0.5, 0.78].
+    half = max(0.5, height / 2 + 0.05)
+    ax.set_ylim([-half, half if not label_sets else 1.56 * half])
     ax.set_yticks([])
     # Keep only the bottom spine and put it on the axis line the boxes straddle.
     for spine in ('top', 'left', 'right'):
