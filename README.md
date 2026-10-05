@@ -100,8 +100,6 @@ the native reachability queries, `ComputeConleyIndexForCells`, and
   `CMGDB.ComputeMorseGraphOnly(model)` and
   `CMGDB.ComputeConleyMorseGraphOnly(model)` skip the extra box-map pass that
   builds the returned `MapGraph`, for runs that do not use it.
-- **A correctness-validating benchmark harness** — `tests/bench.py` checks the
-  expected Morse-graph output before reporting timings.
 
 ## Installation
 
@@ -413,18 +411,19 @@ Torch is not a required dependency. If Torch is installed and `f` is a
 
 ## Benchmarks
 
-The fork includes a correctness-validating benchmark harness:
+Upstream's benchmark suite validates each scenario's Morse sets, reachability
+and Conley indices against frozen references before it reports timings, so a
+change that alters the computed dynamics fails:
 
 ```bash
-python tests/bench.py
-python tests/bench.py --heavy
-python tests/bench.py --scenarios py_medium,reach_4d --repeats 5 --warmup 1
+python benchmarks/benchmark.py              # quick suite
+python benchmarks/benchmark.py --heavy
+python benchmarks/benchmark.py --scenario leslie2d_python --repeat 5
 ```
 
-The harness validates expected Morse-graph outputs before reporting timings. It
-is useful for checking changes to `MapGraph`, reachability, and Python map
-callback paths. Upstream's benchmark suite is in [benchmarks](benchmarks); see
-[benchmarks/README.md](benchmarks/README.md).
+See [benchmarks/README.md](benchmarks/README.md) for the scenarios. It covers
+Python, batched (`set_batch_map`), data-driven and interval box maps and the
+Conley phase, so it replaces the fork's former `tests/bench.py`.
 
 Upstream's scenarios call `ComputeMorseGraph` and `ComputeConleyMorseGraph`
 without the cache keyword arguments, so under this fork's cached `map_graph`
