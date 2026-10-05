@@ -178,7 +178,7 @@ For background, see this
 * `cache_transition_graph` (default `None`: cache unless `CMGDB_MAPGRAPH_CACHE=0`) — cache the per-level transition graph used internally by the SCC/reachability passes, halving the map evaluations per subdivision level. Set `False` for a memory-lean run that re-evaluates the map on demand; since the returned `map_graph` is cached by default, such a run also needs `cache_map_graph=False` (or `CMGDB_MAPGRAPH_CACHE=0`, which makes both flags default to `False`).
 * `batch_chunk_size` (default `65536`) — rectangles per batched map call when a batch map is attached with `model.set_batch_map` (`0` means one call for the whole grid). The Conley-index phase of `ComputeConleyMorseGraph` also gathers its map evaluations into these chunks, evaluating each rectangle exactly once — without a batch map the evaluations are scalar but still deduplicated, so attaching a batch map speeds up every phase, not just the transition graph. `ComputeConleyIndexForCells` takes the same keyword for its batched evaluations.
 * `max_cached_edges` (default `0` = unlimited) — abandon a cache as soon as it would exceed this many edges and fall back to on-demand evaluation. The limit is checked before each row of the graph is stored, so the edge array never holds more edges than that, whatever `batch_chunk_size` is. It bounds the returned `map_graph`'s cache too: with an explicit `cache_map_graph=True`, a returned graph over the limit comes back lazy with a `RuntimeWarning`. It does not bound a later `map_graph.build_cache()`, which takes its own `max_cached_edges` (default `0` = unlimited) and raises `RuntimeError` when the graph exceeds it.
-* `reserve_edges` / `reserve_min_edges` (defaults `0` / `2**24`) — up-front sizing of the flat edge array. By default the final edge count is projected from the first chunk and twice that is reserved, which avoids the reallocation spikes of multi-gigabyte graphs on deep grids; a positive `reserve_edges` reserves exactly that many instead. Reservation only engages once the projection reaches `reserve_min_edges`.
+* `reserve_edges` / `reserve_min_edges` (defaults `0` / `2**24`) — sizing of the flat edge array, after the first chunk (a grid that fits in one chunk gets no reservation). By default the final edge count is projected from the chunks seen so far and twice that is reserved, again only when a later projection outgrows the array, which avoids the reallocation spikes of multi-gigabyte graphs on deep grids; a positive `reserve_edges` reserves exactly that many instead. Reservation only engages once the projection reaches `reserve_min_edges`.
 * `cache_map_graph` (default `None`: cache unless `CMGDB_MAPGRAPH_CACHE=0`; upstream's default is `False`) — eagerly cache the **returned** `map_graph` (one extra full batched map pass over the final grid, after which its adjacency queries are O(1) array lookups). `False` returns a lazy `map_graph` that evaluates the map per `adjacencies` query; `map_graph.build_cache()` upgrades it to the cached form later. `map_graph.has_cache()` and `map_graph.num_cached_edges()` report the state.
 
 An explicit `True` or `False` for either cache flag always wins over `CMGDB_MAPGRAPH_CACHE`. `ComputeMorseGraphOnly` and `ComputeConleyMorseGraphOnly` take the same keyword arguments except `cache_map_graph`, since they return no `map_graph`. The `AtlasModel` overloads take no keyword arguments; their caches follow `CMGDB_MAPGRAPH_CACHE`.
@@ -309,8 +309,9 @@ before the first map evaluation of any call that builds a cache. The projected
 reservation of the `reserve_edges` / `reserve_min_edges` keyword arguments (see
 [Performance options](#performance-options-and-the-transition-graph-cache))
 still applies after the first chunk: once the projected edge count reaches
-`reserve_min_edges`, it enlarges a smaller buffer to twice the projection, or
-to exactly `reserve_edges` when that is set.
+`reserve_min_edges`, it enlarges a buffer that the projection outgrows to
+twice the projection, or a smaller buffer to exactly `reserve_edges` when that
+is set.
 
 Three separate opt-in variables stop native CSR growth before its next reserve
 or append:
@@ -335,8 +336,8 @@ python ...
 
 The 1.2-billion-edge reserve is about 8.94 GiB. The projected reservation
 described above can still enlarge the buffer to twice the projected edge count
-after the first chunk; a `reserve_min_edges` above any projected edge count
-(for example `2**62`) turns it off.
+after a chunk whose projection exceeds 1.2 billion; a `reserve_min_edges` above
+any projected edge count (for example `2**62`) turns it off.
 
 To trade speed for memory, disable the cache outright:
 

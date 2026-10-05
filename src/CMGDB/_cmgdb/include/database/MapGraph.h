@@ -35,13 +35,15 @@
 ///    the edge count would exceed it, the cache is abandoned and the
 ///    MapGraph falls back to on-demand evaluation (0 means unlimited). It
 ///    does not bound a later, explicit MapGraph::build_cache.
-///    reserve_edges controls the up-front reservation of the flat edge
-///    array. 0 (the default) reserves twice the final edge count projected
-///    from the chunks seen so far, which avoids the repeated-doubling
-///    reallocation of multi-gigabyte edge arrays (a transient ~3x memory
-///    peak on deep uniform grids); a positive value reserves exactly that
-///    many edges instead. Reservation only engages once the projected edge
-///    count reaches reserve_min_edges, so small graphs -- including the
+///    reserve_edges controls the reservation of the flat edge array, made
+///    after the first chunk (a grid that fits in one chunk gets none).
+///    0 (the default) reserves twice the final edge count projected from
+///    the chunks seen so far, and again whenever a later projection
+///    outgrows the array, which avoids the repeated-doubling reallocation of
+///    multi-gigabyte edge arrays (a transient ~3x memory peak on deep
+///    uniform grids); a positive value reserves exactly that many edges
+///    instead. Reservation only engages once the projected edge count
+///    reaches reserve_min_edges, so small graphs -- including the
 ///    per-Morse-set subgraphs built during adaptive runs -- never
 ///    over-allocate.
 ///    The environment variables read by build_cache (see cmgdb_detail
@@ -312,6 +314,37 @@ map_graph_cache_enabled ( void ) {
   throw std::invalid_argument ( message . str () );
 }
 
+/// projected_edge_reservation
+///   The reservation MapGraph::build_cache makes for its edge array after
+///   each chunk but the last: the capacity to reserve, or 0 for none.
+///   `edges` edges are stored for the first `stop` of `n` vertices, in an
+///   array of capacity `capacity`. Once the final edge count projected from
+///   that density reaches reserve_min_edges, the array is enlarged to
+///   reserve_edges when that is positive, and otherwise to twice the
+///   projection -- but only when the projection no longer fits the array.
+///   Each automatic reservation then at least doubles the capacity, so a
+///   projection that creeps up from chunk to chunk does not reallocate and
+///   copy the whole array every time. The target is capped at `limit`.
+inline uint64_t
+projected_edge_reservation ( uint64_t edges, uint64_t capacity,
+                             uint64_t stop, uint64_t n,
+                             uint64_t reserve_edges,
+                             uint64_t reserve_min_edges,
+                             uint64_t limit ) {
+  if ( stop == 0 or stop >= n ) return 0;
+  const double projection = (double) edges / (double) stop * (double) n;
+  const uint64_t projected = projection < 9.0e18 ?
+    (uint64_t) projection + 1 : std::numeric_limits<uint64_t>::max ();
+  if ( projected < reserve_min_edges ) return 0;
+  uint64_t target = reserve_edges;
+  if ( target == 0 ) {
+    if ( projected <= capacity ) return 0;
+    target = projected > limit / 2 ? limit : 2 * projected;
+  }
+  target = std::min ( target, limit );
+  return target > capacity ? target : 0;
+}
+
 } // namespace cmgdb_detail
 
 inline
@@ -543,29 +576,25 @@ MapGraph::try_build_cache ( uint64_t max_cached_edges ) {
       }
     }
     if ( stop < n ) {
-      // Project the final edge count from the edge density seen so far.
-      // The projection sizes the up-front reservation of the flat edge
-      // array -- a deep uniform grid's multi-gigabyte edge array is then
-      // allocated (nearly) once instead of repeatedly doubled with a
-      // transient ~3x memory peak. Chunks follow the tree order (a spatial
-      // sweep), so early density can be biased; the projection is therefore
-      // refreshed every chunk and the auto reservation doubles it for
-      // headroom. It never abandons the cache: a sweep that is denser early
-      // on can project several times the real edge count, so only the
-      // measured count (append_row) decides.
-      const double density = (double) edges . size () / (double) stop;
-      const uint64_t projected = (uint64_t) ( density * (double) n ) + 1;
-      if ( projected >= options_ . reserve_min_edges ) {
-        uint64_t target = options_ . reserve_edges > 0 ?
-          options_ . reserve_edges : 2 * projected;
-        target = std::min ( target, (uint64_t) edge_capacity_limit );
-        if ( target > (uint64_t) edges . capacity () ) {
-          try {
-            edges . reserve ( target );
-          } catch ( std::bad_alloc const& ) {
-            // The reservation is an optimization only; fall back to
-            // ordinary vector growth if the allocator refuses it.
-          }
+      // Reserve for the final edge count projected from the edge density
+      // seen so far (cmgdb_detail::projected_edge_reservation): a deep
+      // uniform grid's multi-gigabyte edge array is then allocated a few
+      // times instead of repeatedly doubled with a transient ~3x memory
+      // peak. Chunks follow the tree order (a spatial sweep), so early
+      // density can be biased; the projection is therefore refreshed every
+      // chunk, and doubled for headroom. It never abandons the cache: a
+      // sweep that is denser early on can project several times the real
+      // edge count, so only the measured count (append_row) decides.
+      const uint64_t target = cmgdb_detail::projected_edge_reservation (
+        edges . size (), edges . capacity (), stop, n,
+        options_ . reserve_edges, options_ . reserve_min_edges,
+        std::min ( (uint64_t) edge_capacity_limit, (uint64_t) edges . max_size () ) );
+      if ( target > 0 ) {
+        try {
+          edges . reserve ( target );
+        } catch ( std::bad_alloc const& ) {
+          // The reservation is an optimization only; fall back to
+          // ordinary vector growth if the allocator refuses it.
         }
       }
     }
@@ -710,6 +739,13 @@ MapGraphBinding(py::module &m) {
       "Return read-only zero-copy int64 CSR arrays owned by this MapGraph."
     )
     .def("adjacencies", &MapGraph::adjacencies);
+
+  // Test helper: the reservation build_cache makes after a chunk.
+  m.def("_ProjectedEdgeReservation",
+        &cmgdb_detail::projected_edge_reservation,
+        py::arg("edges"), py::arg("capacity"), py::arg("stop"), py::arg("n"),
+        py::arg("reserve_edges"), py::arg("reserve_min_edges"),
+        py::arg("limit"));
 }
 
 #endif

@@ -1,5 +1,6 @@
 """Regression tests for the MapGraph CSR cache: concurrent build_cache()
-calls, the max_cached_edges limit and explicit cache requests."""
+calls, the max_cached_edges limit, explicit cache requests and the projected
+edge reservation."""
 
 import threading
 import warnings
@@ -249,3 +250,88 @@ def test_explicit_cache_map_graph_warns_when_the_limit_drops_it():
         _, map_graph = CMGDB.ComputeMorseGraph(model,
                                                max_cached_edges=edges - 1)
         assert not map_graph.has_cache()
+
+
+# ---------------------------------------------------------------------------
+# The projected edge reservation grows the array geometrically (C33)
+# ---------------------------------------------------------------------------
+
+def replay_reservations(row_edges, chunk, reserve_edges=0,
+                        reserve_min_edges=1, limit=2**60):
+    """Replay the chunk loop of build_cache over per-row edge counts.
+
+    Returns the final edge count and capacity and the reservations made.
+    """
+    reserve = CMGDB._cmgdb._ProjectedEdgeReservation
+    n = len(row_edges)
+    size = capacity = 0
+    reservations = []
+    for start in range(0, n, chunk):
+        stop = min(start + chunk, n)
+        size += sum(row_edges[start:stop])
+        if size > capacity:  # the geometric growth of build_cache's rows
+            capacity = max(size, capacity + max(capacity, 65536))
+        target = reserve(size, capacity, stop, n, reserve_edges,
+                         reserve_min_edges, limit)
+        if target:
+            reservations.append(target)
+            capacity = target
+    return size, capacity, reservations
+
+
+def test_projected_reservation_grows_geometrically():
+    # The array was reserved again, and copied whole, after every chunk whose
+    # projection had grown at all: after every chunk when the edge density
+    # rises along the tree-order sweep.
+    n = 1 << 16
+    rows = [1 + (64 * v) // n for v in range(n)]
+    size, capacity, reservations = replay_reservations(rows, n // 64)
+    assert 1 <= len(reservations) <= 8
+    assert all(b >= 2 * a for a, b in zip(reservations, reservations[1:]))
+    assert size <= capacity <= 4 * size
+
+
+def test_projected_reservation_explicit_size_and_limits():
+    reserve = CMGDB._cmgdb._ProjectedEdgeReservation
+    n = 1 << 16
+    rows = [1 + (64 * v) // n for v in range(n)]
+    _, _, reservations = replay_reservations(rows, n // 64,
+                                             reserve_edges=3_000_000)
+    assert reservations == [3_000_000]
+    # No reservation below reserve_min_edges, after the last chunk, or while
+    # the projection (21 edges here) fits the array.
+    assert reserve(10, 0, 1, 2, 0, 100, 2**60) == 0
+    assert reserve(10, 0, 2, 2, 0, 1, 2**60) == 0
+    assert reserve(10, 50, 1, 2, 0, 1, 2**60) == 0
+    assert reserve(10, 0, 1, 2, 0, 1, 2**60) == 42
+    # The target never passes the limit, however large the projection.
+    assert reserve(10**6, 0, 1, 2**40, 0, 1, 12345) == 12345
+    assert reserve(10**6, 0, 1, 2**60, 0, 1, 12345) == 12345
+    assert reserve(10, 0, 1, 2, 2**62, 1, 12345) == 12345
+
+
+def growing_model(depth=12):
+    """1D map on [0, 1] that moves every box to the right, with images that
+    widen along the tree-order sweep."""
+    def F(rect):
+        a, b = rect
+        h = b - a
+        lo = min(a + 2.25 * h, 1.0 - 0.5 * h)
+        return [lo, min(1.0, lo + h * (1.0 + 40.0 * a))]
+
+    return CMGDB.Model(depth, depth, depth, 10000, [0.0], [1.0], F)
+
+
+def test_projected_reservation_leaves_the_graph_unchanged():
+    _, reference = CMGDB.ComputeMorseGraph(growing_model(),
+                                           batch_chunk_size=256,
+                                           reserve_min_edges=2**62)
+    expected = all_adjacencies(reference)
+    # reserve_edges=2**62 is past std::vector::max_size(), which raised
+    # std::length_error (ValueError) where max_size() is below the hard
+    # capacity bound, as in libstdc++.
+    for kwargs in ({"reserve_min_edges": 1},
+                   {"reserve_edges": 2**62, "reserve_min_edges": 1}):
+        _, map_graph = CMGDB.ComputeMorseGraph(growing_model(),
+                                               batch_chunk_size=256, **kwargs)
+        assert all_adjacencies(map_graph) == expected
