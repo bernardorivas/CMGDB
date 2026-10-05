@@ -6,10 +6,14 @@
 #include "EuclideanParameterSpace.h"
 #include "RectGeo.h"
 #include "simple_interval.h"
+#include <cmath>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
+#include <string>
 #include <vector>
 #include <algorithm>
 
@@ -85,6 +89,11 @@ public:
       // Assign lower and upper values to image rectangle
       rect_image . lower_bounds [ d ] = image_bounds [ d ];
       rect_image . upper_bounds [ d ] = image_bounds [ dim + d ];
+      if ( std::isnan ( rect_image . lower_bounds [ d ] ) or
+           std::isnan ( rect_image . upper_bounds [ d ] ) ) {
+        throw std::invalid_argument (
+          nanImageMessage ( "map", rect_bounds . data (), dim ) );
+      }
     }
 
     // Return result
@@ -120,10 +129,34 @@ public:
     if ( images . size () != count * 2 * dim ) {
       throw std::runtime_error ( "ModelMapF::batch_map: batch map returned wrong number of values" );
     }
+    for ( uint64_t k = 0; k < images . size (); ++ k ) {
+      if ( std::isnan ( images [ k ] ) ) {
+        throw std::invalid_argument ( nanImageMessage (
+          "batch map", rects . data () + k / ( 2 * dim ) * 2 * dim, dim ) );
+      }
+    }
   }
 private:
   interval getRectangleComponent ( const RectGeo & rectangle, int d ) const {
     return interval (rectangle . lower_bounds [ d ], rectangle . upper_bounds [ d ]);
+  }
+
+  // An image with a NaN bound has no cover: TreeGrid::cover casts the bounds
+  // to integers, which is undefined for NaN (on arm64 it gives a slab of
+  // boxes at the lower boundary). An infinite bound is clamped to the domain
+  // there, so it passes. The message names the rectangle, as
+  // [lower bounds, upper bounds].
+  static std::string nanImageMessage ( const char * map_name,
+                                       const double * rect, uint64_t dim ) {
+    std::ostringstream message;
+    message . precision ( std::numeric_limits<double>::digits10 );
+    message << "The " << map_name << " returned an image with a NaN bound "
+            << "for the rectangle [";
+    for ( uint64_t j = 0; j < 2 * dim; ++ j ) {
+      message << ( j > 0 ? ", " : "" ) << rect [ j ];
+    }
+    message << "], which no grid boxes can cover";
+    return message . str ();
   }
 };
 

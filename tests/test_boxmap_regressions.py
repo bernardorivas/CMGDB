@@ -1,4 +1,7 @@
-"""Regression tests for the live box maps BoxMap and BoxMapBatch."""
+"""Regression tests for the live box maps BoxMap and BoxMapBatch, and for
+the box images a Model takes from a map."""
+
+import re
 
 import numpy as np
 import pytest
@@ -93,6 +96,36 @@ def test_nan_image_stops_the_morse_graph_computation(use_batch):
         model.set_batch_map(lambda rects: CMGDB.BoxMapBatch(sqrt_map, rects))
     with pytest.raises(ValueError, match="NaN"):
         CMGDB.ComputeMorseGraph(model)
+
+
+def half_map_undefined_right(rects):
+    """Box images of x/2 on [0, 1]^2, NaN for the boxes in x >= 0.5, as a
+    map of the user's own might return them."""
+    rects = np.asarray(rects, dtype=float)
+    images = 0.5 * rects
+    images[rects[:, 0] >= 0.5] = np.nan
+    return images
+
+
+@pytest.mark.parametrize("use_batch", [False, True])
+def test_nan_image_from_any_map_raises(use_batch):
+    # C45: a NaN bound from a map other than BoxMap or BoxMapBatch still
+    # reached TreeGrid's cover, whose int64 cast of NaN is undefined (on
+    # arm64 a slab of boxes at the lower boundary), and the run went on
+    def F(rect):
+        if use_batch:
+            # Only the batch map returns NaN, so the error comes from there
+            return [0.5 * v for v in rect]
+        return half_map_undefined_right([rect])[0].tolist()
+
+    model = CMGDB.Model(4, 4, [0.0, 0.0], [1.0, 1.0], F)
+    if use_batch:
+        model.set_batch_map(half_map_undefined_right)
+    which = "The batch map" if use_batch else "The map"
+    with pytest.raises(ValueError, match=which + " returned an image with a NaN bound") as info:
+        CMGDB.ComputeMorseGraph(model)
+    rect = [float(v) for v in re.search(r"\[(.*)\]", str(info.value)).group(1).split(", ")]
+    assert len(rect) == 4 and rect[0] >= 0.5
 
 
 def test_infinite_images_still_map():
