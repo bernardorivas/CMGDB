@@ -253,8 +253,9 @@ def write_map_graph_csr_checkpoint(
     if not bool(map_graph.has_cache()):
         raise RuntimeError(
             "CSR checkpoint requires a cached MapGraph (CMGDB_MAPGRAPH_CACHE "
-            "enabled, cache_map_graph=True, or build_cache(); a graph over "
-            "max_cached_edges stays lazy)"
+            "enabled or cache_map_graph=True, if the graph is within the "
+            "computation's max_cached_edges; or map_graph.build_cache(), "
+            "which that limit does not bound)"
         )
     vertices = _exact_nonnegative_integer(
         map_graph.num_vertices(), label="MapGraph vertex count"

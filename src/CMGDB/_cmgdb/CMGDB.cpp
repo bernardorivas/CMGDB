@@ -509,12 +509,29 @@ static MapGraphOptions TransitionGraphOptions (
 // and CMGDB_MAPGRAPH_HARD_MAX_* variables first (MapGraphEnv): with lazy
 // transition graphs this graph's build would otherwise be the first to read
 // them, after all Morse and Conley work.
+// max_cached_edges bounds this cache too. When the caller asked for it
+// explicitly (cache_map_graph=True) and the graph is over that limit, the
+// graph comes back lazy with a RuntimeWarning rather than an error, which
+// would lose the whole computation; build_cache() can still cache it.
 static MapGraph ReturnedMapGraph ( std::shared_ptr < Grid > phase_space,
                                    std::shared_ptr<const Map> map,
                                    MapGraphOptions options,
-                                   bool cache_map_graph ) {
+                                   bool cache_map_graph,
+                                   bool cache_requested ) {
   options . cache = cache_map_graph;
-  return MapGraph ( phase_space, map, options );
+  MapGraph map_graph ( phase_space, map, options );
+  if ( cache_requested and not map_graph . has_cache () ) {
+    std::ostringstream message;
+    message << "cache_map_graph=True, but the returned map_graph has more "
+            << "than max_cached_edges=" << options . max_cached_edges
+            << " edges, so it was left uncached; map_graph.build_cache() "
+            << "caches it";
+    py::gil_scoped_acquire gil;
+    if ( PyErr_WarnEx ( PyExc_RuntimeWarning, message . str () . c_str (), 1 ) != 0 ) {
+      throw py::error_already_set ();
+    }
+  }
+  return map_graph;
 }
 
 std::pair<MorseGraph, MapGraph> ComputeConleyMorseGraph ( Model const& model,
@@ -532,7 +549,8 @@ std::pair<MorseGraph, MapGraph> ComputeConleyMorseGraph ( Model const& model,
   std::shared_ptr < Grid > phase_space;
   MorseGraph morsegraph = ComputeMorseGraphCore ( model, true, options, & phase_space );
   MapGraph map_graph = ReturnedMapGraph ( phase_space, model . map (), options,
-                                          cache_returned );
+                                          cache_returned,
+                                          cache_map_graph . value_or ( false ) );
 
   return std::make_pair ( morsegraph, map_graph );
 }
@@ -571,7 +589,8 @@ std::pair<MorseGraph, MapGraph> ComputeMorseGraph ( Model const& model,
   std::shared_ptr < Grid > phase_space;
   MorseGraph morsegraph = ComputeMorseGraphCore ( model, false, options, & phase_space );
   MapGraph map_graph = ReturnedMapGraph ( phase_space, model . map (), options,
-                                          cache_returned );
+                                          cache_returned,
+                                          cache_map_graph . value_or ( false ) );
 
   return std::make_pair ( morsegraph, map_graph );
 }
@@ -1537,9 +1556,11 @@ released during the computation.
     "CMGDB_MAPGRAPH_CACHE=0.\n"
     "batch_chunk_size: rectangles per batched map call (0 = whole grid).\n"
     "max_cached_edges: abandon a cache as soon as it would exceed this many "
-    "edges and fall back to on-demand evaluation (0 = unlimited). The "
-    "opt-in CMGDB_MAPGRAPH_HARD_MAX_{VERTICES,EDGES,CACHE_BYTES} limits "
-    "raise instead.\n"
+    "edges and fall back to on-demand evaluation (0 = unlimited). This "
+    "includes the returned map_graph's cache (cache_map_graph=True then "
+    "warns), but not a later map_graph.build_cache(). The opt-in "
+    "CMGDB_MAPGRAPH_HARD_MAX_{VERTICES,EDGES,CACHE_BYTES} limits raise "
+    "instead.\n"
     "reserve_edges: up-front reservation for the flat edge array; 0 = "
     "automatic (2x the edge count projected from the first chunk).\n"
     "reserve_min_edges: reservation engages only when the projected edge "

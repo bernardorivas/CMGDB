@@ -177,7 +177,7 @@ For background, see this
 
 * `cache_transition_graph` (default `None`: cache unless `CMGDB_MAPGRAPH_CACHE=0`) — cache the per-level transition graph used internally by the SCC/reachability passes, halving the map evaluations per subdivision level. Set `False` for a memory-lean run that re-evaluates the map on demand; since the returned `map_graph` is cached by default, such a run also needs `cache_map_graph=False` (or `CMGDB_MAPGRAPH_CACHE=0`, which makes both flags default to `False`).
 * `batch_chunk_size` (default `65536`) — rectangles per batched map call when a batch map is attached with `model.set_batch_map` (`0` means one call for the whole grid). The Conley-index phase of `ComputeConleyMorseGraph` also gathers its map evaluations into these chunks, evaluating each rectangle exactly once — without a batch map the evaluations are scalar but still deduplicated, so attaching a batch map speeds up every phase, not just the transition graph. `ComputeConleyIndexForCells` takes the same keyword for its batched evaluations.
-* `max_cached_edges` (default `0` = unlimited) — abandon a cache as soon as it would exceed this many edges and fall back to on-demand evaluation. The limit is checked before each row of the graph is stored, so the edge array never holds more edges than that, whatever `batch_chunk_size` is.
+* `max_cached_edges` (default `0` = unlimited) — abandon a cache as soon as it would exceed this many edges and fall back to on-demand evaluation. The limit is checked before each row of the graph is stored, so the edge array never holds more edges than that, whatever `batch_chunk_size` is. It bounds the returned `map_graph`'s cache too: with an explicit `cache_map_graph=True`, a returned graph over the limit comes back lazy with a `RuntimeWarning`. It does not bound a later `map_graph.build_cache()`, which takes its own `max_cached_edges` (default `0` = unlimited) and raises `RuntimeError` when the graph exceeds it.
 * `reserve_edges` / `reserve_min_edges` (defaults `0` / `2**24`) — up-front sizing of the flat edge array. By default the final edge count is projected from the first chunk and twice that is reserved, which avoids the reallocation spikes of multi-gigabyte graphs on deep grids; a positive `reserve_edges` reserves exactly that many instead. Reservation only engages once the projection reaches `reserve_min_edges`.
 * `cache_map_graph` (default `None`: cache unless `CMGDB_MAPGRAPH_CACHE=0`; upstream's default is `False`) — eagerly cache the **returned** `map_graph` (one extra full batched map pass over the final grid, after which its adjacency queries are O(1) array lookups). `False` returns a lazy `map_graph` that evaluates the map per `adjacencies` query; `map_graph.build_cache()` upgrades it to the cached form later. `map_graph.has_cache()` and `map_graph.num_cached_edges()` report the state.
 
@@ -348,9 +348,10 @@ The lazy path recomputes adjacencies through the map on every query -- far
 slower, but it never materializes the edge array. Accepted values are
 `0`/`1`, `off`/`on`, `false`/`true`. `CMGDB_MAPGRAPH_CACHE` only sets the
 default: an explicit `cache_transition_graph=True` or `cache_map_graph=True`,
-or `map_graph.build_cache()`, still builds the cache (subject to
-`max_cached_edges`). The keyword arguments `cache_transition_graph=False`,
-`cache_map_graph=False` and `max_cached_edges` described under
+or `map_graph.build_cache()`, still builds the cache. `max_cached_edges` bounds
+the caches a call builds, but not a later `map_graph.build_cache()`. The keyword
+arguments `cache_transition_graph=False`, `cache_map_graph=False` and
+`max_cached_edges` described under
 [Performance options](#performance-options-and-the-transition-graph-cache)
 trade speed for memory per call. A memory-lean call needs both cache flags
 `False`: `cache_transition_graph=False` alone still caches the returned

@@ -31,9 +31,10 @@
 ///    With cache == true the full adjacency structure is computed once at
 ///    construction, in chunks of chunk_size rectangles, and stored in
 ///    compressed sparse row (CSR) form; subsequent adjacency queries never
-///    evaluate the map again. max_cached_edges bounds the cache: as soon as
+///    evaluate the map again. max_cached_edges bounds that cache: as soon as
 ///    the edge count would exceed it, the cache is abandoned and the
-///    MapGraph falls back to on-demand evaluation (0 means unlimited).
+///    MapGraph falls back to on-demand evaluation (0 means unlimited). It
+///    does not bound a later, explicit MapGraph::build_cache.
 ///    reserve_edges controls the up-front reservation of the flat edge
 ///    array. 0 (the default) reserves twice the final edge count projected
 ///    from the chunks seen so far, which avoids the repeated-doubling
@@ -139,14 +140,17 @@ public:
 
   /// build_cache
   ///   Build the CSR transition-graph cache now (a no-op if it is already
-  ///   built). Lets a MapGraph constructed lazily -- e.g. the map_graph
-  ///   returned by ComputeMorseGraph with cache_map_graph=False -- be
-  ///   upgraded to a cached one after the fact, at the cost of one full
-  ///   (batched, if available) pass of map evaluations over the grid.
-  ///   A call made while a build of this graph is running (from another
-  ///   thread, or from the map itself) throws std::runtime_error and
-  ///   leaves that build alone.
-  void build_cache ( void );
+  ///   built). Lets a lazy MapGraph -- e.g. the map_graph returned by
+  ///   ComputeMorseGraph with cache_map_graph=False, or one whose cache was
+  ///   abandoned at the options' max_cached_edges -- be upgraded to a cached
+  ///   one after the fact, at the cost of one full (batched, if available)
+  ///   pass of map evaluations over the grid. This explicit request is
+  ///   bounded by its own max_cached_edges (0, the default, means
+  ///   unlimited), not by the options' one: a graph with more edges throws
+  ///   std::runtime_error and stays lazy. A call made while a build of this
+  ///   graph is running (from another thread, or from the map itself)
+  ///   throws std::runtime_error and leaves that build alone.
+  void build_cache ( uint64_t max_cached_edges = 0 );
 
   /// validate_cached_csr
   ///   Validate the invariants required by the read-only NumPy CSR view.
@@ -164,6 +168,10 @@ public:
 private:
   // Private methods
   std::vector<size_type> compute_adjacencies ( const size_type & v ) const;
+  /// try_build_cache
+  ///   Build the CSR cache unless the graph has more than max_cached_edges
+  ///   edges (0: no limit). Return whether the graph is cached.
+  bool try_build_cache ( uint64_t max_cached_edges );
   // Private data
   std::shared_ptr<const Grid> grid_;
   std::shared_ptr<const Map> f_;
@@ -335,11 +343,13 @@ MapGraph::initialize ( void ) {
     throw std::logic_error ( "MapGraph::MapGraph. Unable to construct with uninitialized Map f\n");
   }
   if ( options_ . cache ) {
-    build_cache ();
+    // The options' max_cached_edges is a soft limit: a graph over it stays
+    // lazy.
+    try_build_cache ( options_ . max_cached_edges );
   }
 }
 
-/// build_cache
+/// try_build_cache
 ///    Structural intent: evaluate the multivalued map F(v) = cover(f(geo(v)))
 ///    exactly once per grid element, storing the resulting digraph in CSR
 ///    form (csr_offsets_, csr_edges_). The graph algorithms (strongly
@@ -351,11 +361,13 @@ MapGraph::initialize ( void ) {
 ///    call per chunk instead of one per rectangle. The adjacency lists this
 ///    produces are identical, element for element, to the on-demand path.
 ///
-///    Limits. options_.max_cached_edges is a soft limit, checked
-///    before each row is stored: the cache is abandoned and the graph
-///    stays lazy, and the edge array never holds more edges than
-///    that, whatever the chunk size (the batch map's input and output
-///    for one chunk are not counted). The opt-in environment limits
+///    Limits. max_cached_edges is a soft limit, checked before
+///    each row is stored: the cache is abandoned (the call returns
+///    false) and the graph stays lazy, and the edge array never
+///    holds more edges than that, whatever the chunk size (the batch
+///    map's input and output for one chunk are not counted). The
+///    constructor passes the options' limit; build_cache passes its
+///    argument and raises instead. The opt-in environment limits
 ///    CMGDB_MAPGRAPH_HARD_MAX_{VERTICES,EDGES,CACHE_BYTES} are hard: they
 ///    raise before the CSR grows past them (the edge array's capacity is
 ///    clipped to them too). CMGDB_MAPGRAPH_RESERVE_EDGES reserves that many
@@ -364,8 +376,18 @@ MapGraph::initialize ( void ) {
 ///    are read, and malformed values rejected, on every call (see
 ///    cmgdb_detail::map_graph_env).
 inline void
-MapGraph::build_cache ( void ) {
-  if ( cached_ ) return;
+MapGraph::build_cache ( uint64_t max_cached_edges ) {
+  if ( try_build_cache ( max_cached_edges ) ) return;
+  std::ostringstream message;
+  message << "MapGraph::build_cache: the transition graph has more than "
+          << "max_cached_edges=" << max_cached_edges
+          << " edges, so it was not cached (the graph stays lazy)";
+  throw std::runtime_error ( message . str () );
+}
+
+inline bool
+MapGraph::try_build_cache ( uint64_t max_cached_edges ) {
+  if ( cached_ ) return true;
   // Every map evaluation can run Python, which may let another thread call
   // build_cache on this graph, or call it from the map itself. A second
   // build would then interleave its rows with this one's.
@@ -415,7 +437,6 @@ MapGraph::build_cache ( void ) {
     maximum_edge_capacity != std::numeric_limits<size_t>::max ();
   // The soft limit: past it the cache is abandoned, so the edge array never
   // needs more slots than that either.
-  const uint64_t max_cached_edges = options_ . max_cached_edges;
   size_t edge_capacity_limit = maximum_edge_capacity;
   if ( max_cached_edges > 0 and max_cached_edges < (uint64_t) edge_capacity_limit ) {
     edge_capacity_limit = (size_t) max_cached_edges;
@@ -514,11 +535,11 @@ MapGraph::build_cache ( void ) {
           image . lower_bounds [ d ] = bounds [ d ];
           image . upper_bounds [ d ] = bounds [ dim + d ];
         }
-        if ( not append_row ( grid_ -> cover ( image ) ) ) return;
+        if ( not append_row ( grid_ -> cover ( image ) ) ) return false;
       }
     } else {
       for ( uint64_t v = start; v < stop; ++ v ) {
-        if ( not append_row ( compute_adjacencies ( (Vertex) v ) ) ) return;
+        if ( not append_row ( compute_adjacencies ( (Vertex) v ) ) ) return false;
       }
     }
     if ( stop < n ) {
@@ -552,6 +573,7 @@ MapGraph::build_cache ( void ) {
   csr_offsets_ . swap ( offsets );
   csr_edges_ . swap ( edges );
   cached_ = true;
+  return true;
 }
 
 inline std::vector<MapGraph::Vertex>
@@ -585,8 +607,9 @@ MapGraph::validate_cached_csr ( void ) const {
   if ( not cached_ ) {
     throw std::runtime_error (
       "MapGraph CSR export requires a cached MapGraph (CMGDB_MAPGRAPH_CACHE "
-      "enabled, cache_map_graph=True, or build_cache(); a graph over "
-      "max_cached_edges stays lazy)" );
+      "enabled or cache_map_graph=True, if the graph is within the "
+      "computation's max_cached_edges; or map_graph.build_cache(), which "
+      "that limit does not bound)" );
   }
   const size_t n = static_cast<size_t> ( num_vertices () );
   if ( csr_offsets_ . size () != n + 1 or csr_offsets_ . empty () or
@@ -642,9 +665,15 @@ MapGraphBinding(py::module &m) {
     .def("has_cache", &MapGraph::has_cache)
     .def("num_cached_edges", &MapGraph::num_cached_edges)
     .def("build_cache", &MapGraph::build_cache,
+         py::arg("max_cached_edges") = 0,
          "Build the CSR transition-graph cache now (no-op if already built). "
-         "Upgrades a lazily returned map_graph to a cached one at the cost "
-         "of one full pass of map evaluations over the grid.")
+         "Upgrades a lazy map_graph (cache_map_graph=False, or a cache "
+         "abandoned at the max_cached_edges of the computation) to a cached "
+         "one at the cost of one full pass of map evaluations over the grid. "
+         "Only this call's max_cached_edges (0 = unlimited, the default) "
+         "bounds it: a graph with more edges raises RuntimeError and stays "
+         "lazy. Raises RuntimeError if a build of this graph is already "
+         "running.")
     .def(
       "csr_view",
       [] ( const std::shared_ptr<MapGraph> & graph ) {

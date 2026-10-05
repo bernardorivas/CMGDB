@@ -18,10 +18,13 @@ requires a cached `MapGraph`. The `map_graph` returned by `ComputeMorseGraph`
 (for a `Model` or an `AtlasModel`) or by `ComputeConleyMorseGraph` is cached
 by default, unless `CMGDB_MAPGRAPH_CACHE=0`; the `Model` keyword argument
 `cache_map_graph=True`, or `map_graph.build_cache()`, caches it whatever
-`CMGDB_MAPGRAPH_CACHE` says. In every case, a graph whose edge count exceeds
-the `Model` keyword argument `max_cached_edges` stays lazy: the cache is
-abandoned. Before the view is returned, CMGDB checks that offsets are
-consistent and every row is in-range, strictly increasing, and duplicate-free.
+`CMGDB_MAPGRAPH_CACHE` says. A returned graph whose edge count exceeds the
+`Model` keyword argument `max_cached_edges` stays lazy: its cache is abandoned
+(with a `RuntimeWarning` when `cache_map_graph=True` was passed). That limit
+does not bound `map_graph.build_cache()`, which caches such a graph unless it is
+given a smaller `max_cached_edges` of its own. Before the view is returned,
+CMGDB checks that offsets are consistent and every row is in-range, strictly
+increasing, and duplicate-free.
 
 The scalar MapGraph construction path now also appends rows directly to CSR.
 This matters for `AtlasModel`, whose Python-backed tagged-union map does not

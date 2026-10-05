@@ -1,7 +1,8 @@
 """Regression tests for the MapGraph CSR cache: concurrent build_cache()
-calls and the max_cached_edges limit."""
+calls, the max_cached_edges limit and explicit cache requests."""
 
 import threading
+import warnings
 
 import pytest
 
@@ -166,3 +167,84 @@ def test_max_cached_edges_stops_a_whole_grid_chunk_at_the_limit():
     assert map_graph.num_vertices() == 1024
     assert not map_graph.has_cache()
     assert eager_calls - lazy_calls <= 11
+
+
+# ---------------------------------------------------------------------------
+# Explicit cache requests under max_cached_edges (C35)
+# ---------------------------------------------------------------------------
+
+def test_build_cache_is_not_bound_by_the_limit_of_the_computation():
+    # The returned map_graph kept the call's max_cached_edges, so
+    # build_cache(), the documented upgrade, spent a full map pass, dropped
+    # the result and left the graph lazy, with no way to lift the limit.
+    _, reference = CMGDB.ComputeMorseGraph(product_model(subdiv=8),
+                                           cache_map_graph=True)
+    edges = reference.num_cached_edges()
+    morse_graph, map_graph = CMGDB.ComputeMorseGraph(
+        product_model(subdiv=8), max_cached_edges=edges - 1,
+        cache_map_graph=False)
+    map_graph.build_cache()
+    assert map_graph.has_cache()
+    assert map_graph.num_cached_edges() == edges
+    assert all_adjacencies(map_graph) == all_adjacencies(reference)
+    CMGDB.MorseReachabilityMasks(map_graph, morse_graph, [0])
+
+
+def test_lazy_graph_errors_name_build_cache_past_the_limit(tmp_path):
+    # The csr_view() and checkpoint errors said that a graph over
+    # max_cached_edges stays lazy, which pointed away from build_cache(),
+    # the remedy that the limit does not bound.
+    _, reference = CMGDB.ComputeMorseGraph(product_model(subdiv=8),
+                                           cache_map_graph=True)
+    edges = reference.num_cached_edges()
+    _, map_graph = CMGDB.ComputeMorseGraph(product_model(subdiv=8),
+                                           max_cached_edges=edges - 1)
+    assert not map_graph.has_cache()
+    remedy = r"build_cache\(\), which that limit does not bound"
+    with pytest.raises(RuntimeError, match=remedy):
+        map_graph.csr_view()
+    caps = CMGDB.MapGraphCSRCheckpointCaps(
+        max_vertices=10**6, max_edges=10**6, max_payload_bytes=10**8)
+    with pytest.raises(RuntimeError, match=remedy):
+        CMGDB.write_map_graph_csr_checkpoint(
+            map_graph, tmp_path / "lazy.csr",
+            configuration={"model": "product"}, caps=caps)
+    map_graph.build_cache()
+    _, targets = map_graph.csr_view()
+    assert len(targets) == edges
+
+
+def test_build_cache_raises_over_its_own_limit():
+    _, map_graph = CMGDB.ComputeMorseGraph(product_model(subdiv=8),
+                                           cache_map_graph=False)
+    lazy = all_adjacencies(map_graph)
+    edges = sum(map(len, lazy))
+    with pytest.raises(RuntimeError, match=f"max_cached_edges={edges - 1} "):
+        map_graph.build_cache(max_cached_edges=edges - 1)
+    assert not map_graph.has_cache()
+    assert all_adjacencies(map_graph) == lazy
+    map_graph.build_cache(max_cached_edges=edges)
+    assert map_graph.num_cached_edges() == edges
+
+
+def test_explicit_cache_map_graph_warns_when_the_limit_drops_it():
+    model = product_model(subdiv=8)
+    _, reference = CMGDB.ComputeMorseGraph(model, cache_map_graph=True)
+    edges = reference.num_cached_edges()
+    for compute in (CMGDB.ComputeMorseGraph, CMGDB.ComputeConleyMorseGraph):
+        with pytest.warns(RuntimeWarning,
+                          match=f"max_cached_edges={edges - 1} .*build_cache"):
+            _, map_graph = compute(model, cache_map_graph=True,
+                                   max_cached_edges=edges - 1)
+        assert not map_graph.has_cache()
+        map_graph.build_cache()
+        assert map_graph.num_cached_edges() == edges
+    # No warning within the limit, nor when the cache was not asked for.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _, map_graph = CMGDB.ComputeMorseGraph(model, cache_map_graph=True,
+                                               max_cached_edges=edges)
+        assert map_graph.has_cache()
+        _, map_graph = CMGDB.ComputeMorseGraph(model,
+                                               max_cached_edges=edges - 1)
+        assert not map_graph.has_cache()
