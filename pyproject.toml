@@ -91,9 +91,10 @@ before-build = "rm -rf {project}/build"
 [tool.cibuildwheel.linux]
 archs = ["x86_64"]
 before-all = "bash {project}/tools/cibw_before_all_linux.sh"
-# manylinux_2_28 (AlmaLinux 8); its boost-devel is 1.66, which predates the
-# BoostConfig.cmake that CMakeLists.txt's find_package(Boost CONFIG) needs,
-# so tools/cibw_before_all_linux.sh installs EPEL's boost1.78-devel instead.
+# manylinux_2_28 (AlmaLinux 8). tools/cibw_before_all_linux.sh installs
+# EPEL's boost1.78-devel, which CMake finds through its BoostConfig.cmake.
+# The image's own boost-devel, 1.66, would also build (through FindBoost),
+# but the wheels take the newer release.
 manylinux-x86_64-image = "manylinux_2_28"
 # libstdc++ is linked dynamically, as upstream's own wheels do. Linking it
 # statically puts a second C++ runtime in the process alongside the one

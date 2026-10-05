@@ -2,7 +2,7 @@
 //
 // Build from the repository root (Homebrew paths for Boost and pybind11; adjust
 // them for other installations):
-//   c++ -std=c++20 -DCMGDB_USE_ATLAS \
+//   c++ -std=c++17 -DCMGDB_USE_ATLAS \
 //     -I src/CMGDB/_cmgdb/include/database -I src/CMGDB/_cmgdb/include \
 //     -I src/CMGDB/_cmgdb/third_party/sdsl-lite/include \
 //     $(python3-config --includes) -I /opt/homebrew/include \

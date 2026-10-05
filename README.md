@@ -115,10 +115,12 @@ The version pin is what selects this fork; `--find-links` only tells pip where
 to look. Release `1.3.3+fork.6` predates the merge with upstream v1.5.2; until
 a newer release is published, build from source to get the upstream features.
 
-To build the current tree from source you need a C++ compiler with C++20
-support and [Boost](https://www.boost.org/) 1.70 or later (chrono, thread and
-serialization; CMake finds it through its `BoostConfig.cmake`). sdsl-lite is
-vendored, and GMP is not needed. Install the current tree directly with:
+To build the current tree from source you need a C++17 compiler and
+[Boost](https://www.boost.org/) 1.66 or later (chrono, thread and
+serialization). CMake finds Boost through the `BoostConfig.cmake` that Boost
+installs from 1.70 on, and older releases through its FindBoost module.
+sdsl-lite is vendored, and GMP is not needed. Install the current tree
+directly with:
 
 	pip install git+https://github.com/bernardorivas/CMGDB.git
 

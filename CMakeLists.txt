@@ -9,7 +9,11 @@ if(POLICY CMP0144)
   cmake_policy(SET CMP0144 NEW)
 endif()
 
-set(CMAKE_CXX_STANDARD 20)
+# C++17, which the vendored sdsl-lite needs. C++20 removes members of
+# std::allocator (construct, destroy, rebind) that the ublas and
+# property_tree headers of older Boost releases still use, so Ubuntu
+# 22.04's Boost 1.74 and EL8's 1.66 do not compile under it.
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Note on optimization flags: the Release build already compiles with -O3.
@@ -41,7 +45,17 @@ find_package(pybind11 CONFIG REQUIRED)
 # With the settings above pybind11 finds Python
 # find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
 
-find_package(Boost COMPONENTS chrono thread serialization CONFIG REQUIRED)
+# Boost installs a BoostConfig.cmake from 1.70 on. Older releases, such as
+# EL8's 1.66, are found by CMake's FindBoost module instead, which also
+# honors an upper-case BOOST_ROOT. Policy CMP0167 (CMake 3.30) removes that
+# module; setting it to OLD keeps the module available.
+find_package(Boost CONFIG QUIET COMPONENTS chrono thread serialization)
+if(NOT Boost_FOUND)
+  if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 OLD)
+  endif()
+  find_package(Boost REQUIRED COMPONENTS chrono thread serialization)
+endif()
 
 if(Boost_FOUND)
   message(STATUS "Boost version: ${Boost_VERSION}")

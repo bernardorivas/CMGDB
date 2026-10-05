@@ -1,5 +1,6 @@
 """Regression tests for the build configuration (review findings C50-C58)."""
 
+import json
 import re
 import shutil
 import subprocess
@@ -15,6 +16,10 @@ REPO = Path(__file__).resolve().parents[1]
 def pyproject():
     with open(REPO / "pyproject.toml", "rb") as handle:
         return tomllib.load(handle)
+
+
+def pyproject_cmake_args():
+    return pyproject()["tool"]["scikit-build"]["cmake"]["args"]
 
 
 def cmake_commands(path):
@@ -48,10 +53,35 @@ def configured(tmp_path_factory):
     if shutil.which("cmake") is None:
         pytest.skip("cmake is not on PATH")
     build_dir = tmp_path_factory.mktemp("configured")
-    result = configure(build_dir, *pyproject()["tool"]["scikit-build"]["cmake"]["args"])
+    # Ask CMake's file API for the code model, which reports the language
+    # standard of each target.
+    query = build_dir / ".cmake" / "api" / "v1" / "query" / "codemodel-v2"
+    query.parent.mkdir(parents=True)
+    query.touch()
+    result = configure(build_dir, *pyproject_cmake_args())
     if result.returncode != 0:
         pytest.skip("the project does not configure here:\n" + result.stderr[-2000:])
     return build_dir
+
+
+def cache_entry(build_dir, name):
+    """The value of a CMakeCache.txt entry, or None."""
+    match = re.search(rf"^{name}:[A-Z]+=(.*)$",
+                      (build_dir / "CMakeCache.txt").read_text(), re.MULTILINE)
+    return match.group(1) if match else None
+
+
+def language_standards(build_dir, target):
+    """The language standards that CMake's file API reports for a target."""
+    reply = build_dir / ".cmake" / "api" / "v1" / "reply"
+    index = json.loads(max(reply.glob("index-*.json")).read_text())
+    codemodel = next(entry for entry in index["objects"] if entry["kind"] == "codemodel")
+    model = json.loads((reply / codemodel["jsonFile"]).read_text())
+    entry = next(entry for entry in model["configurations"][0]["targets"]
+                 if entry["name"] == target)
+    groups = json.loads((reply / entry["jsonFile"]).read_text()).get("compileGroups", [])
+    return {group["languageStandard"]["standard"]
+            for group in groups if "languageStandard" in group}
 
 
 def test_every_cmake_policy_is_set_only_where_cmake_knows_it():
@@ -81,3 +111,26 @@ def test_configures_when_the_cmake_args_of_pyproject_are_overridden(configured, 
     # looked for the module source at //CMGDB.cpp and failed (C57).
     result = configure(tmp_path, "-DCMAKE_CXX_FLAGS=-DCMG_VERBOSE")
     assert result.returncode == 0, result.stderr[-2000:]
+
+
+def test_compiles_as_cxx17(configured):
+    # C++20 removes members of std::allocator that the ublas and property_tree
+    # headers of older Boost releases use, so Ubuntu 22.04's Boost 1.74 and
+    # EL8's 1.66 did not compile; the vendored sdsl-lite needs C++17 (C58).
+    standards = language_standards(configured, "_cmgdb")
+    if not standards:
+        pytest.skip("this CMake's file API reports no language standard")
+    assert standards == {"17"}
+
+
+def test_finds_a_boost_that_has_no_cmake_package_file(configured, tmp_path):
+    # Boost installs BoostConfig.cmake only from 1.70 on, and a CONFIG-only
+    # find_package rejected older releases, such as EL8's 1.66, at configure
+    # (C58). Hiding this machine's file stands in for such a Boost.
+    boost_dir = cache_entry(configured, "Boost_DIR")
+    if boost_dir is None or not (Path(boost_dir) / "BoostConfig.cmake").is_file():
+        pytest.skip("no BoostConfig.cmake here to hide")
+    result = configure(tmp_path, *pyproject_cmake_args(), f"-DCMAKE_IGNORE_PATH={boost_dir}")
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert cache_entry(tmp_path, "Boost_DIR") == "Boost_DIR-NOTFOUND"
+    assert cache_entry(tmp_path, "Boost_INCLUDE_DIR")
