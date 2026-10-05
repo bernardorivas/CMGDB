@@ -191,3 +191,27 @@ def test_one_dimensional_limits_follow_the_box_height(height, label_sets):
         if text.get_text().isdigit():
             assert text.get_window_extent(renderer).y1 <= top + 1
     plt.close(fig)
+
+
+def speck_rows():
+    """A 5x5 block (set 0) and one 0.01 box at 0.70 (set 1)."""
+    rows = [[i * H, j * H, (i + 1) * H, (j + 1) * H, 0] for i in range(5) for j in range(5)]
+    return rows + [[0.70, 0.70, 0.71, 0.71, 1]]
+
+
+def test_zoom_inset_draws_the_sets_at_their_true_size():
+    # C09: the inset window came from the true extents while the inset drew
+    # the sets inflated, so a set inflated 4x filled the inset solid. The
+    # inset is what shows a set at its true size; scale_factor applies to the
+    # main axes only.
+    fig, ax = CMGDB.PlotMorseSets(speck_rows(), scale_factor=[1, 4], zoom_nodes=[1],
+                                  show=False)
+    inset = ax.child_axes[0]
+    speck = inset.patches[1].get_path().vertices
+    assert np.allclose(speck.min(axis=0), [0.70, 0.70])
+    assert np.allclose(speck.max(axis=0), [0.71, 0.71])
+    (x0, x1), (y0, y1) = inset.get_xlim(), inset.get_ylim()
+    assert x0 < 0.70 and 0.71 < x1 and y0 < 0.70 and 0.71 < y1
+    main = ax.patches[1].get_path().vertices
+    assert np.allclose(main.min(axis=0), [0.685, 0.685])
+    plt.close(fig)

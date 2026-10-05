@@ -550,9 +550,11 @@ def _add_zoom_inset(ax, rows, morse_nodes, dim, d1, d2, cmap, cmap_norm,
     position = _inset_corner(ax, region) if zoom_pos == None else list(zoom_pos)
     axins = ax.inset_axes(position)
     # Every set is redrawn, not just the zoomed ones: neighbouring structure is
-    # what makes the magnified view legible as part of the whole picture.
+    # what makes the magnified view legible as part of the whole picture. The
+    # sets keep their true size whatever scale_factor does to the main axes:
+    # that is what the inset is for, and its window fits the true extents.
     _draw_boxes(axins, rows, morse_nodes, dim, d1, d2, cmap, cmap_norm,
-                scale_factor, edge_clr, linewidth, alpha, rasterize, merge_boxes)
+                [1] * len(scale_factor), edge_clr, linewidth, alpha, rasterize, merge_boxes)
     axins.set_xlim(region[0], region[1])
     axins.set_ylim(region[2], region[3])
     if zoom_ticks:
