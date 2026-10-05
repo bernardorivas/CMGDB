@@ -167,6 +167,12 @@ def test_one_dimensional_labels_stay_inside_an_explicit_xlim(tmp_path):
     fig, ax = CMGDB.PlotMorseSets1D(rows, xlim=[0.15, 0.75], show=False)
     assert set_labels(ax) == [('0', 0.175), ('1', 0.725)]
     plt.close(fig)
+    # A piece that only touches the window, at a box boundary or a rounding
+    # error inside it, shows nothing; its label was drawn on the axes edge.
+    for xlim in ([0.2, 2.0], [np.nextafter(0.2, 0), np.nextafter(2.0, 3)]):
+        fig, ax = CMGDB.PlotMorseSets1D(rows, xlim=xlim, show=False)
+        assert set_labels(ax) == [('1', 0.75)]
+        plt.close(fig)
     widths = []
     for label_sets in (True, False):
         out = tmp_path / f'labels_{label_sets}.png'

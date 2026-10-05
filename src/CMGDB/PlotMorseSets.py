@@ -802,11 +802,13 @@ def PlotMorseSets1D(morse_sets, morse_nodes=None, cmap=None, clist=None, scale_f
     if label_sets:
         # Text is not clipped, so a label for a piece outside an explicit xlim
         # would be drawn beside the axes and stretch a tight saved figure.
-        # Label what the window shows, at the middle of the part it shows.
+        # Label what the window shows, at the middle of the part it shows. A
+        # piece that only touches the window, up to rounding, shows nothing.
         left, right = sorted(ax.get_xlim())
+        rounding = 1e-9 * (right - left)
         for morse_node, low, high in labels:
-            low, high = max(low, left), min(high, right)
-            if low <= high:
+            if low < right - rounding and high > left + rounding:
+                low, high = max(low, left), min(high, right)
                 ax.text((low + high) / 2, height / 2 + 0.06, f'{morse_node}', ha='center',
                         va='bottom', color='black', fontsize=fontsize)
     # Symmetric about the axis, with headroom for the labels when drawn. The
