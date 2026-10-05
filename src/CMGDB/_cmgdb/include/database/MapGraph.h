@@ -31,10 +31,9 @@
 ///    With cache == true the full adjacency structure is computed once at
 ///    construction, in chunks of chunk_size rectangles, and stored in
 ///    compressed sparse row (CSR) form; subsequent adjacency queries never
-///    evaluate the map again. max_cached_edges bounds the cache: if the edge
-///    count exceeds it (or is confidently projected to) the cache is
-///    abandoned and the MapGraph falls back to on-demand evaluation
-///    (0 means unlimited).
+///    evaluate the map again. max_cached_edges bounds the cache: as soon as
+///    the edge count would exceed it, the cache is abandoned and the
+///    MapGraph falls back to on-demand evaluation (0 means unlimited).
 ///    reserve_edges controls the up-front reservation of the flat edge
 ///    array. 0 (the default) reserves twice the final edge count projected
 ///    from the chunks seen so far, which avoids the repeated-doubling
@@ -352,8 +351,11 @@ MapGraph::initialize ( void ) {
 ///    call per chunk instead of one per rectangle. The adjacency lists this
 ///    produces are identical, element for element, to the on-demand path.
 ///
-///    Limits. options_.max_cached_edges is a soft limit: the cache is
-///    abandoned and the graph stays lazy. The opt-in environment limits
+///    Limits. options_.max_cached_edges is a soft limit, checked
+///    before each row is stored: the cache is abandoned and the graph
+///    stays lazy, and the edge array never holds more edges than
+///    that, whatever the chunk size (the batch map's input and output
+///    for one chunk are not counted). The opt-in environment limits
 ///    CMGDB_MAPGRAPH_HARD_MAX_{VERTICES,EDGES,CACHE_BYTES} are hard: they
 ///    raise before the CSR grows past them (the edge array's capacity is
 ///    clipped to them too). CMGDB_MAPGRAPH_RESERVE_EDGES reserves that many
@@ -411,6 +413,15 @@ MapGraph::build_cache ( void ) {
     hard_max_edges, ( hard_max_cache_bytes - offset_bytes ) / sizeof ( Vertex ) );
   const bool hard_limited =
     maximum_edge_capacity != std::numeric_limits<size_t>::max ();
+  // The soft limit: past it the cache is abandoned, so the edge array never
+  // needs more slots than that either.
+  const uint64_t max_cached_edges = options_ . max_cached_edges;
+  size_t edge_capacity_limit = maximum_edge_capacity;
+  if ( max_cached_edges > 0 and max_cached_edges < (uint64_t) edge_capacity_limit ) {
+    edge_capacity_limit = (size_t) max_cached_edges;
+  }
+  const bool capacity_limited =
+    edge_capacity_limit != std::numeric_limits<size_t>::max ();
 
   // The CSR is built in local arrays and moved into the graph only once it
   // is complete, so an abandoned or failed build (a hard limit, a map that
@@ -418,9 +429,11 @@ MapGraph::build_cache ( void ) {
   std::vector<uint64_t> offsets;
   std::vector<Vertex> edges;
 
-  // Raise before a row would take the CSR past a hard limit. Under a hard
-  // limit the capacity is grown here, geometrically but clipped to the
-  // limit, so that the vector's own doubling cannot overshoot it.
+  // Raise before a row would take the CSR past a hard limit, and return
+  // false (abandon the cache) before it would take it past max_cached_edges,
+  // so the edge array never holds more than that, whatever the chunk size.
+  // The capacity is grown here, geometrically but clipped to these limits,
+  // so that the vector's own doubling cannot overshoot them.
   const auto append_row = [ & ] ( const std::vector<Vertex> & targets ) {
     const size_t edge_count = edges . size ();
     if ( targets . size () > hard_max_edges or
@@ -431,26 +444,28 @@ MapGraph::build_cache ( void ) {
       throw std::runtime_error ( message . str () );
     }
     const size_t required = edge_count + targets . size ();
-    if ( hard_limited ) {
-      if ( required > maximum_edge_capacity ) {
-        std::ostringstream message;
-        message << "MapGraph CSR needs at least " << required
-                << " edge slots, above the configured hard edge/cache-byte "
-                   "limit of " << maximum_edge_capacity;
-        throw std::runtime_error ( message . str () );
+    if ( hard_limited and required > maximum_edge_capacity ) {
+      std::ostringstream message;
+      message << "MapGraph CSR needs at least " << required
+              << " edge slots, above the configured hard edge/cache-byte "
+                 "limit of " << maximum_edge_capacity;
+      throw std::runtime_error ( message . str () );
+    }
+    if ( max_cached_edges > 0 and (uint64_t) required > max_cached_edges ) {
+      return false;
+    }
+    if ( capacity_limited and required > edges . capacity () ) {
+      const size_t old_capacity = edges . capacity ();
+      const size_t growth = std::max ( old_capacity, size_t ( 65536 ) );
+      size_t grown = required;
+      if ( old_capacity <= std::numeric_limits<size_t>::max () - growth ) {
+        grown = std::max ( required, old_capacity + growth );
       }
-      if ( required > edges . capacity () ) {
-        const size_t old_capacity = edges . capacity ();
-        const size_t growth = std::max ( old_capacity, size_t ( 65536 ) );
-        size_t grown = required;
-        if ( old_capacity <= std::numeric_limits<size_t>::max () - growth ) {
-          grown = std::max ( required, old_capacity + growth );
-        }
-        edges . reserve ( std::min ( grown, maximum_edge_capacity ) );
-      }
+      edges . reserve ( std::min ( grown, edge_capacity_limit ) );
     }
     edges . insert ( edges . end (), targets . begin (), targets . end () );
     offsets . push_back ( edges . size () );
+    return true;
   };
 
   offsets . reserve ( n + 1 );
@@ -458,12 +473,7 @@ MapGraph::build_cache ( void ) {
   if ( env_reserve_edges > 0 and n >= env_reserve_min_vertices ) {
     // Capped like the projected reservation below: a cache that outgrows
     // max_cached_edges is abandoned.
-    size_t env_target = std::min ( env_reserve_edges, maximum_edge_capacity );
-    if ( options_ . max_cached_edges > 0 and
-         options_ . max_cached_edges < (uint64_t) env_target ) {
-      env_target = (size_t) options_ . max_cached_edges;
-    }
-    edges . reserve ( env_target );
+    edges . reserve ( std::min ( env_reserve_edges, edge_capacity_limit ) );
   }
 
   // The flat-buffer batch path requires rectangle geometry; fall back to
@@ -504,44 +514,30 @@ MapGraph::build_cache ( void ) {
           image . lower_bounds [ d ] = bounds [ d ];
           image . upper_bounds [ d ] = bounds [ dim + d ];
         }
-        append_row ( grid_ -> cover ( image ) );
+        if ( not append_row ( grid_ -> cover ( image ) ) ) return;
       }
     } else {
       for ( uint64_t v = start; v < stop; ++ v ) {
-        append_row ( compute_adjacencies ( (Vertex) v ) );
+        if ( not append_row ( compute_adjacencies ( (Vertex) v ) ) ) return;
       }
-    }
-    // Bound the cache: on overflow abandon it and fall back to on-demand
-    // evaluation rather than exhausting memory.
-    if ( options_ . max_cached_edges > 0 &&
-         (uint64_t) edges . size () > options_ . max_cached_edges ) {
-      return;
     }
     if ( stop < n ) {
       // Project the final edge count from the edge density seen so far.
       // The projection sizes the up-front reservation of the flat edge
       // array -- a deep uniform grid's multi-gigabyte edge array is then
       // allocated (nearly) once instead of repeatedly doubled with a
-      // transient ~3x memory peak -- and lets a user-set cap fail fast
-      // instead of building a doomed cache all the way up to the cap.
-      // Chunks follow the tree order (a spatial sweep), so early density
-      // can be biased; the projection is therefore refreshed every chunk,
-      // the auto reservation doubles it for headroom, and the early cap
-      // abandon requires a 2x margin of confidence (the exact check above
-      // remains authoritative).
+      // transient ~3x memory peak. Chunks follow the tree order (a spatial
+      // sweep), so early density can be biased; the projection is therefore
+      // refreshed every chunk and the auto reservation doubles it for
+      // headroom. It never abandons the cache: a sweep that is denser early
+      // on can project several times the real edge count, so only the
+      // measured count (append_row) decides.
       const double density = (double) edges . size () / (double) stop;
       const uint64_t projected = (uint64_t) ( density * (double) n ) + 1;
-      if ( options_ . max_cached_edges > 0 &&
-           projected > 2 * options_ . max_cached_edges ) {
-        return;
-      }
       if ( projected >= options_ . reserve_min_edges ) {
         uint64_t target = options_ . reserve_edges > 0 ?
           options_ . reserve_edges : 2 * projected;
-        if ( options_ . max_cached_edges > 0 ) {
-          target = std::min ( target, options_ . max_cached_edges );
-        }
-        target = std::min ( target, (uint64_t) maximum_edge_capacity );
+        target = std::min ( target, (uint64_t) edge_capacity_limit );
         if ( target > (uint64_t) edges . capacity () ) {
           try {
             edges . reserve ( target );
