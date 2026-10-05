@@ -373,3 +373,29 @@ def test_dpi_figure_saves_at_the_figure_dpi(tmp_path, plot, rows, rasterize):
     fig, ax = plot(rows, fig_fname=str(out), dpi='figure', rasterize=rasterize, show=False)
     assert png_dpi(out) == pytest.approx(fig.dpi, rel=0.01)
     plt.close(fig)
+
+
+def test_default_dpi_rises_only_for_rasterized_vector_files(monkeypatch, tmp_path):
+    # C17: dpi=None became 600 whenever the plot was rasterized, whatever the
+    # format, so a PNG of a 3-D plot doubled its resolution once the face
+    # count crossed RASTERIZE_FACES. The 600 is for the bitmap inside a vector
+    # page; a bitmap format keeps 300.
+    import importlib
+    plot_module = importlib.import_module('CMGDB.PlotMorseSets')
+    monkeypatch.setattr(plot_module, 'RASTERIZE_FACES', 40)
+    monkeypatch.setitem(matplotlib.rcParams, 'pdf.compression', 0)
+    fig, ax = CMGDB.PlotMorseSets3D(cube_rows(), fig_fname=str(tmp_path / 'auto.png'),
+                                    show=False)
+    assert ax.collections[0].get_rasterized()
+    assert png_dpi(tmp_path / 'auto.png') == pytest.approx(300, rel=0.01)
+    plt.close(fig)
+    # A path, an upper-case extension, and no extension (savefig.format, png).
+    for name, saved in (('a.png', 'a.png'), ('b.JPG', 'b.JPG'), ('c', 'c.png')):
+        fig, ax = CMGDB.PlotMorseSets(corner_rows(), rasterize=True,
+                                      fig_fname=tmp_path / name, show=False)
+        assert png_dpi(tmp_path / saved) == pytest.approx(300, rel=0.01)
+        plt.close(fig)
+    fig, ax = CMGDB.PlotMorseSets(corner_rows(), rasterize=True,
+                                  fig_fname=str(tmp_path / 'flat.pdf'), show=False)
+    assert embedded_ppi(tmp_path / 'flat.pdf') == pytest.approx(600, rel=0.01)
+    plt.close(fig)

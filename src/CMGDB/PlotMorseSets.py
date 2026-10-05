@@ -3,6 +3,7 @@
 
 from collections.abc import Mapping
 from fractions import Fraction
+import os
 
 import numpy as np
 import matplotlib
@@ -33,6 +34,9 @@ REFINED_ROW_LIMIT = 2000000
 
 # Width and height of the default zoom inset, in fractions of the axes.
 INSET_SIZE = 0.38
+
+# Formats that save a rasterized artist as a bitmap inside a vector page.
+VECTOR_FORMATS = ('pdf', 'svg', 'svgz', 'eps', 'ps', 'pgf')
 
 
 def _load_morse_sets(morse_sets):
@@ -89,6 +93,15 @@ def _resolve_plot_setup(rows, num_morse_sets, morse_nodes, cmap, clist, scale_fa
 
 
 
+def _save_format(fig_fname):
+    """The format savefig writes fig_fname in, decided as savefig decides it."""
+    if isinstance(fig_fname, (str, os.PathLike)):
+        extension = os.path.splitext(os.fspath(fig_fname))[1][1:]
+        if extension:
+            return extension.lower()
+    return matplotlib.rcParams['savefig.format'].lower()
+
+
 def _finish(fig, ax, fig_fname, dpi, show, rasterized=False):
     """Save if asked, show if the backend can, and hand the figure back.
 
@@ -98,13 +111,14 @@ def _finish(fig, ax, fig_fname, dpi, show, rasterized=False):
     anyway. Returning ``(fig, ax)`` lets a caller adjust the plot before
     saving, which was previously impossible.
 
-    ``dpi=None`` resolves to 600 when the plot is rasterized and to 300
-    otherwise. On a vector page the number only sets the resolution of the
-    embedded bitmap, where 600 keeps it sharp in print at little cost; a
-    fully vector page ignores it, and a bitmap format keeps its former size.
+    ``dpi=None`` resolves to 600 when the plot is rasterized and saved in a
+    vector format, and to 300 otherwise. On a vector page the number only
+    sets the resolution of the embedded bitmap, where 600 keeps it sharp in
+    print at little cost; a fully vector page ignores it, and a bitmap format
+    keeps its former size.
     """
     if dpi == None:
-        dpi = 600 if rasterized else 300
+        dpi = 600 if rasterized and _save_format(fig_fname) in VECTOR_FORMATS else 300
     if fig_fname:
         # A bitmap that covers part of a vector page still has dpi pixels per
         # inch of it, so dpi goes to savefig as it is, 'figure' included.
@@ -630,9 +644,10 @@ def PlotMorseSets(morse_sets, morse_nodes=None, proj_dims=None, cmap=None, clist
        one show darker.
 
        rasterize draws the boxes as a raster image inside the vector figure,
-       at dpi (600 by default when rasterizing). With merge_boxes the vector
-       output is already small, so this mainly serves the fallback cases
-       above; it costs a resolution ceiling.
+       at dpi (600 by default when rasterizing into a vector format; a bitmap
+       format keeps 300). With merge_boxes the vector output is already small,
+       so this mainly serves the fallback cases above; it costs a resolution
+       ceiling.
 
        Returns (fig, ax).
     """
@@ -986,13 +1001,14 @@ def PlotMorseSets3D(morse_sets, morse_nodes=None, cmap=None, clist=None, scale_f
        the box aspect or the tick numbers change; a pinned position stays put.
 
        rasterize draws the faces as one bitmap inside the vector figure, at
-       dpi (600 by default when rasterizing); axes, ticks and labels stay
-       vector. None, the default, decides by size. A cubical surface is a
-       polygon per exposed cell face, painted in depth order, so unlike the
-       2-D plot it cannot be merged into fewer paths: vector output grows
-       with the face count while the bitmap grows far more slowly, so sets
-       with more than RASTERIZE_FACES faces are rasterized and smaller ones
-       stay fully vector. True or False forces either.
+       dpi (600 by default when rasterizing into a vector format; a bitmap
+       format keeps 300); axes, ticks and labels stay vector. None, the
+       default, decides by size. A cubical surface is a polygon per exposed
+       cell face, painted in depth order, so unlike the 2-D plot it cannot be
+       merged into fewer paths: vector output grows with the face count while
+       the bitmap grows far more slowly, so sets with more than
+       RASTERIZE_FACES faces are rasterized and smaller ones stay fully
+       vector. True or False forces either.
 
        Returns (fig, ax).
     """
