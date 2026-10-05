@@ -10,7 +10,8 @@ global dynamics of discrete dynamical systems.
 > [What this fork adds](#what-this-fork-adds)). It is not published to PyPI;
 > prebuilt wheels are attached to the fork's GitHub releases, and the current
 > tree installs from source as shown below. The mathematical output of the
-> inherited CMGDB algorithms is unchanged from upstream.
+> inherited CMGDB algorithms is unchanged from upstream, except for the checks
+> that the fork adds to `ComputeConleyIndexForCells`.
 
 ## Overview
 
@@ -21,14 +22,25 @@ of each Morse set.
 
 ## What this fork adds
 
-Relative to upstream, this fork adds the following. None of it changes the
-Morse graph, Conley indices, or subdivision semantics that upstream computes.
+Relative to upstream, this fork adds the following. Apart from the checks in
+`ComputeConleyIndexForCells` described below, none of it changes the Morse
+graph, Conley indices, or subdivision semantics that upstream computes.
 Batched map evaluation (`Model.set_batch_map`), the transition-graph cache,
 the native reachability queries, `ComputeConleyIndexForCells`, and
 `PrecomputedBoxMap` are upstream features; see
 [Performance options](#performance-options-and-the-transition-graph-cache) and
 [Precomputed box maps](#precomputed-box-maps).
 
+- **Index-pair check in `ComputeConleyIndexForCells`** — for a cell set S,
+  upstream's version computes the index from the pair X = cover(F(S)),
+  A = X \ S whether or not that is an index pair. The fork's raises
+  `ValueError` when a cell of A maps into X \ A, since (X, A) is then not
+  an index pair. This also refuses some Morse sets of adaptive runs, whose
+  `annotations` come from the same pair without the check, as in upstream.
+  It also raises `ValueError` for a Model without a map, on which upstream's
+  crashes, or with another dimension than the Morse graph's grid, and it
+  takes the `batch_chunk_size` keyword of `ComputeConleyMorseGraph`. See
+  [Performance options](#performance-options-and-the-transition-graph-cache).
 - **Grid-layout precomputed box maps** — `CMGDB.make_precomputed_box_map(...)`
   complements upstream's `CMGDB.PrecomputedBoxMap` class with a uniform-grid
   layout, a reproducible `random` sampling mode, and memory-aware chunking of
