@@ -518,3 +518,31 @@ def test_3d_figures_pickle_and_copy_with_their_z_label():
     assert 'COPY' in buffer.getvalue() and 'ORIG' not in buffer.getvalue()
     plt.close(copied)
     plt.close(fig)
+
+
+@pytest.mark.parametrize("azim, side", [(-55, 'right'), (30, 'left'), (45, 'left'),
+                                        (-135, 'left'), (135, 'right')])
+def test_zlabel_goes_beyond_the_z_tick_numbers_on_either_side(azim, side):
+    # C13: the label was always moved to the right of the z tick numbers.
+    # For about half the camera azimuths mplot3d draws the z axis and its
+    # numbers on the left, and the label then sat between the numbers and
+    # the axis line, over the drawn sets.
+    fig, ax = CMGDB.PlotMorseSets3D(cube_rows(4), azim=azim, show=False)
+    own, ticks = zlabel_and_ticks(fig, ax, '$z$')
+    assert ticks and not any(own.overlaps(box) for box in ticks)
+    if side == 'left':
+        assert own.x1 < min(box.x0 for box in ticks)
+    else:
+        assert own.x0 > max(box.x1 for box in ticks)
+    span = (min(box.y0 for box in ticks), max(box.y1 for box in ticks))
+    assert 0.5 * (own.y0 + own.y1) == pytest.approx(0.5 * sum(span), abs=1.0)
+    plt.close(fig)
+
+
+def test_zlabel_follows_the_z_axis_to_the_left():
+    # C13: a camera turned after the plot is built moves the label too.
+    fig, ax = CMGDB.PlotMorseSets3D(cube_rows(4), show=False)
+    ax.view_init(elev=22, azim=45)
+    own, ticks = zlabel_and_ticks(fig, ax, '$z$')
+    assert own.x1 < min(box.x0 for box in ticks)
+    plt.close(fig)

@@ -941,7 +941,8 @@ class _ZLabelClearOfTicks(Text):
        box aspect and the width of the numbers themselves all move them, and a
        caller is free to change any of those after the plot is built. A
        position fixed in advance therefore cannot stay clear of them, so the
-       label measures the numbers and moves itself instead.
+       label measures the numbers and moves itself instead, beyond them on
+       whichever side of the box the camera puts the z axis.
 
        It does that from its own draw, not from a draw_event. A 3-D axes lays
        its tick numbers out while drawing, and draws the three axis objects
@@ -974,7 +975,16 @@ class _ZLabelClearOfTicks(Text):
         if len(boxes) > 0:
             own = self.get_window_extent(renderer)
             axes_box = ax.get_window_extent(renderer)
-            dx = max(box.x1 for box in boxes) + self._pad_points * ax.figure.dpi / 72.0 - own.x0
+            pad = self._pad_points * ax.figure.dpi / 72.0
+            # The camera decides whether mplot3d draws the z axis on the left
+            # or the right of the box, and the numbers sit on its outer side;
+            # the label goes beyond them, not between them and the axis line.
+            line = ax.zaxis.line.get_window_extent(renderer)
+            centers = [0.5 * (box.x0 + box.x1) for box in boxes]
+            if sum(centers) / len(centers) < 0.5 * (line.x0 + line.x1):
+                dx = min(box.x0 for box in boxes) - pad - own.x1
+            else:
+                dx = max(box.x1 for box in boxes) + pad - own.x0
             dy = 0.5 * (min(box.y0 for box in boxes) + max(box.y1 for box in boxes)
                         - own.y0 - own.y1)
             # Half a pixel is already in place; moving would only mark the
