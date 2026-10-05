@@ -993,6 +993,10 @@ def PlotMorseSets3D(morse_sets, morse_nodes=None, cmap=None, clist=None, scale_f
        the surface of the sets rather than their volume and a dense block
        renders as a shell. See _exposed_faces for when culling applies.
 
+       scale_factor scales each box about its own center, as in PlotMorseSets,
+       and the axis limits follow the scaled faces unless xlim, ylim or zlim
+       name them.
+
        lighting shades the faces by their orientation, which is on by default:
        without it the three visible sides of every cube take the same colour
        and the geometry reads as a flat silhouette. Set it False for flat fill.
@@ -1054,9 +1058,11 @@ def PlotMorseSets3D(morse_sets, morse_nodes=None, cmap=None, clist=None, scale_f
         linewidths=linewidth, alpha=alpha, rasterized=rasterize, shade=False)
     ax.add_collection3d(collection)
 
-    values = np.asarray([[float(v) for v in rect] for rect in rows], dtype=float)
-    keep = np.isin(values[:, 6].astype(int), morse_nodes)
-    lower, upper = values[keep, :3].min(axis=0), values[keep, 3:6].max(axis=0)
+    # Limits follow the faces as drawn, scaled about their boxes' centers, so
+    # an inflated set is not drawn outside the axes: mplot3d does not clip
+    # it. Culling never removes the outermost face of a set.
+    corners = faces.reshape(-1, 3)
+    lower, upper = corners.min(axis=0), corners.max(axis=0)
     span = np.maximum(upper - lower, 1e-12)
     margin = 0.04 * span
     ax.set_xlim(list(xlim) if xlim != None else [lower[0] - margin[0], upper[0] + margin[0]])

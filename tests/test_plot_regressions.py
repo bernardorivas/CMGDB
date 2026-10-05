@@ -461,3 +461,23 @@ def test_unaligned_3d_set_falls_back_alone():
         assert len(faces) == 6 * 9
         faces, labels, _ = _exposed_faces(cube_rows() + odd, [0, 1], [1, 1])
         assert np.sum(labels == 0) == 6 * 9 and np.sum(labels == 1) == 6 * len(odd)
+
+
+def test_3d_limits_contain_the_inflated_sets():
+    # C14: the 3-D limits came from the raw box corners, so a set inflated
+    # at the edge of the data was drawn outside the axes, over the tick
+    # numbers; mplot3d does not clip it.
+    w = 0.05
+    rows = [[i * w, j * w, k * w, (i + 1) * w, (j + 1) * w, (k + 1) * w, 0]
+            for i in range(3) for j in range(3) for k in range(3)]
+    rows.append([1.0, 1.0, 1.0, 1.0 + w, 1.0 + w, 1.0 + w, 1])
+    fig, ax = CMGDB.PlotMorseSets3D(rows, scale_factor=[1, 6], show=False)
+    faces, _, _ = _exposed_faces(rows, [0, 1], [1, 6])
+    low, high = faces.reshape(-1, 3).min(axis=0), faces.reshape(-1, 3).max(axis=0)
+    assert np.allclose(high, 1.175)               # set 1 is drawn on [0.875, 1.175]^3
+    for d, limits in enumerate((ax.get_xlim(), ax.get_ylim(), ax.get_zlim())):
+        assert limits[0] < low[d] and high[d] < limits[1]
+    plt.close(fig)
+    fig, ax = CMGDB.PlotMorseSets3D(rows, scale_factor=[1, 6], xlim=[0, 1], show=False)
+    assert ax.get_xlim() == pytest.approx((0, 1))  # explicit limits are kept
+    plt.close(fig)
