@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import PathPatch, Rectangle
 from matplotlib.path import Path
+from matplotlib.text import Text
 import CMGDB
 
 # Default color list
@@ -932,8 +933,8 @@ def _shaded_facecolors(faces, face_labels, cmap, cmap_norm, light_azdeg=300.0,
     return np.clip(shaded, 0.0, 1.0)
 
 
-def _place_zlabel_clear_of_ticks(ax, label, pad_points):
-    """Place a 3-D z label beside the z tick numbers whenever it is drawn.
+class _ZLabelClearOfTicks(Text):
+    """A 3-D z label that places itself beside the z tick numbers as it draws.
 
        The label is a 2-D annotation positioned in axes fractions, but where
        the z tick numbers land is decided by the projection: the camera, the
@@ -949,10 +950,17 @@ def _place_zlabel_clear_of_ticks(ax, label, pad_points):
        everything has been painted, which is too late for the file being
        written: it would leave the first output with the label where it
        started and correct only the second.
-    """
-    original_draw = label.draw
 
-    def draw(renderer):
+       The draw is a method of a module-level class, not a closure set on a
+       Text, so that the figure pickles and a deep copy measures its own label.
+    """
+
+    def __init__(self, x, y, text, pad_points, **kwargs):
+        super().__init__(x, y, text, **kwargs)
+        self._pad_points = pad_points
+
+    def draw(self, renderer):
+        ax = self.axes
         # Only ticks inside the view are placed by the 3-D axis when it draws;
         # the rest keep whatever position they last had, which is nowhere in
         # particular, so measuring them would throw the label off the page.
@@ -964,20 +972,18 @@ def _place_zlabel_clear_of_ticks(ax, label, pad_points):
         boxes = [box for box in boxes if box.width > 0 and box.height > 0]
         # With no tick numbers to clear the label stays where it was placed.
         if len(boxes) > 0:
-            own = label.get_window_extent(renderer)
+            own = self.get_window_extent(renderer)
             axes_box = ax.get_window_extent(renderer)
-            dx = max(box.x1 for box in boxes) + pad_points * ax.figure.dpi / 72.0 - own.x0
+            dx = max(box.x1 for box in boxes) + self._pad_points * ax.figure.dpi / 72.0 - own.x0
             dy = 0.5 * (min(box.y0 for box in boxes) + max(box.y1 for box in boxes)
                         - own.y0 - own.y1)
             # Half a pixel is already in place; moving would only mark the
             # figure stale and make an interactive backend redraw.
             if abs(dx) > 0.5 or abs(dy) > 0.5:
-                x_pos, y_pos = label.get_position()
-                label.set_position((x_pos + dx / axes_box.width,
-                                    y_pos + dy / axes_box.height))
-        original_draw(renderer)
-
-    label.draw = draw
+                x_pos, y_pos = self.get_position()
+                self.set_position((x_pos + dx / axes_box.width,
+                                   y_pos + dy / axes_box.height))
+        super().draw(renderer)
 
 
 def PlotMorseSets3D(morse_sets, morse_nodes=None, cmap=None, clist=None, scale_factor=None,
@@ -1085,15 +1091,15 @@ def PlotMorseSets3D(morse_sets, morse_nodes=None, cmap=None, clist=None, scale_f
         # it is inside the figure, so keep it off the axis and draw an
         # unclipped copy clear of the tick numbers.
         ax.set_zlabel('')
-        x_pos, y_pos = (1.04, 0.55) if zlabel_pos == None else zlabel_pos
-        z_label = ax.text2D(x_pos, y_pos, zlabel, transform=ax.transAxes, rotation=90,
-                            rotation_mode='anchor', ha='center', va='center',
-                            fontsize=fontsize, clip_on=False)
+        style = dict(transform=ax.transAxes, rotation=90, rotation_mode='anchor',
+                     ha='center', va='center', fontsize=fontsize, clip_on=False)
         if zlabel_pos == None:
-            # The pair above is only where the label starts: it measures itself
+            # (1.04, 0.55) is only where the label starts: it measures itself
             # beside the tick numbers as it draws. Pad by a third of the text
             # size, as Matplotlib spaces its own labels off an axis.
-            _place_zlabel_clear_of_ticks(ax, z_label, pad_points=fontsize / 3.0)
+            ax.add_artist(_ZLabelClearOfTicks(1.04, 0.55, zlabel, fontsize / 3.0, **style))
+        else:
+            ax.text2D(zlabel_pos[0], zlabel_pos[1], zlabel, **style)
     ax.tick_params(labelsize=fontsize)
     return _finish(fig, ax, fig_fname, dpi, show, rasterize)
 

@@ -481,3 +481,40 @@ def test_3d_limits_contain_the_inflated_sets():
     fig, ax = CMGDB.PlotMorseSets3D(rows, scale_factor=[1, 6], xlim=[0, 1], show=False)
     assert ax.get_xlim() == pytest.approx((0, 1))  # explicit limits are kept
     plt.close(fig)
+
+
+def zlabel_and_ticks(fig, ax, text):
+    """The drawn z label and the z tick numbers it has to clear, in pixels."""
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    canvas = FigureCanvasAgg(fig)
+    canvas.draw()
+    renderer = canvas.get_renderer()
+    label = [t for t in ax.texts if t.get_text() == text][0]
+    low, high = sorted(ax.zaxis.get_view_interval())
+    ticks = [tick.label1.get_window_extent(renderer) for tick in ax.zaxis.get_major_ticks()
+             if low <= tick.get_loc() <= high and tick.label1.get_visible()
+             and tick.label1.get_text()]
+    return label.get_window_extent(renderer), ticks
+
+
+def test_3d_figures_pickle_and_copy_with_their_z_label():
+    # C11: the z label measured itself through a draw closure stored on the
+    # Text, which pickle cannot reach, and which a deep copy shared: the copy
+    # drew the original figure's label instead of its own.
+    import copy
+    import io
+    import pickle
+    fig, ax = CMGDB.PlotMorseSets3D(cube_rows(), zlabel='ORIG', show=False)
+    clone = pickle.loads(pickle.dumps(fig))
+    own, ticks = zlabel_and_ticks(clone, clone.axes[0], 'ORIG')
+    assert ticks and own.x0 > max(box.x1 for box in ticks)   # still measured into place
+    plt.close(clone)
+    copied = copy.deepcopy(fig)
+    [label] = [t for t in copied.axes[0].texts if t.get_text() == 'ORIG']
+    label.set_text('COPY')
+    buffer = io.StringIO()
+    with matplotlib.rc_context({'svg.fonttype': 'none'}):
+        copied.savefig(buffer, format='svg')
+    assert 'COPY' in buffer.getvalue() and 'ORIG' not in buffer.getvalue()
+    plt.close(copied)
+    plt.close(fig)
