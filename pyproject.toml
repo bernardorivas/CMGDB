@@ -50,7 +50,9 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest"]
+# pybind11's CMake package lets tests/test_build_regressions.py configure the
+# project; those tests skip where CMake finds no pybind11.
+test = ["pytest", "pybind11>=2.13"]
 
 [project.urls]
 Repository = "https://github.com/bernardorivas/CMGDB"

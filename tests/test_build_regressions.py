@@ -51,7 +51,8 @@ def configured(tmp_path_factory):
     """A build directory configured with the cmake.args of pyproject.toml.
 
     The tests that configure the project skip when this fails: the machine
-    then lacks CMake, a compiler, pybind11 or Boost."""
+    then lacks CMake, a compiler, pybind11 or Boost. The test extra installs
+    pybind11."""
     if shutil.which("cmake") is None:
         pytest.skip("cmake is not on PATH")
     build_dir = tmp_path_factory.mktemp("configured")
@@ -64,6 +65,26 @@ def configured(tmp_path_factory):
     if result.returncode != 0:
         pytest.skip("the project does not configure here:\n" + result.stderr[-2000:])
     return build_dir
+
+
+def stand_in_boost(root):
+    """A Boost 1.66 as FindBoost sees one, with no CMake package files (as
+    EL8's boost-devel): version.hpp and, for chrono, thread, serialization
+    and the components they depend on, the header FindBoost checks and the
+    library."""
+    headers = ["config.hpp", "atomic.hpp", "chrono.hpp", "date_time/date.hpp",
+               "serialization/serialization.hpp", "system/config.hpp", "thread.hpp"]
+    for header in headers:
+        (root / "include" / "boost" / header).parent.mkdir(parents=True, exist_ok=True)
+        (root / "include" / "boost" / header).touch()
+    (root / "include" / "boost" / "version.hpp").write_text(
+        '#define BOOST_VERSION 106600\n#define BOOST_LIB_VERSION "1_66"\n')
+    (root / "lib").mkdir()
+    # MSVC links Boost statically (CMakeLists.txt), from libboost_*.lib.
+    suffix = ".lib" if sys.platform == "win32" else ".a"
+    for component in ("atomic", "chrono", "date_time", "serialization", "system", "thread"):
+        (root / "lib" / f"libboost_{component}{suffix}").touch()
+    return root
 
 
 def cache_entry(build_dir, name):
@@ -128,14 +149,30 @@ def test_compiles_as_cxx17(configured):
 def test_finds_a_boost_that_has_no_cmake_package_file(configured, tmp_path):
     # Boost installs BoostConfig.cmake only from 1.70 on, and a CONFIG-only
     # find_package rejected older releases, such as EL8's 1.66, at configure
-    # (C58). Hiding this machine's file stands in for such a Boost.
-    boost_dir = cache_entry(configured, "Boost_DIR")
-    if boost_dir is None or not (Path(boost_dir) / "BoostConfig.cmake").is_file():
-        pytest.skip("no BoostConfig.cmake here to hide")
-    result = configure(tmp_path, *pyproject_cmake_args(), f"-DCMAKE_IGNORE_PATH={boost_dir}")
+    # (C58). A BoostConfig.cmake that reports Boost as not found shadows
+    # any this machine has, and Boost_ROOT, which CMake searches before any
+    # BOOST_ROOT of the environment, points FindBoost at a stand-in 1.66.
+    # (CMAKE_IGNORE_PATH cannot hide a file that CMake reaches again through
+    # a symlinked prefix, as /lib64 is on manylinux_2_28.)
+    boost = stand_in_boost(tmp_path / "boost-1.66")
+    hidden = tmp_path / "hidden"
+    hidden.mkdir()
+    (hidden / "BoostConfig.cmake").write_text("set(Boost_FOUND FALSE)\n")
+    build_dir = tmp_path / "build"
+    result = configure(build_dir, *pyproject_cmake_args(), f"-DBoost_DIR={hidden.as_posix()}",
+                       f"-DBoost_ROOT={boost.as_posix()}", "-DBoost_NO_SYSTEM_PATHS=ON")
     assert result.returncode == 0, result.stderr[-2000:]
-    assert cache_entry(tmp_path, "Boost_DIR") == "Boost_DIR-NOTFOUND"
-    assert cache_entry(tmp_path, "Boost_INCLUDE_DIR")
+    include_dir = cache_entry(build_dir, "Boost_INCLUDE_DIR")
+    assert include_dir and Path(include_dir).resolve() == (boost / "include").resolve()
+
+
+def test_test_extra_installs_pybind11_for_the_configure_tests():
+    # The tests above that configure the project skip when CMake finds no
+    # pybind11. The wheel test environments (cibuildwheel's test-extras)
+    # have none but what the test extra installs, so without it those tests
+    # never ran there (C57, C58).
+    extra = pyproject()["project"]["optional-dependencies"]["test"]
+    assert "pybind11" in {Requirement(line).name for line in extra}
 
 
 def test_matplotlib_requirement_excludes_releases_without_poly3d_shade():
