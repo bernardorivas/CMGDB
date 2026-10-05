@@ -99,3 +99,31 @@ def test_boxes_scatter_takes_one_dimensional_boxes():
     assert np.allclose(ax.collections[0].get_offsets(), [[0.05, 0.05], [0.15, 0.05]])
     assert np.allclose(ax.collections[1].get_offsets(), [[0.55, 0.05]])
     plt.close(fig)
+
+
+def line_rows():
+    """Set 0: three touching boxes on [0.40, 0.43]; set 1: one box at 0.9."""
+    return [[0.40, 0.41, 0], [0.41, 0.42, 0], [0.42, 0.43, 0], [0.9, 0.91, 1]]
+
+
+def x_extents(collection):
+    """The x extent of each path of a collection, rounded."""
+    return sorted((round(float(path.vertices[:, 0].min()), 9),
+                   round(float(path.vertices[:, 0].max()), 9))
+                  for path in collection.get_paths())
+
+
+def test_one_dimensional_dispatch_forwards_scale_and_edges():
+    # C05: PlotMorseSets dropped scale_factor, edge_clr and linewidth when it
+    # handed 1-D data to PlotMorseSets1D, so they were ignored without a word.
+    kwargs = dict(scale_factor=[5, 1], edge_clr='k', linewidth=3.0)
+    fig, ax = CMGDB.PlotMorseSets(line_rows(), show=False, **kwargs)
+    fig_1, ax_1 = CMGDB.PlotMorseSets1D(line_rows(), show=False, **kwargs)
+    for mine, reference in zip(ax.collections, ax_1.collections):
+        assert x_extents(mine) == x_extents(reference)
+        assert np.allclose(mine.get_edgecolor(), [[0, 0, 0, 1]])
+        assert np.allclose(mine.get_linewidth(), 3.0)
+    low, high = x_extents(ax.collections[0])[0]
+    assert low < 0.40 and high > 0.43           # set 0 is drawn inflated
+    plt.close(fig)
+    plt.close(fig_1)

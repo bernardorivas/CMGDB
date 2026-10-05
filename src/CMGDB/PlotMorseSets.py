@@ -582,6 +582,8 @@ def PlotMorseSets(morse_sets, morse_nodes=None, proj_dims=None, cmap=None, clist
        aspect ratio and does not overlap its neighbours. This is the default
        Morse set plot; PlotMorseSetsScatter draws the older marker version,
        which stays useful when boxes are so small that markers read better.
+       One-dimensional sets are drawn by PlotMorseSets1D, which is passed the
+       arguments that apply on a line.
 
        margin pads the axes by a fraction of the drawn span on each side so
        the sets do not run into the bounding box; limits follow the scaled
@@ -635,8 +637,9 @@ def PlotMorseSets(morse_sets, morse_nodes=None, proj_dims=None, cmap=None, clist
     dim = _box_dim(rows)
     if dim == 1:
         return PlotMorseSets1D(morse_sets, morse_nodes=morse_nodes, cmap=cmap, clist=clist,
-                               fig_w=fig_w, xlim=xlim, axis_labels=axis_labels,
-                               xlabel=xlabel, fontsize=fontsize, alpha=alpha,
+                               scale_factor=scale_factor, fig_w=fig_w, xlim=xlim,
+                               axis_labels=axis_labels, xlabel=xlabel, fontsize=fontsize,
+                               edge_clr=edge_clr, linewidth=linewidth, alpha=alpha,
                                fig_fname=fig_fname, dpi=dpi, rasterize=rasterize, show=show)
     num_morse_sets, morse_nodes, scale_factor, cmap, cmap_norm = _resolve_plot_setup(
         rows, num_morse_sets, morse_nodes, cmap, clist, scale_factor)
