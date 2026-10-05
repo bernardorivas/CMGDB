@@ -11,6 +11,7 @@ next to upstream's ``PrecomputedBoxMap`` class. The class serves the adaptive
 tree with corner or center sampling and rejects boxes off the ``subdiv_max``
 lattice; the factories here add the uniform layout, ``random`` sampling and
 memory-aware chunking, and snap off-lattice boxes instead of rejecting them.
+Both reject boxes that reach outside the domain.
 """
 
 from __future__ import annotations
@@ -399,6 +400,26 @@ def evaluation_offsets(
     )
 
 
+def _check_inside_domain(
+    raw_lower: np.ndarray, raw_upper: np.ndarray, n_per_axis: Any, rects: np.ndarray
+) -> None:
+    """Raise unless every box lies in the domain up to half a finest cell.
+
+    ``raw_lower`` and ``raw_upper`` are the box bounds in finest cells from
+    the lower bound. Snapping to the lattice absorbs half a cell; clipping a
+    box that reaches further out would return the image of a smaller box.
+    The test is written so that NaN bounds fail it too.
+    """
+    inside = (raw_lower >= -0.5) & (raw_upper <= n_per_axis + 0.5)
+    if not np.all(inside):
+        if rects.ndim == 2:
+            rects = rects[np.flatnonzero(~inside.all(axis=1))[0]]
+        raise ValueError(
+            f"rect {rects.tolist()} reaches outside the domain "
+            "[lower_bounds, upper_bounds] of the precomputed table"
+        )
+
+
 def _resolve_eval_mode(
     eval_mode: EvalMode,
     dim: int,
@@ -478,6 +499,8 @@ def make_uniform_precomputed_box_map(
         rect_arr = np.asarray(rect, dtype=np.float64)
         if rect_arr.shape != (2 * dim,):
             raise ValueError(f"rect must have shape ({2 * dim},); got {rect_arr.shape}")
+        _check_inside_domain((rect_arr[:dim] - lower) / box_side,
+                             (rect_arr[dim:] - lower) / box_side, n_per_axis, rect_arr)
         center = (rect_arr[:dim] + rect_arr[dim:]) / 2.0
         idx = np.floor((center - lower) / box_side).astype(np.int64)
         idx = np.clip(idx, 0, n_per_axis - 1)
@@ -497,6 +520,8 @@ def make_uniform_precomputed_box_map(
         if R.size == 0:
             return []
         R = R.reshape(-1, 2 * dim)
+        _check_inside_domain((R[:, :dim] - lower) / box_side,
+                             (R[:, dim:] - lower) / box_side, n_per_axis, R)
         center = (R[:, :dim] + R[:, dim:]) / 2.0
         idx = np.floor((center - lower) / box_side).astype(np.int64)
         np.clip(idx, 0, n_per_axis - 1, out=idx)
@@ -589,8 +614,11 @@ def make_adaptive_precomputed_box_map(
         rect_arr = np.asarray(rect, dtype=np.float64)
         if rect_arr.shape != (2 * dim,):
             raise ValueError(f"rect must have shape ({2 * dim},); got {rect_arr.shape}")
-        i_lower = np.round((rect_arr[:dim] - lower) / finest_box_side).astype(np.int64)
-        i_upper = np.round((rect_arr[dim:] - lower) / finest_box_side).astype(np.int64)
+        raw_lower = (rect_arr[:dim] - lower) / finest_box_side
+        raw_upper = (rect_arr[dim:] - lower) / finest_box_side
+        _check_inside_domain(raw_lower, raw_upper, n_per_axis, rect_arr)
+        i_lower = np.round(raw_lower).astype(np.int64)
+        i_upper = np.round(raw_upper).astype(np.int64)
         np.clip(i_lower, 0, n_per_axis, out=i_lower)
         np.clip(i_upper, 0, n_per_axis, out=i_upper)
         point_indices = _sample_indices(i_lower, i_upper)
@@ -608,8 +636,11 @@ def make_adaptive_precomputed_box_map(
         if R.size == 0:
             return []
         R = R.reshape(-1, 2 * dim)
-        i_lower = np.round((R[:, :dim] - lower) / finest_box_side).astype(np.int64)
-        i_upper = np.round((R[:, dim:] - lower) / finest_box_side).astype(np.int64)
+        raw_lower = (R[:, :dim] - lower) / finest_box_side
+        raw_upper = (R[:, dim:] - lower) / finest_box_side
+        _check_inside_domain(raw_lower, raw_upper, n_per_axis, R)
+        i_lower = np.round(raw_lower).astype(np.int64)
+        i_upper = np.round(raw_upper).astype(np.int64)
         np.clip(i_lower, 0, n_per_axis, out=i_lower)
         np.clip(i_upper, 0, n_per_axis, out=i_upper)
         point_indices = _sample_indices(i_lower, i_upper)     # (m, n_points, dim)

@@ -75,3 +75,51 @@ def test_upper_face_box_matches_live_box_map():
     side = F._finest_box_side
     rect = [upper[0] - side[0], lower[1], upper[0], lower[1] + side[1]]
     assert np.allclose(F(rect), CMGDB.BoxMap(f_scalar, rect), rtol=0, atol=1e-12)
+
+
+# Rectangles that reach outside [0, 1]^2 by a whole cell (side 1/16 at
+# subdiv_max=8) or more, or have a NaN bound
+SIDE = 1.0 / 16.0
+OUTSIDE_RECTS = [
+    [-SIDE, 0.0, SIDE, SIDE],             # crosses the lower face
+    [0.5, 0.5, 1.0 + 4 * SIDE, 1.0],      # crosses the upper face
+    [-1.0, -1.0, 2.0, 2.0],               # contains the whole domain
+    [1.0, 1.0, 1.0 + SIDE, 1.0 + SIDE],   # entirely outside
+    [np.nan, 0.0, SIDE, SIDE],
+]
+
+
+def double(X):
+    return 2.0 * np.asarray(X, dtype=float)
+
+
+@pytest.mark.parametrize("rect", OUTSIDE_RECTS)
+def test_class_rejects_box_outside_domain(rect):
+    # C48: the lattice indices were clipped to the domain, so the image of a
+    # smaller box came back without an error
+    F = CMGDB.PrecomputedBoxMap(double, [0.0, 0.0], [1.0, 1.0], 8)
+    with pytest.raises(ValueError, match="outside"):
+        F(rect)
+    with pytest.raises(ValueError, match="outside"):
+        F.batch([[0.0, 0.0, SIDE, SIDE], rect])
+
+
+@pytest.mark.parametrize("layout", ["adaptive", "uniform"])
+@pytest.mark.parametrize("rect", OUTSIDE_RECTS)
+def test_factories_reject_box_outside_domain(layout, rect):
+    # C48, in the fork's factories
+    box_map = CMGDB.make_precomputed_box_map(double, [0.0, 0.0], [1.0, 1.0],
+                                             subdiv_max=8, mode=layout)
+    with pytest.raises(ValueError, match="outside"):
+        box_map(rect)
+    with pytest.raises(ValueError, match="outside"):
+        box_map.batch([[0.0, 0.0, SIDE, SIDE], rect])
+
+
+def test_boxes_on_the_domain_faces_still_map():
+    F = CMGDB.PrecomputedBoxMap(double, [0.0, 0.0], [1.0, 1.0], 8)
+    rects = [[0.0, 0.0, 1.0, 1.0], [0.0, 0.0, SIDE, SIDE],
+             [1.0 - SIDE, 1.0 - SIDE, 1.0, 1.0]]
+    expected = [double(r).tolist() for r in rects]
+    assert [F(r) for r in rects] == expected
+    assert F.batch(rects).tolist() == expected

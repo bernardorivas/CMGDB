@@ -132,14 +132,30 @@ class PrecomputedBoxMap:
             return evaluator
         return lambda points: f(points)
 
+    @staticmethod
+    def _first_box(lower, upper, bad):
+        """The first box with a bad coordinate, for error messages."""
+        if lower.ndim == 2:
+            i = np.flatnonzero(bad.any(axis=1))[0]
+            lower, upper = lower[i], upper[i]
+        return np.concatenate([lower, upper]).tolist()
+
     def _box_indices(self, lower, upper):
         """Lattice cell indices of one or many boxes. Box bounds produced by the
            subdivision tree are dyadic up to floating point rounding, so rounding
-           to the nearest cell index is exact; a large deviation or a zero span
-           means the box does not live on the subdiv_max lattice (typically the
-           model subdivides deeper than subdiv_max) and is an error."""
+           to the nearest cell index is exact. A box reaching outside the domain
+           is an error, and so is a large deviation or a zero span, which means
+           the box does not live on the subdiv_max lattice (typically the model
+           subdivides deeper than subdiv_max)."""
         raw_lower = (lower - self.lower_bounds) / self._finest_box_side
         raw_upper = (upper - self.lower_bounds) / self._finest_box_side
+        # The table has no image for the part of a box outside the domain.
+        # Written so that NaN bounds fail the test too
+        inside = (raw_lower >= -0.01) & (raw_upper <= self._cells_per_axis + 0.01)
+        if not np.all(inside):
+            raise ValueError(
+                f"Box {self._first_box(lower, upper, ~inside)} reaches outside "
+                "the domain [lower_bounds, upper_bounds] of the precomputed table")
         i_lower = np.round(raw_lower).astype(np.int64)
         i_upper = np.round(raw_upper).astype(np.int64)
         deviation = max(np.abs(raw_lower - i_lower).max(), np.abs(raw_upper - i_upper).max())
@@ -148,8 +164,6 @@ class PrecomputedBoxMap:
                 "Box bounds do not lie on the subdiv_max lattice "
                 f"(deviation {deviation:.3g} cells). Is subdiv_max={self.subdiv_max} "
                 "at least the model's maximum subdivision depth?")
-        np.clip(i_lower, 0, self._cells_per_axis, out=i_lower)
-        np.clip(i_upper, 0, self._cells_per_axis, out=i_upper)
         if np.any(i_upper <= i_lower):
             raise ValueError(
                 "Encountered a box finer than the subdiv_max lattice. "

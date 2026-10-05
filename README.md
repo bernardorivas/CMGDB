@@ -291,6 +291,8 @@ table and return the same image boxes. They differ as follows:
 | `batch_points="auto"` | chunks of `2**20` points | sized from available memory (SLURM aware) |
 | Torch | used only if `torch` is already imported | imported when installed |
 
+Both raise `ValueError` for a box that reaches outside the domain.
+
 The helpers `precompute_corner_grid`, `evaluation_offsets`,
 `resolve_batch_points`, `as_batched_evaluator` and `select_torch_device` are
 importable from `CMGDB` and from `CMGDB.PrecomputedBoxMap`.
