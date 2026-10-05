@@ -732,6 +732,7 @@ def PlotMorseSets1D(morse_sets, morse_nodes=None, cmap=None, clist=None, scale_f
     fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=100)
 
     x_lo, x_hi = None, None
+    labels = []
     for morse_node in morse_nodes:
         intervals = sorted((rect[0], rect[1]) for rect in rows if int(rect[-1]) == morse_node)
         if not intervals:
@@ -762,10 +763,7 @@ def PlotMorseSets1D(morse_sets, morse_nodes=None, cmap=None, clist=None, scale_f
             patches.append(Rectangle((a, -height / 2), b - a, height))
             x_lo = a if x_lo == None else min(x_lo, a)
             x_hi = b if x_hi == None else max(x_hi, b)
-        if label_sets:
-            for _, low, high in pieces:
-                ax.text((low + high) / 2, height / 2 + 0.06, f'{morse_node}', ha='center',
-                        va='bottom', color='black', fontsize=fontsize)
+        labels.extend((morse_node, low, high) for _, low, high in pieces)
         # zorder below the spines and ticks so the axis line runs over the
         # boxes rather than being hidden by them.
         ax.add_collection(PatchCollection(patches, facecolors=clr, edgecolors=edges,
@@ -777,6 +775,16 @@ def PlotMorseSets1D(morse_sets, morse_nodes=None, cmap=None, clist=None, scale_f
         ax.set_xlim([x_lo - pad, x_hi + pad])
     else:
         ax.set_xlim(list(xlim))
+    if label_sets:
+        # Text is not clipped, so a label for a piece outside an explicit xlim
+        # would be drawn beside the axes and stretch a tight saved figure.
+        # Label what the window shows, at the middle of the part it shows.
+        left, right = sorted(ax.get_xlim())
+        for morse_node, low, high in labels:
+            low, high = max(low, left), min(high, right)
+            if low <= high:
+                ax.text((low + high) / 2, height / 2 + 0.06, f'{morse_node}', ha='center',
+                        va='bottom', color='black', fontsize=fontsize)
     # Symmetric about the axis, with headroom for the labels when drawn.
     ax.set_ylim([-0.5, 0.5 if not label_sets else 0.5 + 0.28])
     ax.set_yticks([])

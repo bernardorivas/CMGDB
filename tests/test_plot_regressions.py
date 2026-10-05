@@ -149,3 +149,25 @@ def test_one_dimensional_scale_factor_scales_each_box():
                                             (0.4225, 0.4275)]
     assert set_labels(ax) == [('0', 0.415), ('1', 0.905)]
     plt.close(fig)
+
+
+def test_one_dimensional_labels_stay_inside_an_explicit_xlim(tmp_path):
+    # C07: every piece was labeled, including pieces outside an explicit
+    # xlim. Text is not clipped, so those labels were drawn beside the axes
+    # and the tight bounding box of a saved figure stretched to take them in.
+    rows = [[0.10, 0.20, 0], [0.70, 0.80, 1], [2.0, 2.1, 2]]
+    fig, ax = CMGDB.PlotMorseSets1D(rows, xlim=[0, 0.5], show=False)
+    assert set_labels(ax) == [('0', 0.15)]
+    plt.close(fig)
+    # A piece the window cuts is labeled at the middle of what it shows.
+    fig, ax = CMGDB.PlotMorseSets1D(rows, xlim=[0.15, 0.75], show=False)
+    assert set_labels(ax) == [('0', 0.175), ('1', 0.725)]
+    plt.close(fig)
+    widths = []
+    for label_sets in (True, False):
+        out = tmp_path / f'labels_{label_sets}.png'
+        fig, ax = CMGDB.PlotMorseSets1D(rows, xlim=[0, 0.5], label_sets=label_sets,
+                                        fig_fname=str(out), dpi=80, show=False)
+        widths.append(plt.imread(out).shape[1])
+        plt.close(fig)
+    assert abs(widths[0] - widths[1]) <= 2
