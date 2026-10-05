@@ -1,6 +1,6 @@
 """Regression tests for the MapGraph CSR cache: concurrent build_cache()
-calls, the max_cached_edges limit, explicit cache requests and the projected
-edge reservation."""
+calls, the max_cached_edges limit, explicit cache requests and the edge
+reservations."""
 
 import threading
 import warnings
@@ -335,3 +335,23 @@ def test_projected_reservation_leaves_the_graph_unchanged():
         _, map_graph = CMGDB.ComputeMorseGraph(growing_model(),
                                                batch_chunk_size=256, **kwargs)
         assert all_adjacencies(map_graph) == expected
+
+
+# ---------------------------------------------------------------------------
+# CMGDB_MAPGRAPH_RESERVE_EDGES is capped at max_cached_edges
+# ---------------------------------------------------------------------------
+
+def test_reserve_hint_is_capped_at_max_cached_edges(monkeypatch):
+    # A cache past max_cached_edges is abandoned, so the up-front reservation
+    # never needs more. 2**60 edges (8 EiB) cannot be allocated; capped at
+    # the limit, the hint costs 8 MB.
+    monkeypatch.setenv("CMGDB_MAPGRAPH_RESERVE_EDGES", str(2**60))
+    monkeypatch.setenv("CMGDB_MAPGRAPH_RESERVE_MIN_VERTICES", "1")
+    _, map_graph = CMGDB.ComputeMorseGraph(product_model(subdiv=8),
+                                           max_cached_edges=10**6)
+    assert map_graph.has_cache()
+    _, lazy = CMGDB.ComputeMorseGraph(product_model(subdiv=8),
+                                      max_cached_edges=10**6,
+                                      cache_map_graph=False)
+    lazy.build_cache(max_cached_edges=10**6)
+    assert lazy.num_cached_edges() == map_graph.num_cached_edges()
