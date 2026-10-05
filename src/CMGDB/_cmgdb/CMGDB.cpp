@@ -431,10 +431,11 @@ ComputeConleyIndexForCells (
 // Shared body of the Compute*MorseGraph entry points.
 //
 // `initial_phase_space`, when non-null, receives the grid pointer captured
-// *before* the decomposition runs. That is deliberate and must not be replaced
-// by `morsegraph.phaseSpace()`: Compute_Morse_Graph reassigns the graph's own
-// phase space to a joined master grid, so after the call the two are different
-// objects, and the historical MapGraph construction uses the original.
+// before the decomposition runs. Compute_Morse_Graph subdivides and joins
+// that grid in place and then sets the graph's phase space to the same
+// pointer, so after the call it is `morsegraph.phaseSpace()`: the final grid,
+// on which the returned MapGraph is built and whose cell ids `morse_set(v)`
+// lists.
 //
 // `options` governs the per-level transition-graph cache; its chunk_size also
 // chunks the batched map evaluations of the Conley phase.
