@@ -57,11 +57,11 @@ the native reachability queries, `ComputeConleyIndexForCells`, and
   limit is exceeded (upstream returns a lazy one by default), so `csr_view`,
   the checkpoints and the native reachability queries work on the default
   result. The default result therefore holds the graph's full CSR (see
-  [Cache sizing](#cache-sizing)), and building it and copying it once on
-  return raise the call's peak memory: in one measurement with the `henon3d`
-  benchmark model, whose CSR is 316 MB, the peak was about 1.2 GB, against
-  0.27 GB with `cache_map_graph=False`. Runs that do not use the `map_graph`
-  should pass `cache_map_graph=False` or call the `*Only` variants below.
+  [Cache sizing](#cache-sizing)), and building it raises the call's peak
+  memory: in one measurement with the `henon3d` benchmark model, whose CSR is
+  316 MB, the peak was about 0.88 GB, against 0.27 GB with
+  `cache_map_graph=False`. Runs that do not use the `map_graph` should pass
+  `cache_map_graph=False` or call the `*Only` variants below.
 - **Environment controls for the MapGraph cache** — allocation hints, opt-in
   hard limits, and `CMGDB_MAPGRAPH_CACHE`, which sets the default of the cache
   keyword arguments; see [Cache sizing](#cache-sizing).
@@ -450,10 +450,10 @@ caches the returned graph. The suite's map-call counts, timings and peak
 memory (the MB column) therefore include that pass and are not comparable with
 upstream's results, such as the committed `baseline_857ec8b.json`,
 `optimized_857ec8b.json` and `version_compare.md`. Measured on one machine,
-`henon3d` peaked at about 1.2 GB, against 0.4 GB for upstream v1.5.2. The
+`henon3d` peaked at about 0.88 GB, against 0.4 GB for upstream v1.5.2. The
 ~10 GB that [benchmarks/README.md](benchmarks/README.md) gives for
 `chafee3d_uniform_24` is upstream's figure; the same computation at
-subdivision 22 peaked at 5.8 GB, against 3.7 GB for upstream. No
+subdivision 22 peaked at 3.7 GB, as it does on upstream. No
 `CMGDB_MAPGRAPH_CACHE` setting restores upstream's defaults, because
 `CMGDB_MAPGRAPH_CACHE=0` also turns off the transition-graph cache.
 

@@ -552,7 +552,7 @@ std::pair<MorseGraph, MapGraph> ComputeConleyMorseGraph ( Model const& model,
                                           cache_returned,
                                           cache_map_graph . value_or ( false ) );
 
-  return std::make_pair ( morsegraph, map_graph );
+  return std::make_pair ( std::move ( morsegraph ), std::move ( map_graph ) );
 }
 
 // As ComputeConleyMorseGraph, but without building the returned MapGraph.
@@ -592,7 +592,7 @@ std::pair<MorseGraph, MapGraph> ComputeMorseGraph ( Model const& model,
                                           cache_returned,
                                           cache_map_graph . value_or ( false ) );
 
-  return std::make_pair ( morsegraph, map_graph );
+  return std::make_pair ( std::move ( morsegraph ), std::move ( map_graph ) );
 }
 
 // As ComputeMorseGraph, but without building the returned MapGraph.
@@ -638,7 +638,7 @@ ComputeMorseGraph ( AtlasModel const& model ) {
   std::shared_ptr<Grid> phase_space;
   MorseGraph morsegraph = ComputeAtlasMorseGraphCore ( model, & phase_space );
   MapGraph map_graph ( phase_space, model . map () );
-  return std::make_pair ( morsegraph, map_graph );
+  return std::make_pair ( std::move ( morsegraph ), std::move ( map_graph ) );
 }
 
 MorseGraph
