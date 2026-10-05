@@ -703,14 +703,18 @@ TreeGrid::coverAccept ( const RectGeo & visitor ) const  {
   
     // Initialize variables
   RectGeo region ( dimension_ );
-  static  std::vector<int64_t> LB; LB . resize ( dimension_);
-  static std::vector<int64_t> UB; UB . resize ( dimension_);
-  static std::vector<int64_t> NLB; NLB . resize ( dimension_);
-  static std::vector<int64_t> NUB; NUB . resize ( dimension_);
-  static std::stack<Tree::iterator, std::vector<Tree::iterator> > parent;
-  static std::stack<std::pair<Tree::iterator, Tree::iterator>, 
-                    std::vector<std::pair<Tree::iterator, Tree::iterator>> > children;
-  static std::stack < RectGeo, std::vector<RectGeo> > work_stack;
+  // Scratch buffers, kept between calls to save allocations. They are per
+  // thread because covers on different threads can overlap, even on
+  // different grids (ComputeConleyIndexForCells covers with the GIL
+  // released). A cover never starts another cover on its own thread.
+  thread_local std::vector<int64_t> LB; LB . resize ( dimension_);
+  thread_local std::vector<int64_t> UB; UB . resize ( dimension_);
+  thread_local std::vector<int64_t> NLB; NLB . resize ( dimension_);
+  thread_local std::vector<int64_t> NUB; NUB . resize ( dimension_);
+  thread_local std::stack<Tree::iterator, std::vector<Tree::iterator> > parent;
+  thread_local std::stack<std::pair<Tree::iterator, Tree::iterator>,
+                          std::vector<std::pair<Tree::iterator, Tree::iterator>> > children;
+  thread_local std::stack < RectGeo, std::vector<RectGeo> > work_stack;
 
   // TODO: Make this computation happen once and for all
   bool periodic_flag = false;
