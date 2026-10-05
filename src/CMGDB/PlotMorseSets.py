@@ -1,6 +1,7 @@
 ### PlotMorseSets.py
 ### MIT LICENSE 2026 Marcio Gameiro
 
+from collections.abc import Mapping
 from fractions import Fraction
 
 import numpy as np
@@ -62,6 +63,9 @@ def _resolve_plot_setup(rows, num_morse_sets, morse_nodes, cmap, clist, scale_fa
         morse_nodes = range(num_morse_sets)
     if scale_factor == None:
         scale_factor = [1] * num_morse_sets
+    elif isinstance(scale_factor, Mapping):
+        # A dict names its sets by node; list() of it would take the keys as factors.
+        scale_factor = [scale_factor.get(node, 1) for node in range(num_morse_sets)]
     elif len(scale_factor) < num_morse_sets:
         # Indexing is by Morse node, so a short list would raise on the first
         # unlisted set. Pad rather than fail: unlisted sets are drawn faithfully.
@@ -591,9 +595,10 @@ def PlotMorseSets(morse_sets, morse_nodes=None, proj_dims=None, cmap=None, clist
 
        morse_sets is a Morse graph, a saved Morse set file name, or a list of
        boxes [lower..., upper..., label]. scale_factor is a list indexed by
-       Morse node that enlarges a set about each box's centre, so a set orders
-       of magnitude smaller than another stays visible; positions and relative
-       geometry are unchanged, only the drawn size.
+       Morse node, or a dict keyed by node, that enlarges a set about each
+       box's centre, so a set orders of magnitude smaller than another stays
+       visible; positions and relative geometry are unchanged, only the drawn
+       size. Sets it does not reach keep their true size.
 
        edge_clr colours the rectangle borders. The default draws them in each
        box's own face colour, so adjacent boxes of one Morse set read as a

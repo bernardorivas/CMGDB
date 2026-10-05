@@ -38,3 +38,35 @@ def test_axis_limits_contain_the_inflated_sets(scale_factor):
     assert x0 <= vertices[:, 0].min() and vertices[:, 0].max() <= x1
     assert y0 <= vertices[:, 1].min() and vertices[:, 1].max() <= y1
     plt.close(fig)
+
+
+def tiny_rows():
+    """Three sets of one 0.01 box each, at 0, 1 and 0.5 on the diagonal."""
+    return [[0.0, 0.0, 0.01, 0.01, 0], [1.0, 1.0, 1.01, 1.01, 1],
+            [0.5, 0.5, 0.51, 0.51, 2]]
+
+
+def patch_width(patch):
+    vertices = patch.get_path().vertices
+    return vertices[:, 0].max() - vertices[:, 0].min()
+
+
+def test_dict_scale_factor_is_read_by_node():
+    # C20, C01: a dict was padded with list(), which made its keys the
+    # factors: {2: 10} became [2, 1, 1], inflating set 0 and not set 2.
+    fig, ax = CMGDB.PlotMorseSets(tiny_rows(), scale_factor={2: 10}, show=False)
+    assert [patch_width(p) for p in ax.patches] == pytest.approx([0.01, 0.01, 0.1])
+    plt.close(fig)
+    fig, ax = CMGDB.PlotMorseSets(tiny_rows(), morse_nodes=[2], scale_factor={2: 10},
+                                  show=False)
+    assert [patch_width(p) for p in ax.patches] == pytest.approx([0.1])
+    plt.close(fig)
+    # Key 0 used to become a factor of 0, and the set vanished.
+    fig, ax = CMGDB.PlotBoxesScatter(tiny_rows(), morse_nodes=[0], scale_factor={0: 5},
+                                     show=False)
+    fig_l, ax_l = CMGDB.PlotBoxesScatter(tiny_rows(), morse_nodes=[0],
+                                         scale_factor=[5, 1, 1], show=False)
+    assert ax.collections[0].get_sizes() == pytest.approx(ax_l.collections[0].get_sizes())
+    assert ax.collections[0].get_sizes()[0] > 0
+    plt.close(fig)
+    plt.close(fig_l)
