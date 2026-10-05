@@ -128,6 +128,73 @@ def test_boxes_on_the_domain_faces_still_map():
     assert F.batch(rects).tolist() == expected
 
 
+def sqrt_map(X):
+    # Undefined (NaN) for coordinates above 1
+    return np.sqrt(1.0 - np.asarray(X, dtype=float))
+
+
+def sqrt_map_scalar(x):
+    return list(sqrt_map(np.array([x]))[0])
+
+
+# Boxes of [0, 1.5]^2 at subdiv_max=8, side 0.09375: in corners mode the
+# first is NaN at every corner but the lower one, the second at all of them
+NAN_DOMAIN = ([0.0, 0.0], [1.5, 1.5])
+NAN_RECTS = [[0.75, 0.75, 1.5, 1.5], [1.125, 1.125, 1.5, 1.5]]
+FINITE_RECT = [0.0, 0.0, 0.75, 0.75]
+
+
+@pytest.mark.filterwarnings("ignore:invalid value encountered in sqrt")
+@pytest.mark.parametrize("mode", ["corners", "center"])
+@pytest.mark.parametrize("rect", NAN_RECTS)
+def test_class_raises_on_nan_image(mode, rect):
+    # C45: BoxMap and BoxMapBatch raise when f is NaN at a sample point,
+    # while the table returned NaN bounds, which C++ cannot cover
+    F = CMGDB.PrecomputedBoxMap(sqrt_map, *NAN_DOMAIN, 8, mode=mode)
+    with pytest.raises(ValueError, match="NaN"):
+        F(rect)
+    with pytest.raises(ValueError, match="NaN") as info:
+        F.batch([FINITE_RECT, rect])
+    assert str(rect) in str(info.value)
+    # Boxes whose sample points are finite still map
+    expected = CMGDB.BoxMap(sqrt_map_scalar, FINITE_RECT, mode=mode)
+    assert F(FINITE_RECT) == expected
+    assert F.batch([FINITE_RECT]).tolist() == [expected]
+
+
+@pytest.mark.filterwarnings("ignore:invalid value encountered in sqrt")
+@pytest.mark.parametrize("layout", ["adaptive", "uniform"])
+@pytest.mark.parametrize("eval_mode", ["corners", "center", "random"])
+@pytest.mark.parametrize("rect", NAN_RECTS)
+def test_factories_raise_on_nan_image(layout, eval_mode, rect):
+    # C45, in the fork's factories
+    box_map = CMGDB.make_precomputed_box_map(sqrt_map, *NAN_DOMAIN, subdiv_max=8,
+                                             mode=layout, eval_mode=eval_mode)
+    with pytest.raises(ValueError, match="NaN"):
+        box_map(rect)
+    with pytest.raises(ValueError, match="NaN"):
+        box_map.batch([FINITE_RECT, rect])
+    assert len(box_map(FINITE_RECT)) == 4
+
+
+@pytest.mark.filterwarnings("ignore:invalid value encountered in sqrt")
+@pytest.mark.parametrize("factory", ["class", "function"])
+@pytest.mark.parametrize("use_batch", [False, True])
+def test_nan_image_stops_the_morse_graph_computation(factory, use_batch):
+    # C45: the NaN bounds reached TreeGrid's cover, whose int64 cast of NaN
+    # is undefined, and the run gave 5 Morse sets with the class and one of
+    # 16 cells with the factory; BoxMap raises on this model
+    if factory == "class":
+        F = CMGDB.PrecomputedBoxMap(sqrt_map, *NAN_DOMAIN, 8)
+    else:
+        F = CMGDB.make_precomputed_box_map(sqrt_map, *NAN_DOMAIN, subdiv_max=8)
+    model = CMGDB.Model(4, 8, *NAN_DOMAIN, F)
+    if use_batch:
+        model.set_batch_map(F.batch)
+    with pytest.raises(ValueError, match="NaN"):
+        CMGDB.ComputeMorseGraph(model)
+
+
 def ratio_map(X):
     return X / (2.0 - X)
 

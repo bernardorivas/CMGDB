@@ -12,7 +12,8 @@ next to upstream's ``PrecomputedBoxMap`` class. The class serves the adaptive
 tree with corner or center sampling and rejects boxes off the ``subdiv_max``
 lattice; the factories here add the uniform layout, ``random`` sampling and
 memory-aware chunking, and snap off-lattice boxes instead of rejecting them.
-Both reject boxes that reach outside the domain.
+Both reject boxes that reach outside the domain, and, as ``BoxMap`` does,
+boxes with a sample point where the map is NaN.
 """
 
 from __future__ import annotations
@@ -24,6 +25,8 @@ from collections.abc import Callable
 from typing import Any, Literal, Optional, Tuple, Union
 
 import numpy as np
+
+from CMGDB.ComputeBoxMap import _nan_image_message
 
 BatchPoints = Union[int, Literal["auto"]]
 #: Grid layout of the CMGDB box decomposition being served.
@@ -457,6 +460,19 @@ def _check_inside_domain(
         )
 
 
+def _check_no_nan_image(out_lower: np.ndarray, rects: np.ndarray) -> None:
+    """Raise, as ``BoxMap`` does, if the image of a box has a NaN bound.
+
+    ``out_lower`` holds the minima over the samples of one or many boxes;
+    ``ndarray.min`` propagates NaN, so every NaN sample shows in it. The
+    check is made per lookup, not on the table, since ``f`` may be NaN at
+    nodes that no box of the model samples.
+    """
+    nan_rows = np.isnan(np.atleast_2d(out_lower)).any(axis=1)
+    if nan_rows.any():
+        raise ValueError(_nan_image_message(np.atleast_2d(rects)[np.argmax(nan_rows)]))
+
+
 def _resolve_eval_mode(
     eval_mode: EvalMode,
     dim: int,
@@ -531,6 +547,7 @@ def make_uniform_precomputed_box_map(
         batch_points=batch_points,
         device=device,
     )
+    has_nan = bool(np.isnan(ys_grid).any())
 
     def box_map(rect: Any) -> list[float]:
         rect_arr = np.asarray(rect, dtype=np.float64)
@@ -546,6 +563,8 @@ def make_uniform_precomputed_box_map(
         samples = ys_grid[tuple(point_indices[:, k] for k in range(dim))]
         out_lower = samples.min(axis=0)
         out_upper = samples.max(axis=0)
+        if has_nan:
+            _check_no_nan_image(out_lower, rect_arr)
         if padding:
             box_size = rect_arr[dim:] - rect_arr[:dim]
             out_lower = out_lower - box_size
@@ -566,6 +585,8 @@ def make_uniform_precomputed_box_map(
         samples = ys_grid[tuple(point_indices[..., k] for k in range(dim))]
         out_lower_b = samples.min(axis=1)
         out_upper_b = samples.max(axis=1)
+        if has_nan:
+            _check_no_nan_image(out_lower_b, R)
         if padding:
             box_size = R[:, dim:] - R[:, :dim]
             out_lower_b = out_lower_b - box_size
@@ -633,6 +654,7 @@ def make_adaptive_precomputed_box_map(
         batch_points=batch_points,
         device=device,
     )
+    has_nan = bool(np.isnan(ys_grid).any())
 
     def _sample_indices(i_lower: np.ndarray, i_upper: np.ndarray) -> np.ndarray:
         """Table indices of the evaluation points of one or many boxes.
@@ -662,6 +684,8 @@ def make_adaptive_precomputed_box_map(
         samples = ys_grid[tuple(point_indices[:, k] for k in range(dim))]
         out_lower = samples.min(axis=0)
         out_upper = samples.max(axis=0)
+        if has_nan:
+            _check_no_nan_image(out_lower, rect_arr)
         if padding:
             box_size = rect_arr[dim:] - rect_arr[:dim]
             out_lower = out_lower - box_size
@@ -684,6 +708,8 @@ def make_adaptive_precomputed_box_map(
         samples = ys_grid[tuple(point_indices[..., k] for k in range(dim))]
         out_lower_b = samples.min(axis=1)
         out_upper_b = samples.max(axis=1)
+        if has_nan:
+            _check_no_nan_image(out_lower_b, R)
         if padding:
             box_size = R[:, dim:] - R[:, :dim]
             out_lower_b = out_lower_b - box_size

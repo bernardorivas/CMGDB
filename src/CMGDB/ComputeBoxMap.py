@@ -29,7 +29,7 @@ def SamplePoints(lower_bounds, upper_bounds, num_pts):
 
 # A NaN image has no enclosing box: Python's min and max would skip it unless
 # it came first, ndarray.min and max would return NaN, and C++ cannot cover a
-# NaN bound, so BoxMap and BoxMapBatch both raise
+# NaN bound, so BoxMap, BoxMapBatch and the precomputed box maps all raise
 def _nan_image_message(rect):
     return (f"f returned NaN at a sample point of the rectangle "
             f"{[float(v) for v in rect]}, so its box image is undefined")

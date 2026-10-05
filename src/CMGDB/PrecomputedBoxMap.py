@@ -5,6 +5,7 @@ import sys
 import contextlib
 import itertools
 import numpy as np
+from CMGDB.ComputeBoxMap import _nan_image_message
 
 class PrecomputedBoxMap:
     """Box map backed by a table of map evaluations precomputed on the corner
@@ -18,7 +19,8 @@ class PrecomputedBoxMap:
        a table lookup followed by a componentwise min/max -- the box image
        BoxMap(f, rect) would produce, up to rounding: a lattice node and the
        box corner TreeGrid computes for it can differ in the last bit, except
-       on the faces of the domain, where both are the bounds themselves.
+       on the faces of the domain, where both are the bounds themselves. As
+       in BoxMap, a box with a sample point where f is NaN raises ValueError.
 
        This pays off when f is expensive (neural network surrogates, Gaussian
        processes, ODE integration): each lattice point is evaluated exactly
@@ -116,6 +118,9 @@ class PrecomputedBoxMap:
                         f"got {values.shape} for m={stop - start}")
                 table[start:stop] = values
         self._table = table.reshape(tuple(nodes_per_axis) + (self.dim,))
+        # A box image with a NaN bound raises at lookup, as in BoxMap, not
+        # here: f may be undefined at nodes the model never samples
+        self._table_has_nan = bool(np.isnan(table).any())
 
     @contextlib.contextmanager
     def _evaluator(self, f, device):
@@ -220,6 +225,9 @@ class PrecomputedBoxMap:
         samples = self._table[tuple(nodes[:, d] for d in range(self.dim))]
         image_lower = samples.min(axis=0)
         image_upper = samples.max(axis=0)
+        # ndarray.min propagates NaN, so every NaN sample shows in image_lower
+        if self._table_has_nan and np.isnan(image_lower).any():
+            raise ValueError(_nan_image_message(rect_arr))
         if self.padding:
             pad = rect_arr[self.dim:] - rect_arr[:self.dim]
             image_lower = image_lower - pad
@@ -237,6 +245,10 @@ class PrecomputedBoxMap:
         samples = self._table[tuple(nodes[:, :, d] for d in range(self.dim))]
         image_lower = samples.min(axis=1)
         image_upper = samples.max(axis=1)
+        if self._table_has_nan:
+            nan_rows = np.isnan(image_lower).any(axis=1)
+            if nan_rows.any():
+                raise ValueError(_nan_image_message(rects_arr[np.argmax(nan_rows)]))
         if self.padding:
             pad = rects_arr[:, self.dim:] - rects_arr[:, :self.dim]
             image_lower = image_lower - pad
