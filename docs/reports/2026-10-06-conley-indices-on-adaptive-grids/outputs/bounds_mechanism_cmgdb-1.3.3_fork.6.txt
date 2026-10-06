@@ -1,0 +1,371 @@
+script: bounds_mechanism.py
+CMGDB version: 1.3.3+fork.6   build tag: cmgdb-1.3.3_fork.6
+Python 3.13.16 on Darwin arm64
+CMGDB_MAPGRAPH_CACHE = 0
+
+E1: f(x) = x/(2-x) on [0, 1.25], Model(4, 8, 0, 10000)
+  ComputeConleyMorseGraph: returned; 110 evaluations of ComputeMorseGraph, the same in the same order at the start of ComputeConleyMorseGraph: True; 10 evaluations after them (the Conley phase), 7 of them not boxes of the bisection tree
+  Morse set 0 (fixed point (0)): annotation ['x-1', '0']; S: 1 cell(s) of depth 4; X: 1 cells, 0 deeper than S; n = [1]; axes with bounds short before the fix: none
+    boxes the map received for the cubes: from the bounds before and after the fix, 1 of 1 cubes evaluated (1 evaluations, 1 distinct), 0 rectangles unmatched, largest deviation 0.0e+00; on the evaluated cubes they yield the map before and after the fix
+    before the fix: index pair True, empty images none, ComputeConleyIndex ['x-1', '0']; closed boxes: index pair True, ComputeConleyIndex ['x-1', '0']
+    after the fix:  index pair True, empty images none, ComputeConleyIndex ['x-1', '0']; closed boxes: index pair True, ComputeConleyIndex ['x-1', '0']
+  Morse set 1 (fixed point (1)): annotation ['0', '0']; S: 1 cell(s) of depth 4; X: 5 cells, 4 deeper than S; n = [3]; axes with bounds short before the fix: [0]
+    boxes the map received for the cubes: from the bounds before the fix, 3 of 3 cubes evaluated (7 evaluations, 3 distinct), 0 rectangles unmatched, largest deviation 0.0e+00; on the evaluated cubes they yield the map before the fix
+    before the fix: index pair False (c2 -> ['c1']), empty images none, ComputeConleyIndex ['0', '0']; closed boxes: index pair False, ComputeConleyIndex ['0', '0']
+    after the fix:  index pair True, empty images none, ComputeConleyIndex ['0', 'x-1']; closed boxes: index pair True, ComputeConleyIndex ['0', 'x-1']
+  Details for Morse set 1:
+    S: 1 cell(s) of depth 4: [0.937500000, 1.015625000], F(cell) = [0.882352941, 1.031746032]
+    grid cells that meet [0.781250, 1.171875] (depth, and S or A = X minus S):
+      [0.781250000, 0.859375000]  depth  4   
+      [0.859375000, 0.898437500]  depth  5  A  enters the complex as c0
+      [0.898437500, 0.937500000]  depth  5  A  enters the complex as c0
+      [0.937500000, 1.015625000]  depth  4  S  enters the complex as c1
+      [1.015625000, 1.025390625]  depth  7  A  enters the complex as c2
+      [1.025390625, 1.035156250]  depth  7  A  enters the complex as c2
+      [1.035156250, 1.054687500]  depth  6   
+      [1.054687500, 1.093750000]  depth  5   
+      [1.093750000, 1.171875000]  depth  4   
+    X = cover(F(S)): 5 cells; A = X minus S: 4 cells; 4 cells of X deeper than depth(S) = 4
+    complex at depth 4: n = [3] cubes per axis; S' = ['c1'], A' = ['c0', 'c2']
+    bounds before the fix (union of the cells of X): [0.859375000, 1.035156250]
+    bounds after the fix (union of the cubes):        [0.859375000, 1.093750000]
+    cube widths before / after: 0.058593750 / 0.078125000
+    cube: true box | box from the bounds before the fix | its image under F
+      c0 (A'): [0.859375000, 0.937500000] | [0.859375000, 0.917968750] | [0.753424658, 0.848375451]
+      c1 (S'): [0.937500000, 1.015625000] | [0.917968750, 0.976562500] | [0.848375451, 0.954198473]
+      c2 (A'): [1.015625000, 1.093750000] | [0.976562500, 1.035156250] | [0.954198473, 1.072874494]
+    images of the true boxes: F(c0) = [0.753424658, 0.882352941]; F(c1) = [0.882352941, 1.031746032]; F(c2) = [1.031746032, 1.206896552]
+    recorded in this build: F evaluated on the 1 cell(s) of S, then on 7 rectangle(s) of cubes (with repeats), 0 unmatched:
+      [0.917968750, 0.976562500] = box of c1 from the bounds before the fix (deviation 0.0e+00); box of the bisection tree: False; evaluations 3; image [0.848375451, 0.954198473]; cover ['c0', 'c1']
+      [0.859375000, 0.917968750] = box of c0 from the bounds before the fix (deviation 0.0e+00); box of the bisection tree: False; evaluations 2; image [0.753424658, 0.848375451]; cover ['c0']
+      [0.976562500, 1.035156250] = box of c2 from the bounds before the fix (deviation 0.0e+00); box of the bisection tree: False; evaluations 2; image [0.954198473, 1.072874494]; cover ['c1', 'c2']
+    map this build used, rebuilt from the recorded boxes: on the 3 evaluated cubes, the map before the fix
+    map on the cubes before the fix: c0 -> {c0}, c1 -> {c0, c1}, c2 -> {c1, c2}
+      F(A') cap X' subset A': FAILS, c2 in A' maps to ['c1'] in S'; cubes with empty image: none; ComputeConleyIndex: ['0', '0']
+    map on the cubes after the fix: c0 -> {c0}, c1 -> {c0, c1, c2}, c2 -> {c2}
+      F(A') cap X' subset A': holds; cubes with empty image: none; ComputeConleyIndex: ['0', 'x-1']
+    with closed boxes instead (not CMGDB's rule), before the fix: c0 -> {c0}, c1 -> {c0, c1}, c2 -> {c1, c2}; index pair: no, c2 -> ['c1']; ComputeConleyIndex: ['0', '0']
+    with closed boxes instead (not CMGDB's rule), after the fix: c0 -> {c0}, c1 -> {c0, c1, c2}, c2 -> {c2}; index pair: yes; ComputeConleyIndex: ['0', 'x-1']
+    axis 0: phi(x) = 0.859375000 + 0.750000000 (x - 0.859375000) takes each true cube onto its box from the bounds before the fix; phi^-1(1) = 1.046875000, in cube c2 along this axis
+    chain lift (bounds_lift1d.py); vertex v_k is the left end of c_k, in the true geometry v0 = 0.859375, v1 = 0.9375, v2 = 1.01562, v3 = 1.09375
+      map before the fix: dim H_0(X', A') = 0, dim H_1(X', A') = 1, H_1 spanned by z = 1 c1; preboundaries unique
+        w = v0, v1: image 0 z, annotation in degree 1 '0'
+        w = v2: image 1 z, annotation in degree 1 'x-1'
+      map after the fix: dim H_0(X', A') = 0, dim H_1(X', A') = 1, H_1 spanned by z = 1 c1; preboundaries unique
+        w = v0, v1, v2, v3: image 1 z, annotation in degree 1 'x-1'
+
+E2: f(x) = x/(2-x) on [0, 1.2], Model(4, 8, 0, 10000)
+  ComputeConleyMorseGraph: raised RuntimeError: Morse-reduced fiber preboundary failed boundary validation; 110 evaluations of ComputeMorseGraph, the same in the same order at the start of ComputeConleyMorseGraph: True; 10 evaluations after them (the Conley phase), 7 of them not boxes of the bisection tree
+  Morse set 0 (fixed point (0)): annotation (none, exception); S: 1 cell(s) of depth 4; X: 1 cells, 0 deeper than S; n = [1]; axes with bounds short before the fix: none
+    boxes the map received for the cubes: from the bounds before and after the fix, 1 of 1 cubes evaluated (1 evaluations, 1 distinct), 0 rectangles unmatched, largest deviation 0.0e+00; on the evaluated cubes they yield the map before and after the fix
+    before the fix: index pair True, empty images none, ComputeConleyIndex ['x-1', '0']; closed boxes: index pair True, ComputeConleyIndex ['x-1', '0']
+    after the fix:  index pair True, empty images none, ComputeConleyIndex ['x-1', '0']; closed boxes: index pair True, ComputeConleyIndex ['x-1', '0']
+  Morse set 1 (fixed point (1)): annotation (none, exception); S: 1 cell(s) of depth 4; X: 5 cells, 4 deeper than S; n = [3]; axes with bounds short before the fix: [0]
+    boxes the map received for the cubes: from the bounds before the fix, 3 of 3 cubes evaluated (7 evaluations, 3 distinct), 0 rectangles unmatched, largest deviation 0.0e+00; on the evaluated cubes they yield the map before the fix
+    before the fix: index pair False (c0 -> ['c1']), empty images ['c2'], ComputeConleyIndex RuntimeError: Morse-reduced fiber preboundary failed boundary validation; closed boxes: index pair False, ComputeConleyIndex ['0', 'x-1']
+    after the fix:  index pair True, empty images none, ComputeConleyIndex ['0', 'x-1']; closed boxes: index pair True, ComputeConleyIndex ['0', 'x-1']
+  Details for Morse set 1:
+    S: 1 cell(s) of depth 4: [0.975000000, 1.050000000], F(cell) = [0.951219512, 1.105263158]
+    grid cells that meet [0.825000, 1.200000] (depth, and S or A = X minus S):
+      [0.750000000, 0.825000000]  depth  4   
+      [0.825000000, 0.900000000]  depth  4   
+      [0.900000000, 0.937500000]  depth  5   
+      [0.937500000, 0.956250000]  depth  6  A  enters the complex as c0
+      [0.956250000, 0.975000000]  depth  6  A  enters the complex as c0
+      [0.975000000, 1.050000000]  depth  4  S  enters the complex as c1
+      [1.050000000, 1.087500000]  depth  5  A  enters the complex as c2
+      [1.087500000, 1.125000000]  depth  5  A  enters the complex as c2
+      [1.125000000, 1.200000000]  depth  4   
+    X = cover(F(S)): 5 cells; A = X minus S: 4 cells; 4 cells of X deeper than depth(S) = 4
+    complex at depth 4: n = [3] cubes per axis; S' = ['c1'], A' = ['c0', 'c2']
+    bounds before the fix (union of the cells of X): [0.937500000, 1.125000000]
+    bounds after the fix (union of the cubes):        [0.900000000, 1.125000000]
+    cube widths before / after: 0.062500000 / 0.075000000
+    cube: true box | box from the bounds before the fix | its image under F
+      c0 (A'): [0.900000000, 0.975000000] | [0.937500000, 1.000000000] | [0.882352941, 1.000000000]
+      c1 (S'): [0.975000000, 1.050000000] | [1.000000000, 1.062500000] | [1.000000000, 1.133333333]
+      c2 (A'): [1.050000000, 1.125000000] | [1.062500000, 1.125000000] | [1.133333333, 1.285714286]
+    images of the true boxes: F(c0) = [0.818181818, 0.951219512]; F(c1) = [0.951219512, 1.105263158]; F(c2) = [1.105263158, 1.285714286]
+    recorded in this build: F evaluated on the 1 cell(s) of S, then on 7 rectangle(s) of cubes (with repeats), 0 unmatched:
+      [1.000000000, 1.062500000] = box of c1 from the bounds before the fix (deviation 0.0e+00); box of the bisection tree: False; evaluations 3; image [1.000000000, 1.133333333]; cover ['c1', 'c2']
+      [0.937500000, 1.000000000] = box of c0 from the bounds before the fix (deviation 0.0e+00); box of the bisection tree: False; evaluations 2; image [0.882352941, 1.000000000]; cover ['c0', 'c1']
+      [1.062500000, 1.125000000] = box of c2 from the bounds before the fix (deviation 0.0e+00); box of the bisection tree: False; evaluations 2; image [1.133333333, 1.285714286]; cover []
+    map this build used, rebuilt from the recorded boxes: on the 3 evaluated cubes, the map before the fix
+    map on the cubes before the fix: c0 -> {c0, c1}, c1 -> {c1, c2}, c2 -> {}
+      F(A') cap X' subset A': FAILS, c0 in A' maps to ['c1'] in S'; cubes with empty image: ['c2']; ComputeConleyIndex: RuntimeError: Morse-reduced fiber preboundary failed boundary validation
+    map on the cubes after the fix: c0 -> {c0}, c1 -> {c0, c1, c2}, c2 -> {c2}
+      F(A') cap X' subset A': holds; cubes with empty image: none; ComputeConleyIndex: ['0', 'x-1']
+    with closed boxes instead (not CMGDB's rule), before the fix: c0 -> {c0, c1}, c1 -> {c0, c1, c2}, c2 -> {c2}; index pair: no, c0 -> ['c1']; ComputeConleyIndex: ['0', 'x-1']
+    with closed boxes instead (not CMGDB's rule), after the fix: c0 -> {c0}, c1 -> {c0, c1, c2}, c2 -> {c2}; index pair: yes; ComputeConleyIndex: ['0', 'x-1']
+    axis 0: phi(x) = 0.937500000 + 0.833333333 (x - 0.900000000) takes each true cube onto its box from the bounds before the fix; phi^-1(1) = 0.975000000, in cube c0 along this axis
+    chain lift (bounds_lift1d.py); vertex v_k is the left end of c_k, in the true geometry v0 = 0.9, v1 = 0.975, v2 = 1.05, v3 = 1.125
+      map before the fix: dim H_0(X', A') = 0, dim H_1(X', A') = 1, H_1 spanned by z = 1 c1; preboundaries unique
+        w = v1, v2, v3: no preboundary
+      map after the fix: dim H_0(X', A') = 0, dim H_1(X', A') = 1, H_1 spanned by z = 1 c1; preboundaries unique
+        w = v0, v1, v2, v3: image 1 z, annotation in degree 1 'x-1'
+
+E3: f(x) = 3.2 x (1-x) on [0.1, 0.85], Model(4, 8, 0, 10000)
+  ComputeConleyMorseGraph: returned; 214 evaluations of ComputeMorseGraph, the same in the same order at the start of ComputeConleyMorseGraph: True; 14 evaluations after them (the Conley phase), 7 of them not boxes of the bisection tree
+  Morse set 0: annotation ['x^2-1', '0']; S: 4 cell(s) of depth 4; X: 4 cells, 0 deeper than S; n = [7]; axes with bounds short before the fix: none
+    boxes the map received for the cubes: from the bounds before and after the fix, 2 of 4 cubes evaluated (2 evaluations, 2 distinct), 0 rectangles unmatched, largest deviation 0.0e+00; on the evaluated cubes they yield the map before and after the fix
+    before the fix: index pair True, empty images none, ComputeConleyIndex ['x^2-1', '0']; closed boxes: index pair True, ComputeConleyIndex ['x^2-1', '0']
+    after the fix:  index pair True, empty images none, ComputeConleyIndex ['x^2-1', '0']; closed boxes: index pair True, ComputeConleyIndex ['x^2-1', '0']
+  Morse set 1 (fixed point (0.6875)): annotation ['0', '0']; S: 1 cell(s) of depth 4; X: 4 cells, 3 deeper than S; n = [3]; axes with bounds short before the fix: [0]
+    boxes the map received for the cubes: from the bounds before the fix, 3 of 3 cubes evaluated (7 evaluations, 3 distinct), 0 rectangles unmatched, largest deviation 0.0e+00; on the evaluated cubes they yield the map before the fix
+    before the fix: index pair False (c0 -> ['c1']), empty images none, ComputeConleyIndex ['0', '0']; closed boxes: index pair False, ComputeConleyIndex ['0', '0']
+    after the fix:  index pair True, empty images none, ComputeConleyIndex ['0', 'x+1']; closed boxes: index pair True, ComputeConleyIndex ['0', 'x+1']
+  Details for Morse set 1:
+    S: 1 cell(s) of depth 4: [0.662500000, 0.709375000], F(cell) = [0.659718750, 0.715500000]
+    grid cells that meet [0.568750, 0.803125] (depth, and S or A = X minus S):
+      [0.568750000, 0.615625000]  depth  4   
+      [0.615625000, 0.627343750]  depth  6   
+      [0.627343750, 0.639062500]  depth  6   
+      [0.639062500, 0.644921875]  depth  7   
+      [0.644921875, 0.650781250]  depth  7   
+      [0.650781250, 0.656640625]  depth  7   
+      [0.656640625, 0.662500000]  depth  7  A  enters the complex as c0
+      [0.662500000, 0.709375000]  depth  4  S  enters the complex as c1
+      [0.709375000, 0.715234375]  depth  7  A  enters the complex as c2
+      [0.715234375, 0.721093750]  depth  7  A  enters the complex as c2
+      [0.721093750, 0.726953125]  depth  7   
+      [0.726953125, 0.732812500]  depth  7   
+      [0.732812500, 0.744531250]  depth  6   
+      [0.744531250, 0.756250000]  depth  6   
+      [0.756250000, 0.803125000]  depth  4   
+    X = cover(F(S)): 4 cells; A = X minus S: 3 cells; 3 cells of X deeper than depth(S) = 4
+    complex at depth 4: n = [3] cubes per axis; S' = ['c1'], A' = ['c0', 'c2']
+    bounds before the fix (union of the cells of X): [0.656640625, 0.721093750]
+    bounds after the fix (union of the cubes):        [0.615625000, 0.756250000]
+    cube widths before / after: 0.021484375 / 0.046875000
+    cube: true box | box from the bounds before the fix | its image under F
+      c0 (A'): [0.615625000, 0.662500000] | [0.656640625, 0.678125000] | [0.698468750, 0.721483887]
+      c1 (S'): [0.662500000, 0.709375000] | [0.678125000, 0.699609375] | [0.672499512, 0.698468750]
+      c2 (A'): [0.709375000, 0.756250000] | [0.699609375, 0.721093750] | [0.643576172, 0.672499512]
+    images of the true boxes: F(c0) = [0.715500000, 0.757218750]; F(c1) = [0.659718750, 0.715500000]; F(c2) = [0.589875000, 0.659718750]
+    recorded in this build: F evaluated on the 1 cell(s) of S, then on 7 rectangle(s) of cubes (with repeats), 0 unmatched:
+      [0.678125000, 0.699609375] = box of c1 from the bounds before the fix (deviation 0.0e+00); box of the bisection tree: False; evaluations 3; image [0.672499512, 0.698468750]; cover ['c0', 'c1']
+      [0.656640625, 0.678125000] = box of c0 from the bounds before the fix (deviation 0.0e+00); box of the bisection tree: False; evaluations 2; image [0.698468750, 0.721483887]; cover ['c1', 'c2']
+      [0.699609375, 0.721093750] = box of c2 from the bounds before the fix (deviation 0.0e+00); box of the bisection tree: False; evaluations 2; image [0.643576172, 0.672499512]; cover ['c0']
+    map this build used, rebuilt from the recorded boxes: on the 3 evaluated cubes, the map before the fix
+    map on the cubes before the fix: c0 -> {c1, c2}, c1 -> {c0, c1}, c2 -> {c0}
+      F(A') cap X' subset A': FAILS, c0 in A' maps to ['c1'] in S'; cubes with empty image: none; ComputeConleyIndex: ['0', '0']
+    map on the cubes after the fix: c0 -> {c2}, c1 -> {c0, c1, c2}, c2 -> {c0}
+      F(A') cap X' subset A': holds; cubes with empty image: none; ComputeConleyIndex: ['0', 'x+1']
+    with closed boxes instead (not CMGDB's rule), before the fix: c0 -> {c1, c2}, c1 -> {c0, c1}, c2 -> {c0}; index pair: no, c0 -> ['c1']; ComputeConleyIndex: ['0', '0']
+    with closed boxes instead (not CMGDB's rule), after the fix: c0 -> {c2}, c1 -> {c0, c1, c2}, c2 -> {c0}; index pair: yes; ComputeConleyIndex: ['0', 'x+1']
+    axis 0: phi(x) = 0.656640625 + 0.458333333 (x - 0.615625000) takes each true cube onto its box from the bounds before the fix; phi^-1(0.6875) = 0.682954545, in cube c1 along this axis
+    chain lift (bounds_lift1d.py); vertex v_k is the left end of c_k, in the true geometry v0 = 0.615625, v1 = 0.6625, v2 = 0.709375, v3 = 0.75625
+      map before the fix: dim H_0(X', A') = 0, dim H_1(X', A') = 1, H_1 spanned by z = 1 c1; preboundaries unique
+        w = v0, v1: image 0 z, annotation in degree 1 '0'
+        w = v2: image 4 z, annotation in degree 1 'x+1'
+      map after the fix: dim H_0(X', A') = 0, dim H_1(X', A') = 1, H_1 spanned by z = 1 c1; preboundaries unique
+        w = v0, v1, v2, v3: image 4 z, annotation in degree 1 'x+1'
+
+E4: f(x) = x/(2-x) on [0, 1.25] x [0, 1.25], Model(8, 14, 4, 10000)
+  ComputeConleyMorseGraph: returned; 850 evaluations of ComputeMorseGraph, the same in the same order at the start of ComputeConleyMorseGraph: True; 60 evaluations after them (the Conley phase), 55 of them not boxes of the bisection tree
+  Morse set 0 (fixed point (0, 0)): annotation ['x-1', '0', '0']; S: 1 cell(s) of depth 8; X: 1 cells, 0 deeper than S; n = [1, 1]; axes with bounds short before the fix: none
+    boxes the map received for the cubes: from the bounds before and after the fix, 1 of 1 cubes evaluated (1 evaluations, 1 distinct), 0 rectangles unmatched, largest deviation 0.0e+00; on the evaluated cubes they yield the map before and after the fix
+    before the fix: index pair True, empty images none, ComputeConleyIndex ['x-1', '0', '0']; closed boxes: index pair True, ComputeConleyIndex ['x-1', '0', '0']
+    after the fix:  index pair True, empty images none, ComputeConleyIndex ['x-1', '0', '0']; closed boxes: index pair True, ComputeConleyIndex ['x-1', '0', '0']
+  Morse set 1 (fixed point (0, 1)): annotation ['0', '0', '0']; S: 1 cell(s) of depth 8; X: 12 cells, 11 deeper than S; n = [1, 3]; axes with bounds short before the fix: [1]
+    boxes the map received for the cubes: from the bounds before the fix, 3 of 3 cubes evaluated (7 evaluations, 3 distinct), 0 rectangles unmatched, largest deviation 0.0e+00; on the evaluated cubes they yield the map before the fix
+    before the fix: index pair False ((0, 2) -> ['(0, 1)']), empty images none, ComputeConleyIndex ['0', '0', '0']; closed boxes: index pair False, ComputeConleyIndex ['0', '0', '0']
+    after the fix:  index pair True, empty images none, ComputeConleyIndex ['0', 'x-1', '0']; closed boxes: index pair True, ComputeConleyIndex ['0', 'x-1', '0']
+  Details for Morse set 1:
+    S: 1 cell(s) of depth 8: [0.000000000, 0.078125000] x [0.937500000, 1.015625000], F(cell) = [0.000000000, 0.040650407] x [0.882352941, 1.031746032]
+    grid cells that meet [-0.078125, 0.156250] x [0.781250, 1.171875] (depth, and S or A = X minus S):
+      [0.000000000, 0.078125000] x [0.781250000, 0.859375000]  depth  8   
+      [0.078125000, 0.156250000] x [0.781250000, 0.859375000]  depth  8   
+      [0.000000000, 0.039062500] x [0.859375000, 0.898437500]  depth 10  A  enters the complex as (0, 0)
+      [0.039062500, 0.078125000] x [0.859375000, 0.898437500]  depth 10  A  enters the complex as (0, 0)
+      [0.078125000, 0.117187500] x [0.859375000, 0.937500000]  depth  9   
+      [0.117187500, 0.156250000] x [0.859375000, 0.937500000]  depth  9   
+      [0.000000000, 0.039062500] x [0.898437500, 0.937500000]  depth 10  A  enters the complex as (0, 0)
+      [0.039062500, 0.078125000] x [0.898437500, 0.937500000]  depth 10  A  enters the complex as (0, 0)
+      [0.000000000, 0.078125000] x [0.937500000, 1.015625000]  depth  8  S  enters the complex as (0, 1)
+      [0.078125000, 0.117187500] x [0.937500000, 1.015625000]  depth  9   
+      [0.117187500, 0.156250000] x [0.937500000, 1.015625000]  depth  9   
+      [0.000000000, 0.009765625] x [1.015625000, 1.025390625]  depth 14  A  enters the complex as (0, 2)
+      [0.009765625, 0.019531250] x [1.015625000, 1.025390625]  depth 14  A  enters the complex as (0, 2)
+      [0.019531250, 0.029296875] x [1.015625000, 1.035156250]  depth 13  A  enters the complex as (0, 2)
+      [0.029296875, 0.039062500] x [1.015625000, 1.035156250]  depth 13  A  enters the complex as (0, 2)
+      [0.039062500, 0.058593750] x [1.015625000, 1.054687500]  depth 11  A  enters the complex as (0, 2)
+      [0.058593750, 0.078125000] x [1.015625000, 1.054687500]  depth 11   
+      [0.078125000, 0.117187500] x [1.015625000, 1.093750000]  depth  9   
+      [0.117187500, 0.156250000] x [1.015625000, 1.093750000]  depth  9   
+      [0.000000000, 0.009765625] x [1.025390625, 1.035156250]  depth 14  A  enters the complex as (0, 2)
+      [0.009765625, 0.019531250] x [1.025390625, 1.035156250]  depth 14  A  enters the complex as (0, 2)
+      [0.000000000, 0.019531250] x [1.035156250, 1.054687500]  depth 12   
+      [0.019531250, 0.039062500] x [1.035156250, 1.054687500]  depth 12   
+      [0.000000000, 0.039062500] x [1.054687500, 1.093750000]  depth 10   
+      [0.039062500, 0.078125000] x [1.054687500, 1.093750000]  depth 10   
+      [0.000000000, 0.078125000] x [1.093750000, 1.171875000]  depth  8   
+      [0.078125000, 0.156250000] x [1.093750000, 1.171875000]  depth  8   
+    X = cover(F(S)): 12 cells; A = X minus S: 11 cells; 11 cells of X deeper than depth(S) = 8
+    complex at depth 8: n = [1, 3] cubes per axis; S' = ['(0, 1)'], A' = ['(0, 0)', '(0, 2)']
+    bounds before the fix (union of the cells of X): [0.000000000, 0.078125000] x [0.859375000, 1.054687500]
+    bounds after the fix (union of the cubes):        [0.000000000, 0.078125000] x [0.859375000, 1.093750000]
+    cube widths before / after: 0.078125000 / 0.078125000, 0.065104167 / 0.078125000
+    cube: true box | box from the bounds before the fix | its image under F
+      (0, 0) (A'): [0.000000000, 0.078125000] x [0.859375000, 0.937500000] | [0.000000000, 0.078125000] x [0.859375000, 0.924479167] | [0.000000000, 0.040650407] x [0.753424658, 0.859564165]
+      (0, 1) (S'): [0.000000000, 0.078125000] x [0.937500000, 1.015625000] | [0.000000000, 0.078125000] x [0.924479167, 0.989583333] | [0.000000000, 0.040650407] x [0.859564165, 0.979381443]
+      (0, 2) (A'): [0.000000000, 0.078125000] x [1.015625000, 1.093750000] | [0.000000000, 0.078125000] x [0.989583333, 1.054687500] | [0.000000000, 0.040650407] x [0.979381443, 1.115702479]
+    images of the true boxes: F((0, 0)) = [0.000000000, 0.040650407] x [0.753424658, 0.882352941]; F((0, 1)) = [0.000000000, 0.040650407] x [0.882352941, 1.031746032]; F((0, 2)) = [0.000000000, 0.040650407] x [1.031746032, 1.206896552]
+    recorded in this build: F evaluated on the 1 cell(s) of S, then on 7 rectangle(s) of cubes (with repeats), 0 unmatched:
+      [0.000000000, 0.078125000] x [0.924479167, 0.989583333] = box of (0, 1) from the bounds before the fix (deviation 0.0e+00); box of the bisection tree: False; evaluations 3; image [0.000000000, 0.040650407] x [0.859564165, 0.979381443]; cover ['(0, 0)', '(0, 1)']
+      [0.000000000, 0.078125000] x [0.989583333, 1.054687500] = box of (0, 2) from the bounds before the fix (deviation 0.0e+00); box of the bisection tree: False; evaluations 2; image [0.000000000, 0.040650407] x [0.979381443, 1.115702479]; cover ['(0, 1)', '(0, 2)']
+      [0.000000000, 0.078125000] x [0.859375000, 0.924479167] = box of (0, 0) from the bounds before the fix (deviation 0.0e+00); box of the bisection tree: False; evaluations 2; image [0.000000000, 0.040650407] x [0.753424658, 0.859564165]; cover ['(0, 0)']
+    map this build used, rebuilt from the recorded boxes: on the 3 evaluated cubes, the map before the fix
+    map on the cubes before the fix: (0, 0) -> {(0, 0)}, (0, 1) -> {(0, 0), (0, 1)}, (0, 2) -> {(0, 1), (0, 2)}
+      F(A') cap X' subset A': FAILS, (0, 2) in A' maps to ['(0, 1)'] in S'; cubes with empty image: none; ComputeConleyIndex: ['0', '0', '0']
+    map on the cubes after the fix: (0, 0) -> {(0, 0)}, (0, 1) -> {(0, 0), (0, 1), (0, 2)}, (0, 2) -> {(0, 2)}
+      F(A') cap X' subset A': holds; cubes with empty image: none; ComputeConleyIndex: ['0', 'x-1', '0']
+    with closed boxes instead (not CMGDB's rule), before the fix: (0, 0) -> {(0, 0)}, (0, 1) -> {(0, 0), (0, 1)}, (0, 2) -> {(0, 1), (0, 2)}; index pair: no, (0, 2) -> ['(0, 1)']; ComputeConleyIndex: ['0', '0', '0']
+    with closed boxes instead (not CMGDB's rule), after the fix: (0, 0) -> {(0, 0)}, (0, 1) -> {(0, 0), (0, 1), (0, 2)}, (0, 2) -> {(0, 2)}; index pair: yes; ComputeConleyIndex: ['0', 'x-1', '0']
+    axis 1: phi(x) = 0.859375000 + 0.833333333 (x - 0.859375000) takes each true cube onto its box from the bounds before the fix; phi^-1(1) = 1.028125000, in cube (0, 2) along this axis
+  Morse set 2 (fixed point (1, 0)): annotation ['0', 'x-1', '0']; S: 1 cell(s) of depth 8; X: 8 cells, 7 deeper than S; n = [3, 1]; axes with bounds short before the fix: [0]
+    boxes the map received for the cubes: from the bounds before the fix, 3 of 3 cubes evaluated (7 evaluations, 3 distinct), 0 rectangles unmatched, largest deviation 0.0e+00; on the evaluated cubes they yield the map before the fix
+    before the fix: index pair False ((2, 0) -> ['(1, 0)']), empty images none, ComputeConleyIndex ['0', 'x-1', '0']; closed boxes: index pair False, ComputeConleyIndex ['0', 'x-1', '0']
+    after the fix:  index pair True, empty images none, ComputeConleyIndex ['0', 'x-1', '0']; closed boxes: index pair True, ComputeConleyIndex ['0', 'x-1', '0']
+  Morse set 3 (fixed point (1, 1)): annotation ['0', '0', '0']; S: 1 cell(s) of depth 8; X: 30 cells, 29 deeper than S; n = [3, 3]; axes with bounds short before the fix: [0]
+    boxes the map received for the cubes: from the bounds before the fix, 9 of 9 cubes evaluated (41 evaluations, 9 distinct), 0 rectangles unmatched, largest deviation 0.0e+00; on the evaluated cubes they yield the map before the fix
+    before the fix: index pair False ((2, 1) -> ['(1, 1)']), empty images none, ComputeConleyIndex ['0', '0', '0']; closed boxes: index pair False, ComputeConleyIndex ['0', '0', '0']
+    after the fix:  index pair True, empty images none, ComputeConleyIndex ['0', '0', 'x-1']; closed boxes: index pair True, ComputeConleyIndex ['0', '0', 'x-1']
+
+E5: f(x) = x/(2-x) on [0, 1.2] x [0, 1.2], Model(8, 12, 4, 10000)
+  ComputeConleyMorseGraph: raised RuntimeError: Morse-reduced fiber preboundary failed boundary validation; 690 evaluations of ComputeMorseGraph, the same in the same order at the start of ComputeConleyMorseGraph: True; 7 evaluations after them (the Conley phase), 4 of them not boxes of the bisection tree
+  Morse set 0 (fixed point (0, 0)): annotation (none, exception); S: 1 cell(s) of depth 8; X: 1 cells, 0 deeper than S; n = [1, 1]; axes with bounds short before the fix: none
+    boxes the map received for the cubes: from the bounds before and after the fix, 1 of 1 cubes evaluated (1 evaluations, 1 distinct), 0 rectangles unmatched, largest deviation 0.0e+00; on the evaluated cubes they yield the map before and after the fix
+    before the fix: index pair True, empty images none, ComputeConleyIndex ['x-1', '0', '0']; closed boxes: index pair True, ComputeConleyIndex ['x-1', '0', '0']
+    after the fix:  index pair True, empty images none, ComputeConleyIndex ['x-1', '0', '0']; closed boxes: index pair True, ComputeConleyIndex ['x-1', '0', '0']
+  Morse set 1 (fixed point (0, 1)): annotation (none, exception); S: 1 cell(s) of depth 8; X: 10 cells, 9 deeper than S; n = [1, 3]; axes with bounds short before the fix: [1]
+    boxes the map received for the cubes: from the bounds before the fix, 2 of 3 cubes evaluated (4 evaluations, 2 distinct), 0 rectangles unmatched, largest deviation 0.0e+00; on the evaluated cubes they yield the map before the fix
+    before the fix: index pair False ((0, 0) -> ['(0, 1)']), empty images ['(0, 2)'], ComputeConleyIndex RuntimeError: Morse-reduced fiber preboundary failed boundary validation; closed boxes: index pair False, ComputeConleyIndex ['0', 'x-1', '0']
+    after the fix:  index pair True, empty images none, ComputeConleyIndex ['0', 'x-1', '0']; closed boxes: index pair True, ComputeConleyIndex ['0', 'x-1', '0']
+  Details for Morse set 1:
+    S: 1 cell(s) of depth 8: [0.000000000, 0.075000000] x [0.975000000, 1.050000000], F(cell) = [0.000000000, 0.038961039] x [0.951219512, 1.105263158]
+    grid cells that meet [-0.075000, 0.150000] x [0.825000, 1.200000] (depth, and S or A = X minus S):
+      [0.000000000, 0.075000000] x [0.750000000, 0.825000000]  depth  8   
+      [0.075000000, 0.150000000] x [0.750000000, 0.825000000]  depth  8   
+      [0.000000000, 0.075000000] x [0.825000000, 0.900000000]  depth  8   
+      [0.075000000, 0.150000000] x [0.825000000, 0.900000000]  depth  8   
+      [0.000000000, 0.037500000] x [0.900000000, 0.937500000]  depth 10   
+      [0.037500000, 0.075000000] x [0.900000000, 0.937500000]  depth 10   
+      [0.075000000, 0.112500000] x [0.900000000, 0.975000000]  depth  9   
+      [0.112500000, 0.150000000] x [0.900000000, 0.975000000]  depth  9   
+      [0.000000000, 0.018750000] x [0.937500000, 0.956250000]  depth 12  A  enters the complex as (0, 0)
+      [0.018750000, 0.037500000] x [0.937500000, 0.956250000]  depth 12  A  enters the complex as (0, 0)
+      [0.037500000, 0.056250000] x [0.937500000, 0.975000000]  depth 11  A  enters the complex as (0, 0)
+      [0.056250000, 0.075000000] x [0.937500000, 0.975000000]  depth 11   
+      [0.000000000, 0.018750000] x [0.956250000, 0.975000000]  depth 12  A  enters the complex as (0, 0)
+      [0.018750000, 0.037500000] x [0.956250000, 0.975000000]  depth 12  A  enters the complex as (0, 0)
+      [0.000000000, 0.075000000] x [0.975000000, 1.050000000]  depth  8  S  enters the complex as (0, 1)
+      [0.075000000, 0.112500000] x [0.975000000, 1.050000000]  depth  9   
+      [0.112500000, 0.150000000] x [0.975000000, 1.050000000]  depth  9   
+      [0.000000000, 0.037500000] x [1.050000000, 1.087500000]  depth 10  A  enters the complex as (0, 2)
+      [0.037500000, 0.075000000] x [1.050000000, 1.087500000]  depth 10  A  enters the complex as (0, 2)
+      [0.075000000, 0.112500000] x [1.050000000, 1.125000000]  depth  9   
+      [0.112500000, 0.150000000] x [1.050000000, 1.125000000]  depth  9   
+      [0.000000000, 0.037500000] x [1.087500000, 1.125000000]  depth 10  A  enters the complex as (0, 2)
+      [0.037500000, 0.075000000] x [1.087500000, 1.125000000]  depth 10  A  enters the complex as (0, 2)
+      [0.000000000, 0.075000000] x [1.125000000, 1.200000000]  depth  8   
+      [0.075000000, 0.150000000] x [1.125000000, 1.200000000]  depth  8   
+    X = cover(F(S)): 10 cells; A = X minus S: 9 cells; 9 cells of X deeper than depth(S) = 8
+    complex at depth 8: n = [1, 3] cubes per axis; S' = ['(0, 1)'], A' = ['(0, 0)', '(0, 2)']
+    bounds before the fix (union of the cells of X): [0.000000000, 0.075000000] x [0.937500000, 1.125000000]
+    bounds after the fix (union of the cubes):        [0.000000000, 0.075000000] x [0.900000000, 1.125000000]
+    cube widths before / after: 0.075000000 / 0.075000000, 0.062500000 / 0.075000000
+    cube: true box | box from the bounds before the fix | its image under F
+      (0, 0) (A'): [0.000000000, 0.075000000] x [0.900000000, 0.975000000] | [0.000000000, 0.075000000] x [0.937500000, 1.000000000] | [0.000000000, 0.038961039] x [0.882352941, 1.000000000]
+      (0, 1) (S'): [0.000000000, 0.075000000] x [0.975000000, 1.050000000] | [0.000000000, 0.075000000] x [1.000000000, 1.062500000] | [0.000000000, 0.038961039] x [1.000000000, 1.133333333]
+      (0, 2) (A'): [0.000000000, 0.075000000] x [1.050000000, 1.125000000] | [0.000000000, 0.075000000] x [1.062500000, 1.125000000] | [0.000000000, 0.038961039] x [1.133333333, 1.285714286]
+    images of the true boxes: F((0, 0)) = [0.000000000, 0.038961039] x [0.818181818, 0.951219512]; F((0, 1)) = [0.000000000, 0.038961039] x [0.951219512, 1.105263158]; F((0, 2)) = [0.000000000, 0.038961039] x [1.105263158, 1.285714286]
+    recorded in this build: F evaluated on the 1 cell(s) of S, then on 4 rectangle(s) of cubes (with repeats), 0 unmatched:
+      [0.000000000, 0.075000000] x [1.000000000, 1.062500000] = box of (0, 1) from the bounds before the fix (deviation 0.0e+00); box of the bisection tree: False; evaluations 2; image [0.000000000, 0.038961039] x [1.000000000, 1.133333333]; cover ['(0, 1)', '(0, 2)']
+      [0.000000000, 0.075000000] x [1.062500000, 1.125000000] = box of (0, 2) from the bounds before the fix (deviation 0.0e+00); box of the bisection tree: False; evaluations 2; image [0.000000000, 0.038961039] x [1.133333333, 1.285714286]; cover []
+    map this build used, rebuilt from the recorded boxes: on the 2 evaluated cubes, the map before the fix
+    map on the cubes before the fix: (0, 0) -> {(0, 0), (0, 1)}, (0, 1) -> {(0, 1), (0, 2)}, (0, 2) -> {}
+      F(A') cap X' subset A': FAILS, (0, 0) in A' maps to ['(0, 1)'] in S'; cubes with empty image: ['(0, 2)']; ComputeConleyIndex: RuntimeError: Morse-reduced fiber preboundary failed boundary validation
+    map on the cubes after the fix: (0, 0) -> {(0, 0)}, (0, 1) -> {(0, 0), (0, 1), (0, 2)}, (0, 2) -> {(0, 2)}
+      F(A') cap X' subset A': holds; cubes with empty image: none; ComputeConleyIndex: ['0', 'x-1', '0']
+    with closed boxes instead (not CMGDB's rule), before the fix: (0, 0) -> {(0, 0), (0, 1)}, (0, 1) -> {(0, 0), (0, 1), (0, 2)}, (0, 2) -> {(0, 2)}; index pair: no, (0, 0) -> ['(0, 1)']; ComputeConleyIndex: ['0', 'x-1', '0']
+    with closed boxes instead (not CMGDB's rule), after the fix: (0, 0) -> {(0, 0)}, (0, 1) -> {(0, 0), (0, 1), (0, 2)}, (0, 2) -> {(0, 2)}; index pair: yes; ComputeConleyIndex: ['0', 'x-1', '0']
+    axis 1: phi(x) = 0.937500000 + 0.833333333 (x - 0.900000000) takes each true cube onto its box from the bounds before the fix; phi^-1(1) = 0.975000000, in cube (0, 0) along this axis
+  Morse set 2 (fixed point (1, 0)): annotation (none, exception); S: 1 cell(s) of depth 8; X: 7 cells, 6 deeper than S; n = [3, 1]; axes with bounds short before the fix: [0]
+    boxes the map received for this set: none recorded (the run stopped before it)
+    before the fix: index pair False ((0, 0) -> ['(1, 0)']), empty images ['(2, 0)'], ComputeConleyIndex RuntimeError: Morse-reduced fiber preboundary failed boundary validation; closed boxes: index pair False, ComputeConleyIndex ['0', '0', '0']
+    after the fix:  index pair True, empty images none, ComputeConleyIndex ['0', 'x-1', '0']; closed boxes: index pair True, ComputeConleyIndex ['0', 'x-1', '0']
+  Morse set 3 (fixed point (1, 1)): annotation (none, exception); S: 1 cell(s) of depth 8; X: 26 cells, 25 deeper than S; n = [3, 3]; axes with bounds short before the fix: [0]
+    boxes the map received for this set: none recorded (the run stopped before it)
+    before the fix: index pair False ((0, 1) -> ['(1, 1)']), empty images ['(2, 0)', '(2, 1)', '(2, 2)'], ComputeConleyIndex RuntimeError: Morse-reduced fiber preboundary failed boundary validation; closed boxes: index pair False, ComputeConleyIndex ['0', '0', '0']
+    after the fix:  index pair True, empty images none, ComputeConleyIndex ['0', '0', 'x-1']; closed boxes: index pair True, ComputeConleyIndex ['0', '0', 'x-1']
+
+E6: f(x) = x/(2-x) on [0, 1.2] x [0, 1.2], Model(6, 10, 4, 10000)
+  ComputeConleyMorseGraph: returned; 530 evaluations of ComputeMorseGraph, the same in the same order at the start of ComputeConleyMorseGraph: True; 60 evaluations after them (the Conley phase), 55 of them not boxes of the bisection tree
+  Morse set 0 (fixed point (0, 0)): annotation ['x-1', '0', '0']; S: 1 cell(s) of depth 6; X: 1 cells, 0 deeper than S; n = [1, 1]; axes with bounds short before the fix: none
+    boxes the map received for the cubes: from the bounds before and after the fix, 1 of 1 cubes evaluated (1 evaluations, 1 distinct), 0 rectangles unmatched, largest deviation 0.0e+00; on the evaluated cubes they yield the map before and after the fix
+    before the fix: index pair True, empty images none, ComputeConleyIndex ['x-1', '0', '0']; closed boxes: index pair True, ComputeConleyIndex ['x-1', '0', '0']
+    after the fix:  index pair True, empty images none, ComputeConleyIndex ['x-1', '0', '0']; closed boxes: index pair True, ComputeConleyIndex ['x-1', '0', '0']
+  Morse set 1 (fixed point (0, 1)): annotation ['0', 'x-1', '0']; S: 1 cell(s) of depth 6; X: 10 cells, 9 deeper than S; n = [1, 3]; axes with bounds short before the fix: [1]
+    boxes the map received for the cubes: from the bounds before the fix, 3 of 3 cubes evaluated (7 evaluations, 3 distinct), 0 rectangles unmatched, largest deviation 0.0e+00; on the evaluated cubes they yield the map before the fix
+    before the fix: index pair True, empty images none, ComputeConleyIndex ['0', 'x-1', '0']; closed boxes: index pair False, ComputeConleyIndex ['0', '0', '0']
+    after the fix:  index pair True, empty images none, ComputeConleyIndex ['0', 'x-1', '0']; closed boxes: index pair True, ComputeConleyIndex ['0', 'x-1', '0']
+  Details for Morse set 1:
+    S: 1 cell(s) of depth 6: [0.000000000, 0.150000000] x [0.900000000, 1.050000000], F(cell) = [0.000000000, 0.081081081] x [0.818181818, 1.105263158]
+    grid cells that meet [-0.150000, 0.300000] x [0.600000, 1.350000] (depth, and S or A = X minus S):
+      [0.000000000, 0.075000000] x [0.600000000, 0.675000000]  depth  8   
+      [0.075000000, 0.150000000] x [0.600000000, 0.675000000]  depth  8   
+      [0.150000000, 0.225000000] x [0.600000000, 0.750000000]  depth  7   
+      [0.225000000, 0.300000000] x [0.600000000, 0.750000000]  depth  7   
+      [0.000000000, 0.075000000] x [0.675000000, 0.750000000]  depth  8   
+      [0.075000000, 0.150000000] x [0.675000000, 0.750000000]  depth  8   
+      [0.000000000, 0.075000000] x [0.750000000, 0.825000000]  depth  8  A  enters the complex as (0, 0)
+      [0.075000000, 0.150000000] x [0.750000000, 0.825000000]  depth  8  A  enters the complex as (0, 0)
+      [0.150000000, 0.225000000] x [0.750000000, 0.900000000]  depth  7   
+      [0.225000000, 0.300000000] x [0.750000000, 0.900000000]  depth  7   
+      [0.000000000, 0.075000000] x [0.825000000, 0.900000000]  depth  8  A  enters the complex as (0, 0)
+      [0.075000000, 0.150000000] x [0.825000000, 0.900000000]  depth  8  A  enters the complex as (0, 0)
+      [0.000000000, 0.150000000] x [0.900000000, 1.050000000]  depth  6  S  enters the complex as (0, 1)
+      [0.150000000, 0.225000000] x [0.900000000, 1.050000000]  depth  7   
+      [0.225000000, 0.300000000] x [0.900000000, 1.050000000]  depth  7   
+      [0.000000000, 0.037500000] x [1.050000000, 1.087500000]  depth 10  A  enters the complex as (0, 2)
+      [0.037500000, 0.075000000] x [1.050000000, 1.087500000]  depth 10  A  enters the complex as (0, 2)
+      [0.075000000, 0.112500000] x [1.050000000, 1.125000000]  depth  9  A  enters the complex as (0, 2)
+      [0.112500000, 0.150000000] x [1.050000000, 1.125000000]  depth  9   
+      [0.150000000, 0.225000000] x [1.050000000, 1.200000000]  depth  7   
+      [0.225000000, 0.300000000] x [1.050000000, 1.200000000]  depth  7   
+      [0.000000000, 0.037500000] x [1.087500000, 1.125000000]  depth 10  A  enters the complex as (0, 2)
+      [0.037500000, 0.075000000] x [1.087500000, 1.125000000]  depth 10  A  enters the complex as (0, 2)
+      [0.000000000, 0.075000000] x [1.125000000, 1.200000000]  depth  8   
+      [0.075000000, 0.150000000] x [1.125000000, 1.200000000]  depth  8   
+    X = cover(F(S)): 10 cells; A = X minus S: 9 cells; 9 cells of X deeper than depth(S) = 6
+    complex at depth 6: n = [1, 3] cubes per axis; S' = ['(0, 1)'], A' = ['(0, 0)', '(0, 2)']
+    bounds before the fix (union of the cells of X): [0.000000000, 0.150000000] x [0.750000000, 1.125000000]
+    bounds after the fix (union of the cubes):        [0.000000000, 0.150000000] x [0.750000000, 1.200000000]
+    cube widths before / after: 0.150000000 / 0.150000000, 0.125000000 / 0.150000000
+    cube: true box | box from the bounds before the fix | its image under F
+      (0, 0) (A'): [0.000000000, 0.150000000] x [0.750000000, 0.900000000] | [0.000000000, 0.150000000] x [0.750000000, 0.875000000] | [0.000000000, 0.081081081] x [0.600000000, 0.777777778]
+      (0, 1) (S'): [0.000000000, 0.150000000] x [0.900000000, 1.050000000] | [0.000000000, 0.150000000] x [0.875000000, 1.000000000] | [0.000000000, 0.081081081] x [0.777777778, 1.000000000]
+      (0, 2) (A'): [0.000000000, 0.150000000] x [1.050000000, 1.200000000] | [0.000000000, 0.150000000] x [1.000000000, 1.125000000] | [0.000000000, 0.081081081] x [1.000000000, 1.285714286]
+    images of the true boxes: F((0, 0)) = [0.000000000, 0.081081081] x [0.600000000, 0.818181818]; F((0, 1)) = [0.000000000, 0.081081081] x [0.818181818, 1.105263158]; F((0, 2)) = [0.000000000, 0.081081081] x [1.105263158, 1.500000000]
+    recorded in this build: F evaluated on the 1 cell(s) of S, then on 7 rectangle(s) of cubes (with repeats), 0 unmatched:
+      [0.000000000, 0.150000000] x [0.875000000, 1.000000000] = box of (0, 1) from the bounds before the fix (deviation 0.0e+00); box of the bisection tree: False; evaluations 3; image [0.000000000, 0.081081081] x [0.777777778, 1.000000000]; cover ['(0, 0)', '(0, 1)', '(0, 2)']
+      [0.000000000, 0.150000000] x [1.000000000, 1.125000000] = box of (0, 2) from the bounds before the fix (deviation 0.0e+00); box of the bisection tree: False; evaluations 2; image [0.000000000, 0.081081081] x [1.000000000, 1.285714286]; cover ['(0, 2)']
+      [0.000000000, 0.150000000] x [0.750000000, 0.875000000] = box of (0, 0) from the bounds before the fix (deviation 0.0e+00); box of the bisection tree: False; evaluations 2; image [0.000000000, 0.081081081] x [0.600000000, 0.777777778]; cover ['(0, 0)']
+    map this build used, rebuilt from the recorded boxes: on the 3 evaluated cubes, the map before the fix
+    map on the cubes before the fix: (0, 0) -> {(0, 0)}, (0, 1) -> {(0, 0), (0, 1), (0, 2)}, (0, 2) -> {(0, 2)}
+      F(A') cap X' subset A': holds; cubes with empty image: none; ComputeConleyIndex: ['0', 'x-1', '0']
+    map on the cubes after the fix: (0, 0) -> {(0, 0)}, (0, 1) -> {(0, 0), (0, 1), (0, 2)}, (0, 2) -> {(0, 2)}
+      F(A') cap X' subset A': holds; cubes with empty image: none; ComputeConleyIndex: ['0', 'x-1', '0']
+    with closed boxes instead (not CMGDB's rule), before the fix: (0, 0) -> {(0, 0)}, (0, 1) -> {(0, 0), (0, 1), (0, 2)}, (0, 2) -> {(0, 1), (0, 2)}; index pair: no, (0, 2) -> ['(0, 1)']; ComputeConleyIndex: ['0', '0', '0']
+    with closed boxes instead (not CMGDB's rule), after the fix: (0, 0) -> {(0, 0)}, (0, 1) -> {(0, 0), (0, 1), (0, 2)}, (0, 2) -> {(0, 2)}; index pair: yes; ComputeConleyIndex: ['0', 'x-1', '0']
+    axis 1: phi(x) = 0.750000000 + 0.833333333 (x - 0.750000000) takes each true cube onto its box from the bounds before the fix; phi^-1(1) = 1.050000000, in cube (0, 1) along this axis
+  Morse set 2 (fixed point (1, 0)): annotation ['0', 'x-1', '0']; S: 1 cell(s) of depth 6; X: 7 cells, 6 deeper than S; n = [3, 1]; axes with bounds short before the fix: [0]
+    boxes the map received for the cubes: from the bounds before the fix, 3 of 3 cubes evaluated (7 evaluations, 3 distinct), 0 rectangles unmatched, largest deviation 0.0e+00; on the evaluated cubes they yield the map before the fix
+    before the fix: index pair True, empty images none, ComputeConleyIndex ['0', 'x-1', '0']; closed boxes: index pair False, ComputeConleyIndex ['0', 'x-1', '0']
+    after the fix:  index pair True, empty images none, ComputeConleyIndex ['0', 'x-1', '0']; closed boxes: index pair True, ComputeConleyIndex ['0', 'x-1', '0']
+  Morse set 3 (fixed point (1, 1)): annotation ['0', '0', 'x-1']; S: 1 cell(s) of depth 6; X: 26 cells, 25 deeper than S; n = [3, 3]; axes with bounds short before the fix: [0]
+    boxes the map received for the cubes: from the bounds before the fix, 9 of 9 cubes evaluated (41 evaluations, 9 distinct), 0 rectangles unmatched, largest deviation 0.0e+00; on the evaluated cubes they yield the map before the fix
+    before the fix: index pair True, empty images none, ComputeConleyIndex ['0', '0', 'x-1']; closed boxes: index pair False, ComputeConleyIndex ['0', '0', 'x-1']
+    after the fix:  index pair True, empty images none, ComputeConleyIndex ['0', '0', 'x-1']; closed boxes: index pair True, ComputeConleyIndex ['0', '0', 'x-1']
+

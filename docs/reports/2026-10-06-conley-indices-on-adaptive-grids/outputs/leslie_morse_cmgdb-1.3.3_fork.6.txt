@@ -1,0 +1,284 @@
+script: leslie_morse.py
+CMGDB version: 1.3.3+fork.6   build tag: cmgdb-1.3.3_fork.6
+Python 3.13.16 on Darwin arm64, numpy 2.5.3
+Gamma: 2000 points of the orbit of (30, 20) after 100000 steps (every 50th point)
+named points: 0, p* = (21.108211, 14.775748), a3 = [(7.524656, 0.499081), (71.409072, 5.26726), (0.712973, 49.98635)], s3 = [(19.212912, 1.304927), (52.362602, 13.449038), (1.864181, 36.653822)]
+
+== corner 12/14: Model(12, 14, lower, upper, corner box map)
+   final grid: 636 cells, depths {1: 1, 2: 1, 6: 1, 7: 3, 8: 7, 9: 10, 10: 13, 11: 20, 12: 580}
+   Morse set 0: 525 cells, depths {12: 525}, bounding box [1.405, 44.999] x [-0.001, 31.718]
+      contains: p*, Gamma   annotation ['0', 'x+1', '0']
+      pair: |X| = 534, |A| = 9 (depths {1: 1, 8: 1, 9: 1, 10: 1, 11: 2, 12: 3}); cells of A whose image meets M: [635]
+      ComputeConleyIndexForCells: ['0', 'x+1', '0']
+   Morse set 1: 1 cells, depths {12: 1}, bounding box [-0.001, 1.405] x [-0.001, 1.093]
+      contains: 0   annotation ['0', '0', '0']
+      pair: |X| = 22, |A| = 21 (depths {7: 1, 8: 1, 9: 1, 10: 1, 11: 2, 12: 15}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', '0', '0']
+   Morse graph edges (reduced): [(1, 0)]
+   Morse graph edges (unreduced): [(1, 0)]
+   pairs (u, v) of Morse sets with a path of cells from u to v in the final graph: [(0, 1), (1, 0)]
+      Morse graph pairs (transitive closure) without such a path: none;  such paths without a Morse graph pair: [(0, 1)]
+   strongly connected components of the final cell graph that contain a cycle: 1
+      612 cells, depths {1: 1, 2: 1, 7: 2, 8: 5, 9: 7, 10: 10, 11: 15, 12: 571}, Morse sets inside [0, 1], contains 0, p*, a3, s3, Gamma; cells of depth < 12: 41
+   these components are the Morse sets: False;  cells of depth < 12 on a cycle: 41 (depths {1: 1, 2: 1, 7: 2, 8: 5, 9: 7, 10: 10, 11: 15})
+
+== corner 16/18: Model(16, 18, lower, upper, corner box map)
+   final grid: 7059 cells, depths {1: 1, 2: 1, 6: 1, 7: 3, 8: 7, 9: 10, 10: 13, 11: 20, 12: 54, 13: 126, 14: 124, 15: 213, 16: 6486}
+   Morse set 0: 5570 cells, depths {16: 5570}, bounding box [3.866, 43.242] x [2.460, 30.351]
+      contains: p*, Gamma   annotation ['x-1', '0', '0']
+      pair: |X| = 5570, |A| = 0 (depths {}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['x-1', '0', '0']
+   Morse set 1: 1 cells, depths {16: 1}, bounding box [-0.001, 0.351] x [-0.001, 0.272]
+      contains: 0   annotation ['0', '0', '0']
+      pair: |X| = 7, |A| = 6 (depths {7: 1, 8: 1, 9: 1, 11: 1, 13: 1, 15: 1}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', '0', '0']
+   Morse graph edges (reduced): [(1, 0)]
+   Morse graph edges (unreduced): [(1, 0)]
+   pairs (u, v) of Morse sets with a path of cells from u to v in the final graph: [(1, 0)]
+      Morse graph pairs (transitive closure) without such a path: none;  such paths without a Morse graph pair: none
+   strongly connected components of the final cell graph that contain a cycle: 2
+      5570 cells, depths {16: 5570}, Morse sets inside [0], contains p*, Gamma
+      472 cells, depths {1: 1, 2: 1, 7: 2, 8: 5, 9: 7, 10: 10, 11: 15, 12: 45, 13: 117, 14: 114, 15: 129, 16: 26}, Morse sets inside [1], contains 0, a3, s3; cells of depth < 16: 446
+   these components are the Morse sets: False;  cells of depth < 16 on a cycle: 446 (depths {1: 1, 2: 1, 7: 2, 8: 5, 9: 7, 10: 10, 11: 15, 12: 45, 13: 117, 14: 114, 15: 129})
+
+== corner uniform 12: Model(12, 12, 12, 10000, lower, upper, corner box map)
+   final grid: 4096 cells, depths {12: 4096}
+   Morse set 0: 809 cells, depths {12: 809}, bounding box [-0.001, 75.937] x [-0.001, 53.594]
+      contains: p*, a3, s3, Gamma   annotation ['x-1', '0', '0']
+      pair: |X| = 809, |A| = 0 (depths {}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['x-1', '0', '0']
+   Morse set 1: 1 cells, depths {12: 1}, bounding box [-0.001, 1.405] x [-0.001, 1.093]
+      contains: 0   annotation ['0', '0', '0']
+      pair: |X| = 30, |A| = 29 (depths {12: 29}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', '0', '0']
+   Morse graph edges (reduced): [(1, 0)]
+   Morse graph edges (unreduced): [(1, 0)]
+   pairs (u, v) of Morse sets with a path of cells from u to v in the final graph: [(1, 0)]
+      Morse graph pairs (transitive closure) without such a path: none;  such paths without a Morse graph pair: none
+   strongly connected components of the final cell graph that contain a cycle: 2
+      809 cells, depths {12: 809}, Morse sets inside [0], contains p*, a3, s3, Gamma
+      1 cells, depths {12: 1}, Morse sets inside [1], contains 0
+   these components are the Morse sets: True;  cells of depth < 12 on a cycle: 0
+
+== corner uniform 14: Model(14, 14, 14, 10000, lower, upper, corner box map)
+   final grid: 16384 cells, depths {14: 16384}
+   Morse set 0: 73 cells, depths {14: 73}, bounding box [-0.001, 73.828] x [-0.001, 51.953]
+      contains: a3   annotation ['x^3-1', '0', '0']
+      pair: |X| = 73, |A| = 0 (depths {}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['x^3-1', '0', '0']
+   Morse set 1: 4 cells, depths {14: 4}, bounding box [0.702, 57.656] x [0.546, 39.921]
+      contains: none of these   annotation ['0', '0', '0']
+      pair: |X| = 20, |A| = 16 (depths {14: 16}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', '0', '0']
+   Morse set 2: 4 cells, depths {14: 4}, bounding box [1.405, 56.250] x [1.093, 39.375]
+      contains: none of these   annotation ['0', '0', '0']
+      pair: |X| = 22, |A| = 18 (depths {14: 18}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', '0', '0']
+   Morse set 3: 2023 cells, depths {14: 2023}, bounding box [0.702, 56.250] x [-0.001, 39.375]
+      contains: p*, s3, Gamma   annotation ['0', 'x^2+x+1', '0']
+      pair: |X| = 2050, |A| = 27 (depths {14: 27}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', 'x^2+x+1', '0']
+   Morse set 4: 10 cells, depths {14: 10}, bounding box [-0.001, 74.531] x [-0.001, 52.500]
+      contains: none of these   annotation ['0', '0', '0']
+      pair: |X| = 38, |A| = 28 (depths {14: 28}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', '0', '0']
+   Morse set 5: 1 cells, depths {14: 1}, bounding box [-0.001, 0.702] x [-0.001, 0.546]
+      contains: 0   annotation ['0', '0', '0']
+      pair: |X| = 34, |A| = 33 (depths {14: 33}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', '0', '0']
+   Morse graph edges (reduced): [(1, 0), (2, 1), (3, 2), (4, 0), (5, 3), (5, 4)]
+   Morse graph edges (unreduced): [(1, 0), (2, 0), (2, 1), (3, 0), (3, 1), (3, 2), (4, 0), (5, 0), (5, 1), (5, 2), (5, 3), (5, 4)]
+   pairs (u, v) of Morse sets with a path of cells from u to v in the final graph: [(1, 0), (2, 0), (2, 1), (3, 0), (3, 1), (3, 2), (4, 0), (5, 0), (5, 1), (5, 2), (5, 3), (5, 4)]
+      Morse graph pairs (transitive closure) without such a path: none;  such paths without a Morse graph pair: none
+   strongly connected components of the final cell graph that contain a cycle: 6
+      2023 cells, depths {14: 2023}, Morse sets inside [3], contains p*, s3, Gamma
+      73 cells, depths {14: 73}, Morse sets inside [0], contains a3
+      10 cells, depths {14: 10}, Morse sets inside [4], contains none of these
+      4 cells, depths {14: 4}, Morse sets inside [1], contains none of these
+      4 cells, depths {14: 4}, Morse sets inside [2], contains none of these
+      1 cells, depths {14: 1}, Morse sets inside [5], contains 0
+   these components are the Morse sets: True;  cells of depth < 14 on a cycle: 0
+
+== corner uniform 16: Model(16, 16, 16, 10000, lower, upper, corner box map)
+   final grid: 65536 cells, depths {16: 65536}
+   Morse set 0: 158 cells, depths {16: 158}, bounding box [0.351, 73.828] x [-0.001, 51.953]
+      contains: a3   annotation ['x^3-1', '0', '0']
+      pair: |X| = 158, |A| = 0 (depths {}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['x^3-1', '0', '0']
+   Morse set 1: 3 cells, depths {16: 3}, bounding box [0.351, 71.015] x [-0.001, 49.492]
+      contains: none of these   annotation ['0', '0', '0']
+      pair: |X| = 18, |A| = 15 (depths {16: 15}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', '0', '0']
+   Morse set 2: 4 cells, depths {16: 4}, bounding box [1.405, 54.843] x [1.093, 38.281]
+      contains: none of these   annotation ['0', '0', '0']
+      pair: |X| = 22, |A| = 18 (depths {16: 18}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', '0', '0']
+   Morse set 3: 5570 cells, depths {16: 5570}, bounding box [3.866, 43.242] x [2.460, 30.351]
+      contains: p*, Gamma   annotation ['x-1', '0', '0']
+      pair: |X| = 5570, |A| = 0 (depths {}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['x-1', '0', '0']
+   Morse set 4: 4 cells, depths {16: 4}, bounding box [2.108, 50.273] x [1.366, 35.273]
+      contains: none of these   annotation ['0', '0', '0']
+      pair: |X| = 24, |A| = 20 (depths {16: 20}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', '0', '0']
+   Morse set 5: 89 cells, depths {16: 89}, bounding box [1.405, 54.492] x [0.819, 38.007]
+      contains: s3   annotation ['0', 'x^3-1', '0']
+      pair: |X| = 144, |A| = 55 (depths {16: 55}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', 'x^3-1', '0']
+   Morse set 6: 3 cells, depths {16: 3}, bounding box [2.108, 51.679] x [1.640, 36.367]
+      contains: none of these   annotation ['0', '0', '0']
+      pair: |X| = 22, |A| = 19 (depths {16: 19}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', '0', '0']
+   Morse set 7: 1 cells, depths {16: 1}, bounding box [-0.001, 0.351] x [-0.001, 0.272]
+      contains: 0   annotation ['0', '0', '0']
+      pair: |X| = 36, |A| = 35 (depths {16: 35}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', '0', '0']
+   Morse graph edges (reduced): [(1, 0), (2, 1), (4, 3), (5, 2), (5, 4), (6, 5), (7, 6)]
+   Morse graph edges (unreduced): [(1, 0), (2, 0), (2, 1), (4, 3), (5, 0), (5, 1), (5, 2), (5, 3), (5, 4), (6, 0), (6, 1), (6, 2), (6, 3), (6, 4), (6, 5), (7, 0), (7, 1), (7, 2), (7, 3), (7, 4), (7, 5), (7, 6)]
+   pairs (u, v) of Morse sets with a path of cells from u to v in the final graph: [(1, 0), (2, 0), (2, 1), (4, 3), (5, 0), (5, 1), (5, 2), (5, 3), (5, 4), (6, 0), (6, 1), (6, 2), (6, 3), (6, 4), (6, 5), (7, 0), (7, 1), (7, 2), (7, 3), (7, 4), (7, 5), (7, 6)]
+      Morse graph pairs (transitive closure) without such a path: none;  such paths without a Morse graph pair: none
+   strongly connected components of the final cell graph that contain a cycle: 8
+      5570 cells, depths {16: 5570}, Morse sets inside [3], contains p*, Gamma
+      158 cells, depths {16: 158}, Morse sets inside [0], contains a3
+      89 cells, depths {16: 89}, Morse sets inside [5], contains s3
+      4 cells, depths {16: 4}, Morse sets inside [2], contains none of these
+      4 cells, depths {16: 4}, Morse sets inside [4], contains none of these
+      3 cells, depths {16: 3}, Morse sets inside [1], contains none of these
+      3 cells, depths {16: 3}, Morse sets inside [6], contains none of these
+      1 cells, depths {16: 1}, Morse sets inside [7], contains 0
+   these components are the Morse sets: True;  cells of depth < 16 on a cycle: 0
+
+== corner uniform 18: Model(18, 18, 18, 10000, lower, upper, corner box map)
+   final grid: 262144 cells, depths {18: 262144}
+   Morse set 0: 225 cells, depths {18: 225}, bounding box [0.526, 73.476] x [0.272, 51.543]
+      contains: a3   annotation ['x^3-1', '0', '0']
+      pair: |X| = 225, |A| = 0 (depths {}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['x^3-1', '0', '0']
+   Morse set 1: 13 cells, depths {18: 13}, bounding box [0.351, 73.652] x [0.136, 51.679]
+      contains: none of these   annotation ['0', '0', '0']
+      pair: |X| = 43, |A| = 30 (depths {18: 30}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', '0', '0']
+   Morse set 2: 3 cells, depths {18: 3}, bounding box [0.526, 71.367] x [0.272, 49.902]
+      contains: none of these   annotation ['0', '0', '0']
+      pair: |X| = 18, |A| = 15 (depths {18: 15}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', '0', '0']
+   Morse set 3: 15407 cells, depths {18: 15407}, bounding box [6.503, 39.023] x [4.511, 27.343]
+      contains: p*, Gamma   annotation ['x-1', '0', '0']
+      pair: |X| = 15407, |A| = 0 (depths {}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['x-1', '0', '0']
+   Morse set 4: 4 cells, depths {18: 4}, bounding box [1.933, 51.328] x [1.229, 35.957]
+      contains: none of these   annotation ['0', '0', '0']
+      pair: |X| = 20, |A| = 16 (depths {18: 16}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', '0', '0']
+   Morse set 5: 73 cells, depths {18: 73}, bounding box [1.581, 53.613] x [1.093, 37.460]
+      contains: s3   annotation ['0', 'x^3-1', '0']
+      pair: |X| = 109, |A| = 36 (depths {18: 36}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', 'x^3-1', '0']
+   Morse set 6: 1 cells, depths {18: 1}, bounding box [-0.001, 0.175] x [-0.001, 0.136]
+      contains: 0   annotation ['0', '0', '0']
+      pair: |X| = 37, |A| = 36 (depths {18: 36}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', '0', '0']
+   Morse graph edges (reduced): [(1, 0), (2, 0), (4, 3), (5, 2), (5, 4), (6, 1), (6, 5)]
+   Morse graph edges (unreduced): [(1, 0), (2, 0), (4, 3), (5, 0), (5, 2), (5, 3), (5, 4), (6, 0), (6, 1), (6, 2), (6, 3), (6, 4), (6, 5)]
+   pairs (u, v) of Morse sets with a path of cells from u to v in the final graph: [(1, 0), (2, 0), (4, 3), (5, 0), (5, 2), (5, 3), (5, 4), (6, 0), (6, 1), (6, 2), (6, 3), (6, 4), (6, 5)]
+      Morse graph pairs (transitive closure) without such a path: none;  such paths without a Morse graph pair: none
+   strongly connected components of the final cell graph that contain a cycle: 7
+      15407 cells, depths {18: 15407}, Morse sets inside [3], contains p*, Gamma
+      225 cells, depths {18: 225}, Morse sets inside [0], contains a3
+      73 cells, depths {18: 73}, Morse sets inside [5], contains s3
+      13 cells, depths {18: 13}, Morse sets inside [1], contains none of these
+      4 cells, depths {18: 4}, Morse sets inside [4], contains none of these
+      3 cells, depths {18: 3}, Morse sets inside [2], contains none of these
+      1 cells, depths {18: 1}, Morse sets inside [6], contains 0
+   these components are the Morse sets: True;  cells of depth < 18 on a cycle: 0
+
+== hull 12/14: Model(12, 14, lower, upper, hull box map)
+   final grid: 1073 cells, depths {2: 1, 3: 1, 4: 1, 5: 3, 6: 3, 7: 6, 8: 10, 9: 26, 10: 23, 11: 77, 12: 922}
+   Morse set 0: 810 cells, depths {12: 810}, bounding box [-0.001, 75.937] x [-0.001, 53.594]
+      contains: p*, a3, s3, Gamma   annotation ['x-1', '0', '0']
+      pair: |X| = 810, |A| = 0 (depths {}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['x-1', '0', '0']
+   Morse set 1: 1 cells, depths {12: 1}, bounding box [-0.001, 1.405] x [-0.001, 1.093]
+      contains: 0   annotation ['0', '0', '0']
+      pair: |X| = 30, |A| = 29 (depths {11: 2, 12: 27}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', '0', '0']
+   Morse graph edges (reduced): [(1, 0)]
+   Morse graph edges (unreduced): [(1, 0)]
+   pairs (u, v) of Morse sets with a path of cells from u to v in the final graph: [(1, 0)]
+      Morse graph pairs (transitive closure) without such a path: none;  such paths without a Morse graph pair: none
+   strongly connected components of the final cell graph that contain a cycle: 2
+      810 cells, depths {12: 810}, Morse sets inside [0], contains p*, a3, s3, Gamma
+      1 cells, depths {12: 1}, Morse sets inside [1], contains 0
+   these components are the Morse sets: True;  cells of depth < 12 on a cycle: 0
+
+== hull 16/18: Model(16, 18, lower, upper, hull box map)
+   final grid: 8759 cells, depths {2: 1, 3: 1, 4: 1, 5: 3, 6: 3, 7: 6, 8: 10, 9: 26, 10: 23, 11: 77, 12: 111, 13: 378, 14: 373, 15: 728, 16: 6990, 17: 28}
+   Morse set 0: 158 cells, depths {16: 158}, bounding box [0.351, 73.828] x [-0.001, 51.953]
+      contains: a3   annotation ['x^3-1', '0', '0']
+      pair: |X| = 158, |A| = 0 (depths {}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['x^3-1', '0', '0']
+   Morse set 1: 5570 cells, depths {16: 5570}, bounding box [3.866, 43.242] x [2.460, 30.351]
+      contains: p*, Gamma   annotation ['x-1', '0', '0']
+      pair: |X| = 5570, |A| = 0 (depths {}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['x-1', '0', '0']
+   Morse set 2: 89 cells, depths {16: 89}, bounding box [1.405, 54.492] x [0.819, 38.007]
+      contains: s3   annotation ['0', 'x^3-1', '0']
+      pair: |X| = 140, |A| = 51 (depths {15: 20, 16: 16, 17: 15}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', 'x^3-1', '0']
+   Morse set 3: 1 cells, depths {16: 1}, bounding box [-0.001, 0.351] x [-0.001, 0.272]
+      contains: 0   annotation ['0', '0', '0']
+      pair: |X| = 26, |A| = 25 (depths {11: 2, 13: 3, 14: 2, 15: 6, 16: 10, 17: 2}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', '0', '0']
+   Morse graph edges (reduced): [(1, 0), (2, 1), (3, 2)]
+   Morse graph edges (unreduced): [(1, 0), (2, 0), (2, 1), (3, 0), (3, 1), (3, 2)]
+   pairs (u, v) of Morse sets with a path of cells from u to v in the final graph: [(2, 0), (2, 1), (3, 0), (3, 1), (3, 2)]
+      Morse graph pairs (transitive closure) without such a path: [(1, 0)];  such paths without a Morse graph pair: none
+   strongly connected components of the final cell graph that contain a cycle: 4
+      5570 cells, depths {16: 5570}, Morse sets inside [1], contains p*, Gamma
+      158 cells, depths {16: 158}, Morse sets inside [0], contains a3
+      89 cells, depths {16: 89}, Morse sets inside [2], contains s3
+      1 cells, depths {16: 1}, Morse sets inside [3], contains 0
+   these components are the Morse sets: True;  cells of depth < 16 on a cycle: 0
+
+== padded 12/14: Model(12, 14, lower, upper, padded box map)
+   final grid: 1473 cells, depths {4: 2, 5: 4, 6: 8, 7: 11, 8: 22, 9: 29, 10: 46, 11: 89, 12: 1262}
+   Morse set 0: 1128 cells, depths {12: 1128}, bounding box [-0.001, 81.562] x [-0.001, 59.062]
+      contains: p*, a3, s3, Gamma   annotation ['x-1', '0', '0']
+      pair: |X| = 1128, |A| = 0 (depths {}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['x-1', '0', '0']
+   Morse set 1: 1 cells, depths {12: 1}, bounding box [-0.001, 1.405] x [-0.001, 1.093]
+      contains: 0   annotation ['0', '0', '0']
+      pair: |X| = 62, |A| = 61 (depths {12: 61}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', '0', '0']
+   Morse graph edges (reduced): [(1, 0)]
+   Morse graph edges (unreduced): [(1, 0)]
+   pairs (u, v) of Morse sets with a path of cells from u to v in the final graph: [(1, 0)]
+      Morse graph pairs (transitive closure) without such a path: none;  such paths without a Morse graph pair: none
+   strongly connected components of the final cell graph that contain a cycle: 2
+      1128 cells, depths {12: 1128}, Morse sets inside [0], contains p*, a3, s3, Gamma
+      1 cells, depths {12: 1}, Morse sets inside [1], contains 0
+   these components are the Morse sets: True;  cells of depth < 12 on a cycle: 0
+
+== padded 16/18: Model(16, 18, lower, upper, padded box map)
+   final grid: 14151 cells, depths {4: 2, 5: 4, 6: 8, 7: 11, 8: 22, 9: 29, 10: 46, 11: 89, 12: 133, 13: 258, 14: 457, 15: 1080, 16: 12012}
+   Morse set 0: 851 cells, depths {16: 851}, bounding box [-0.001, 75.234] x [-0.001, 53.047]
+      contains: a3   annotation ['x^3-1', '0', '0']
+      pair: |X| = 851, |A| = 0 (depths {}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['x^3-1', '0', '0']
+   Morse set 1: 8636 cells, depths {16: 8636}, bounding box [0.702, 57.304] x [-0.001, 39.648]
+      contains: p*, s3, Gamma   annotation ['0', 'x^2+x+1', '0']
+      pair: |X| = 8748, |A| = 112 (depths {16: 112}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', 'x^2+x+1', '0']
+   Morse set 2: 1 cells, depths {16: 1}, bounding box [-0.001, 0.351] x [-0.001, 0.272]
+      contains: 0   annotation ['0', '0', '0']
+      pair: |X| = 58, |A| = 57 (depths {13: 4, 15: 4, 16: 49}); cells of A whose image meets M: none
+      ComputeConleyIndexForCells: ['0', '0', '0']
+   Morse graph edges (reduced): [(1, 0), (2, 1)]
+   Morse graph edges (unreduced): [(1, 0), (2, 0), (2, 1)]
+   pairs (u, v) of Morse sets with a path of cells from u to v in the final graph: [(1, 0), (2, 0), (2, 1)]
+      Morse graph pairs (transitive closure) without such a path: none;  such paths without a Morse graph pair: none
+   strongly connected components of the final cell graph that contain a cycle: 3
+      8636 cells, depths {16: 8636}, Morse sets inside [1], contains p*, s3, Gamma
+      851 cells, depths {16: 851}, Morse sets inside [0], contains a3
+      1 cells, depths {16: 1}, Morse sets inside [2], contains 0
+   these components are the Morse sets: True;  cells of depth < 16 on a cycle: 0

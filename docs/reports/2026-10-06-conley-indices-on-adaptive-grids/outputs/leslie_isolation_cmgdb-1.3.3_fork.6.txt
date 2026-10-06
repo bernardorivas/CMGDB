@@ -1,0 +1,27 @@
+script: leslie_isolation.py
+CMGDB version: 1.3.3+fork.6   build tag: cmgdb-1.3.3_fork.6
+Python 3.13.16 on Darwin arm64, numpy 2.5.3
+M_12 = Morse set 0 of the corner 12/14 run: 525 cells, annotation ['0', 'x+1', '0']
+M_16 = Morse set 0 of the corner 16/18 run: 5570 cells, annotation ['x-1', '0', '0']
+depth-16 squares: |M_12| has 8400, |M_16| has 5570, |M_16| inside |M_12|: True
+
+widening w = 1e-09:
+   squares of |M_12| on a path of G infinite in both directions: 5570; equal to the squares of M_16: True
+   smallest Chebyshev distance (in squares) from them to a square outside |M_12|: 3
+   hull of f(c) for c in M_16: meets a square outside M_16 for 0 squares; smallest distance to the squares outside M_16: 2.327e-05
+
+widening w = 1e-06:
+   squares of |M_12| on a path of G infinite in both directions: 5570; equal to the squares of M_16: True
+   smallest Chebyshev distance (in squares) from them to a square outside |M_12|: 3
+   hull of f(c) for c in M_16: meets a square outside M_16 for 0 squares; smallest distance to the squares outside M_16: 6.067e-06
+
+widening w = 0.0001:
+   squares of |M_12| on a path of G infinite in both directions: 5588; equal to the squares of M_16: False
+   smallest Chebyshev distance (in squares) from them to a square outside |M_12|: 3
+   hull of f(c) for c in M_16: meets a square outside M_16 for 3 squares; smallest distance to the squares outside M_16: 0.000e+00
+
+Betti numbers (b0, b1, b2): |M_12| (1, 0, 0),  |M_16| (1, 0, 0)
+cells of M_12 (12/14 grid) whose hull meets a cell outside M_12: 46 of 525 (28 of them meet C);  squares of |M_12| whose hull meets a square outside |M_12|: 382 of 8400
+distance to the cells outside M_12: from Gamma (4124 points) 4.2487, from p* 8.2543
+distance to the cells outside M_16: from Gamma (4124 points) 2.9625, from p* 6.9792
+uniform depth 16: the Morse set 3 around p* has 5570 cells, annotation ['x-1', '0', '0']; same boxes as M_16: True

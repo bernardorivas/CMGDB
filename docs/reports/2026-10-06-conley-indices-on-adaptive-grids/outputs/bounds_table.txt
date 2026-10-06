@@ -1,0 +1,130 @@
+script: bounds_table.py
+builds: upstream 1.5.2 = cmgdb-1.5.2; fork 1.3.3+fork.6 = cmgdb-1.3.3_fork.6; merge 0e21503 = cmgdb-1.5.3_fork.7.dev0-0e21503; master 96642f2 = cmgdb-1.5.3_fork.7.dev0-96642f2
+
+  cmgdb-1.5.2: CMGDB version 1.5.2
+  cmgdb-1.3.3_fork.6: CMGDB version 1.3.3+fork.6
+  cmgdb-1.5.3_fork.7.dev0-0e21503: CMGDB version 1.5.3+fork.7.dev0
+  cmgdb-1.5.3_fork.7.dev0-96642f2: CMGDB version 1.5.3+fork.7.dev0
+
+1. Annotations of the Morse sets that contain the fixed points (* = differs from the linearization)
+
+  example  fixed point  linearization  uniform coarse  uniform fine  upstream 1.5.2    fork 1.3.3+fork.6  merge 0e21503     master 96642f2
+  -------  -----------  -------------  --------------  ------------  ----------------  -----------------  ----------------  --------------
+  E1       (0)          [x-1, 0]       [x-1, 0]        [x-1, 0]      [x-1, 0]          [x-1, 0]           [x-1, 0]          [x-1, 0]
+  E1       (1)          [0, x-1]       [0, x-1]        [0, x-1]      [0, 0] *          [0, 0] *           [0, 0] *          [0, x-1]
+  E2       (0)          [x-1, 0]       [x-1, 0]        [x-1, 0]      [x-1, 0]          RuntimeError *     [x-1, 0]          [x-1, 0]
+  E2       (1)          [0, x-1]       [0, x-1]        [0, x-1]      [] (undefined) *  RuntimeError *     [] (undefined) *  [0, x-1]
+  E3       (0.6875)     [0, x+1]       [0, x+1]        [0, x+1]      [0, 0] *          [0, 0] *           [0, 0] *          [0, x+1]
+  E4       (0, 0)       [x-1, 0, 0]    [x-1, 0, 0]     [x-1, 0, 0]   [x-1, 0, 0]       [x-1, 0, 0]        [x-1, 0, 0]       [x-1, 0, 0]
+  E4       (0, 1)       [0, x-1, 0]    [0, x-1, 0]     [0, x-1, 0]   [0, 0, 0] *       [0, 0, 0] *        [0, 0, 0] *       [0, x-1, 0]
+  E4       (1, 0)       [0, x-1, 0]    [0, x-1, 0]     [0, x-1, 0]   [0, x-1, 0]       [0, x-1, 0]        [0, x-1, 0]       [0, x-1, 0]
+  E4       (1, 1)       [0, 0, x-1]    [0, 0, x-1]     [0, 0, x-1]   [0, 0, 0] *       [0, 0, 0] *        [0, 0, 0] *       [0, 0, x-1]
+  E5       (0, 0)       [x-1, 0, 0]    [x-1, 0, 0]     [x-1, 0, 0]   [x-1, 0, 0]       RuntimeError *     [x-1, 0, 0]       [x-1, 0, 0]
+  E5       (0, 1)       [0, x-1, 0]    [0, x-1, 0]     [0, x-1, 0]   [] (undefined) *  RuntimeError *     [] (undefined) *  [0, x-1, 0]
+  E5       (1, 0)       [0, x-1, 0]    [0, x-1, 0]     [0, x-1, 0]   [] (undefined) *  RuntimeError *     [] (undefined) *  [0, x-1, 0]
+  E5       (1, 1)       [0, 0, x-1]    [0, 0, x-1]     [0, 0, x-1]   [] (undefined) *  RuntimeError *     [] (undefined) *  [0, 0, x-1]
+  E6       (0, 0)       [x-1, 0, 0]    [x-1, 0, 0]     [x-1, 0, 0]   [x-1, 0, 0]       [x-1, 0, 0]        [x-1, 0, 0]       [x-1, 0, 0]
+  E6       (0, 1)       [0, x-1, 0]    [0, x-1, 0]     [0, x-1, 0]   [0, x-1, 0]       [0, x-1, 0]        [0, x-1, 0]       [0, x-1, 0]
+  E6       (1, 0)       [0, x-1, 0]    [0, x-1, 0]     [0, x-1, 0]   [0, x-1, 0]       [0, x-1, 0]        [0, x-1, 0]       [0, x-1, 0]
+  E6       (1, 1)       [0, 0, x-1]    [0, 0, x-1]     [0, 0, x-1]   [0, 0, x-1]       [0, 0, x-1]        [0, 0, x-1]       [0, 0, x-1]
+
+  uniform coarse / fine: Model(d, d, d) with d = subdiv_min / subdiv_max of the example's model, from master 96642f2 (the same on every build, see 2).
+
+2. Checks across builds
+  E1: final grid 19 cells, identical on all builds: True; Morse sets identical: True; Morse graph edges identical: True
+      annotations and grid of bounds_mechanism.py (CMGDB_MAPGRAPH_CACHE=0) identical: True; run with CMGDB.BoxMap identical in every field: True
+      uniform grids: same Morse sets and annotations at the fixed points on all builds: True; one depth and no evaluation off the tree: True; conditions (a) and (b) of bounds_references.py hold at every fixed point: True
+  E2: final grid 18 cells, identical on all builds: True; Morse sets identical: True; Morse graph edges identical: True
+      annotations and grid of bounds_mechanism.py (CMGDB_MAPGRAPH_CACHE=0) identical: True; run with CMGDB.BoxMap identical in every field: True
+      uniform grids: same Morse sets and annotations at the fixed points on all builds: True; one depth and no evaluation off the tree: True; conditions (a) and (b) of bounds_references.py hold at every fixed point: True
+  E3: final grid 22 cells, identical on all builds: True; Morse sets identical: True; Morse graph edges identical: True
+      annotations and grid of bounds_mechanism.py (CMGDB_MAPGRAPH_CACHE=0) identical: True; run with CMGDB.BoxMap identical in every field: True
+      uniform grids: same Morse sets and annotations at the fixed points on all builds: True; one depth and no evaluation off the tree: True; conditions (a) and (b) of bounds_references.py hold at every fixed point: True
+  E4: final grid 192 cells, identical on all builds: True; Morse sets identical: True; Morse graph edges identical: True
+      annotations and grid of bounds_mechanism.py (CMGDB_MAPGRAPH_CACHE=0) identical: True; run with CMGDB.BoxMap identical in every field: True
+      uniform grids: same Morse sets and annotations at the fixed points on all builds: True; one depth and no evaluation off the tree: True; conditions (a) and (b) of bounds_references.py hold at every fixed point: True
+  E5: final grid 174 cells, identical on all builds: True; Morse sets identical: True; Morse graph edges identical: True
+      annotations and grid of bounds_mechanism.py (CMGDB_MAPGRAPH_CACHE=0) identical: True; run with CMGDB.BoxMap identical in every field: True
+      uniform grids: same Morse sets and annotations at the fixed points on all builds: True; one depth and no evaluation off the tree: True; conditions (a) and (b) of bounds_references.py hold at every fixed point: True
+  E6: final grid 124 cells, identical on all builds: True; Morse sets identical: True; Morse graph edges identical: True
+      annotations and grid of bounds_mechanism.py (CMGDB_MAPGRAPH_CACHE=0) identical: True; run with CMGDB.BoxMap identical in every field: True
+      uniform grids: same Morse sets and annotations at the fixed points on all builds: True; one depth and no evaluation off the tree: True; conditions (a) and (b) of bounds_references.py hold at every fixed point: True
+
+3. Map evaluations during ComputeConleyMorseGraph that are not boxes of the bisection tree (off-grid / total; default options)
+
+  example  upstream 1.5.2  fork 1.3.3+fork.6  merge 0e21503  master 96642f2
+  -------  --------------  -----------------  -------------  --------------
+  E1       3 / 73          7 / 96             3 / 92         0 / 92
+  E2       3 / 73          7 / 77 (raised)    3 / 91         0 / 91
+  E3       3 / 131         7 / 157            3 / 153        0 / 153
+  E4       15 / 548        55 / 780           15 / 740       0 / 740
+  E5       6 / 439         4 / 435 (raised)   6 / 613        0 / 622
+  E6       15 / 348        55 / 512           15 / 472       0 / 472
+
+4. The complexes of the Morse sets with a fixed point (reconstructed; identical on every build, see the consistency column)
+
+  example  fixed point  deeper/|X|  n       bounds before vs after the fix (short axes)          index pair, map before the fix                        after  same on all builds
+  -------  -----------  ----------  ------  ---------------------------------------------------  ----------------------------------------------------  -----  ------------------
+  E1       (0)          0/1         [1]     exact                                                yes                                                   yes    True
+  E1       (1)          4/5         [3]     axis 0: [0.859375, 1.03516] vs [0.859375, 1.09375]   no: (2,)->[(1,)]                                      yes    True
+  E2       (0)          0/1         [1]     exact                                                yes                                                   yes    True
+  E2       (1)          4/5         [3]     axis 0: [0.9375, 1.125] vs [0.9, 1.125]              no: (0,)->[(1,)]; empty [(2,)]                        yes    True
+  E3       (0.6875)     3/4         [3]     axis 0: [0.656641, 0.721094] vs [0.615625, 0.75625]  no: (0,)->[(1,)]                                      yes    True
+  E4       (0, 0)       0/1         [1, 1]  exact                                                yes                                                   yes    True
+  E4       (0, 1)       11/12       [1, 3]  axis 1: [0.859375, 1.05469] vs [0.859375, 1.09375]   no: (0, 2)->[(0, 1)]                                  yes    True
+  E4       (1, 0)       7/8         [3, 1]  axis 0: [0.859375, 1.03516] vs [0.859375, 1.09375]   no: (2, 0)->[(1, 0)]                                  yes    True
+  E4       (1, 1)       29/30       [3, 3]  axis 0: [0.859375, 1.05469] vs [0.859375, 1.09375]   no: (2, 1)->[(1, 1)]                                  yes    True
+  E5       (0, 0)       0/1         [1, 1]  exact                                                yes                                                   yes    True
+  E5       (0, 1)       9/10        [1, 3]  axis 1: [0.9375, 1.125] vs [0.9, 1.125]              no: (0, 0)->[(0, 1)]; empty [(0, 2)]                  yes    True
+  E5       (1, 0)       6/7         [3, 1]  axis 0: [0.9375, 1.125] vs [0.9, 1.125]              no: (0, 0)->[(1, 0)]; empty [(2, 0)]                  yes    True
+  E5       (1, 1)       25/26       [3, 3]  axis 0: [0.9375, 1.125] vs [0.9, 1.125]              no: (0, 1)->[(1, 1)]; empty [(2, 0), (2, 1), (2, 2)]  yes    True
+  E6       (0, 0)       0/1         [1, 1]  exact                                                yes                                                   yes    True
+  E6       (0, 1)       9/10        [1, 3]  axis 1: [0.75, 1.125] vs [0.75, 1.2]                 yes                                                   yes    True
+  E6       (1, 0)       6/7         [3, 1]  axis 0: [0.75, 1.125] vs [0.75, 1.2]                 yes                                                   yes    True
+  E6       (1, 1)       25/26       [3, 3]  axis 0: [0.75, 1.125] vs [0.75, 1.2]                 yes                                                   yes    True
+
+  ComputeConleyIndex on the map on the cubes before / after the fix, and the annotation of ComputeConleyMorseGraph, per build:
+
+  example  fixed point  upstream 1.5.2                                 fork 1.3.3+fork.6                          merge 0e21503                                  master 96642f2
+  -------  -----------  ---------------------------------------------  -----------------------------------------  ---------------------------------------------  ------------------------------------------
+  E1       (0)          [x-1, 0] / [x-1, 0] | [x-1, 0]                 [x-1, 0] / [x-1, 0] | [x-1, 0]             [x-1, 0] / [x-1, 0] | [x-1, 0]                 [x-1, 0] / [x-1, 0] | [x-1, 0]
+  E1       (1)          [0, 0] / [0, x-1] | [0, 0]                     [0, 0] / [0, x-1] | [0, 0]                 [0, 0] / [0, x-1] | [0, 0]                     [0, 0] / [0, x-1] | [0, x-1]
+  E2       (0)          [x-1, 0] / [x-1, 0] | [x-1, 0]                 [x-1, 0] / [x-1, 0] | RuntimeError         [x-1, 0] / [x-1, 0] | [x-1, 0]                 [x-1, 0] / [x-1, 0] | [x-1, 0]
+  E2       (1)          [] (undefined) / [0, x-1] | [] (undefined)     RuntimeError / [0, x-1] | RuntimeError     [] (undefined) / [0, x-1] | [] (undefined)     [] (undefined) / [0, x-1] | [0, x-1]
+  E3       (0.6875)     [0, 0] / [0, x+1] | [0, 0]                     [0, 0] / [0, x+1] | [0, 0]                 [0, 0] / [0, x+1] | [0, 0]                     [0, 0] / [0, x+1] | [0, x+1]
+  E4       (0, 0)       [x-1, 0, 0] / [x-1, 0, 0] | [x-1, 0, 0]        [x-1, 0, 0] / [x-1, 0, 0] | [x-1, 0, 0]    [x-1, 0, 0] / [x-1, 0, 0] | [x-1, 0, 0]        [x-1, 0, 0] / [x-1, 0, 0] | [x-1, 0, 0]
+  E4       (0, 1)       [0, 0, 0] / [0, x-1, 0] | [0, 0, 0]            [0, 0, 0] / [0, x-1, 0] | [0, 0, 0]        [0, 0, 0] / [0, x-1, 0] | [0, 0, 0]            [0, 0, 0] / [0, x-1, 0] | [0, x-1, 0]
+  E4       (1, 0)       [0, x-1, 0] / [0, x-1, 0] | [0, x-1, 0]        [0, x-1, 0] / [0, x-1, 0] | [0, x-1, 0]    [0, x-1, 0] / [0, x-1, 0] | [0, x-1, 0]        [0, x-1, 0] / [0, x-1, 0] | [0, x-1, 0]
+  E4       (1, 1)       [0, 0, 0] / [0, 0, x-1] | [0, 0, 0]            [0, 0, 0] / [0, 0, x-1] | [0, 0, 0]        [0, 0, 0] / [0, 0, x-1] | [0, 0, 0]            [0, 0, 0] / [0, 0, x-1] | [0, 0, x-1]
+  E5       (0, 0)       [x-1, 0, 0] / [x-1, 0, 0] | [x-1, 0, 0]        [x-1, 0, 0] / [x-1, 0, 0] | RuntimeError   [x-1, 0, 0] / [x-1, 0, 0] | [x-1, 0, 0]        [x-1, 0, 0] / [x-1, 0, 0] | [x-1, 0, 0]
+  E5       (0, 1)       [] (undefined) / [0, x-1, 0] | [] (undefined)  RuntimeError / [0, x-1, 0] | RuntimeError  [] (undefined) / [0, x-1, 0] | [] (undefined)  [] (undefined) / [0, x-1, 0] | [0, x-1, 0]
+  E5       (1, 0)       [] (undefined) / [0, x-1, 0] | [] (undefined)  RuntimeError / [0, x-1, 0] | RuntimeError  [] (undefined) / [0, x-1, 0] | [] (undefined)  [] (undefined) / [0, x-1, 0] | [0, x-1, 0]
+  E5       (1, 1)       [] (undefined) / [0, 0, x-1] | [] (undefined)  RuntimeError / [0, 0, x-1] | RuntimeError  [] (undefined) / [0, 0, x-1] | [] (undefined)  [] (undefined) / [0, 0, x-1] | [0, 0, x-1]
+  E6       (0, 0)       [x-1, 0, 0] / [x-1, 0, 0] | [x-1, 0, 0]        [x-1, 0, 0] / [x-1, 0, 0] | [x-1, 0, 0]    [x-1, 0, 0] / [x-1, 0, 0] | [x-1, 0, 0]        [x-1, 0, 0] / [x-1, 0, 0] | [x-1, 0, 0]
+  E6       (0, 1)       [0, x-1, 0] / [0, x-1, 0] | [0, x-1, 0]        [0, x-1, 0] / [0, x-1, 0] | [0, x-1, 0]    [0, x-1, 0] / [0, x-1, 0] | [0, x-1, 0]        [0, x-1, 0] / [0, x-1, 0] | [0, x-1, 0]
+  E6       (1, 0)       [0, x-1, 0] / [0, x-1, 0] | [0, x-1, 0]        [0, x-1, 0] / [0, x-1, 0] | [0, x-1, 0]    [0, x-1, 0] / [0, x-1, 0] | [0, x-1, 0]        [0, x-1, 0] / [0, x-1, 0] | [0, x-1, 0]
+  E6       (1, 1)       [0, 0, x-1] / [0, 0, x-1] | [0, 0, x-1]        [0, 0, x-1] / [0, 0, x-1] | [0, 0, x-1]    [0, 0, x-1] / [0, 0, x-1] | [0, 0, x-1]        [0, 0, x-1] / [0, 0, x-1] | [0, 0, x-1]
+
+  Boxes the map received for the cubes (recorded), per build: bounds they come from, the map they yield, and the number of evaluations on cubes (all and distinct rectangles):
+
+  example  fixed point  upstream 1.5.2                                               fork 1.3.3+fork.6                                            merge 0e21503                                                master 96642f2
+  -------  -----------  -----------------------------------------------------------  -----------------------------------------------------------  -----------------------------------------------------------  -----------------------------------------------------------
+  E1       (0)          before and after; map before and after; 1 evals, 1 distinct  before and after; map before and after; 1 evals, 1 distinct  before and after; map before and after; 1 evals, 1 distinct  before and after; map before and after; 1 evals, 1 distinct
+  E1       (1)          before; map before; 3 evals, 3 distinct                      before; map before; 7 evals, 3 distinct                      before; map before; 3 evals, 3 distinct                      after; map after; 3 evals, 3 distinct
+  E2       (0)          before and after; map before and after; 1 evals, 1 distinct  before and after; map before and after; 1 evals, 1 distinct  before and after; map before and after; 1 evals, 1 distinct  before and after; map before and after; 1 evals, 1 distinct
+  E2       (1)          before; map before; 3 evals, 3 distinct                      before; map before; 7 evals, 3 distinct                      before; map before; 3 evals, 3 distinct                      after; map after; 3 evals, 3 distinct
+  E3       (0.6875)     before; map before; 3 evals, 3 distinct                      before; map before; 7 evals, 3 distinct                      before; map before; 3 evals, 3 distinct                      after; map after; 3 evals, 3 distinct
+  E4       (0, 0)       before and after; map before and after; 1 evals, 1 distinct  before and after; map before and after; 1 evals, 1 distinct  before and after; map before and after; 1 evals, 1 distinct  before and after; map before and after; 1 evals, 1 distinct
+  E4       (0, 1)       before; map before; 3 evals, 3 distinct                      before; map before; 7 evals, 3 distinct                      before; map before; 3 evals, 3 distinct                      after; map after; 3 evals, 3 distinct
+  E4       (1, 0)       before; map before; 3 evals, 3 distinct                      before; map before; 7 evals, 3 distinct                      before; map before; 3 evals, 3 distinct                      after; map after; 3 evals, 3 distinct
+  E4       (1, 1)       before; map before; 9 evals, 9 distinct                      before; map before; 41 evals, 9 distinct                     before; map before; 9 evals, 9 distinct                      after; map after; 9 evals, 9 distinct
+  E5       (0, 0)       before and after; map before and after; 1 evals, 1 distinct  before and after; map before and after; 1 evals, 1 distinct  before and after; map before and after; 1 evals, 1 distinct  before and after; map before and after; 1 evals, 1 distinct
+  E5       (0, 1)       before; map before; 2 evals, 2 distinct                      before; map before; 4 evals, 2 distinct                      before; map before; 2 evals, 2 distinct                      after; map after; 3 evals, 3 distinct
+  E5       (1, 0)       before; map before; 2 evals, 2 distinct                      not reached                                                  before; map before; 2 evals, 2 distinct                      after; map after; 3 evals, 3 distinct
+  E5       (1, 1)       before; map before; 2 evals, 2 distinct                      not reached                                                  before; map before; 2 evals, 2 distinct                      after; map after; 9 evals, 9 distinct
+  E6       (0, 0)       before and after; map before and after; 1 evals, 1 distinct  before and after; map before and after; 1 evals, 1 distinct  before and after; map before and after; 1 evals, 1 distinct  before and after; map before and after; 1 evals, 1 distinct
+  E6       (0, 1)       before; map before; 3 evals, 3 distinct                      before; map before; 7 evals, 3 distinct                      before; map before; 3 evals, 3 distinct                      after; map after; 3 evals, 3 distinct
+  E6       (1, 0)       before; map before; 3 evals, 3 distinct                      before; map before; 7 evals, 3 distinct                      before; map before; 3 evals, 3 distinct                      after; map after; 3 evals, 3 distinct
+  E6       (1, 1)       before; map before; 9 evals, 9 distinct                      before; map before; 41 evals, 9 distinct                     before; map before; 9 evals, 9 distinct                      after; map after; 9 evals, 9 distinct
+
+  Over all builds and Morse sets: 70 Morse sets with recorded cube evaluations, 0 recorded rectangles that match no predicted rectangle, largest deviation from the predicted rectangle 0.0e+00.

@@ -1,0 +1,45 @@
+script: leslie_dynamics.py
+Python 3.13.16 on Darwin arm64, numpy 2.5.3
+Q = [-0.001, 90.0] x [-0.001, 70.0];  L = [-0.0010, 44.9995] x [-0.0010, 70.0000],  C = [44.9995, 90.0000] x [-0.0010, 70.0000],  C' = [-0.0010, 44.9995] x [34.9995, 70.0000]
+
+1. Fixed points.  f(x, y) = (x, y) iff y = 0.7 x and x = (a + 0.7 b) x exp(-0.17 x), a + 0.7 b = 36.176000:
+   (0, 0) and p* = (ln(a + 0.7 b)/0.17, 0.7 ln(a + 0.7 b)/0.17) = (21.108211, 14.775748); |f(p*) - p*| = 3.6e-15
+   0: Df = [[19.600000, 23.680000], [0.7, 0.0]], trace 19.600000, det -16.576000; eigenvalues 20.412069+0.000000j, -0.812069+0.000000j; moduli 20.412069, 0.812069; saddle
+   p*: Df = [[-1.569025, -1.456244], [0.7, 0.0]], trace -1.569025, det 1.019370; eigenvalues -0.784513+0.635539j, -0.784513-0.635539j; moduli 1.009639, 1.009639; repelling
+   at 0 the eigenvector for lambda is (lambda, 0.7): unstable lambda_u = 20.412069, direction (1, 0.034293); stable lambda_s = -0.812069, direction (1, -0.861996)
+
+2. Periodic orbits of minimal period <= 12 with all points in Q, by Newton's method for f^n(z) = z, n = 1, ..., 12, from 6461 seeds (a 91 x 71 grid of [0, 90] x [0, 70]): 4 orbits
+   period 1: (0.000000, 0.000000);  eigenvalues of Df^1: 20.4121+0j, -0.812069+0j;  saddle;  residual 0.0e+00
+   period 1: (21.108211, 14.775748);  eigenvalues of Df^1: -0.784513+0.635539j, -0.784513-0.635539j;  repelling;  residual 3.6e-15
+   period 3: (7.524656, 0.499081), (71.409072, 5.267260), (0.712973, 49.986350);  eigenvalues of Df^3: 0.05355+0j, -0.808958+0j;  attracting;  residual 4.5e-15
+   period 3: (19.212912, 1.304927), (52.362602, 13.449038), (1.864181, 36.653822);  eigenvalues of Df^3: 2.38427+0j, 0.0687324+0j;  saddle;  residual 0.0e+00
+
+3. The 3-cycles (Newton's method for f^3(z) = z from (7.5, 0.5) and (19.2, 1.3)):
+   a3 = (7.524656, 0.499081), (71.409072, 5.267260), (0.712973, 49.986350);  |f^3(z) - z| = 9.0e-16;  eigenvalues of Df^3: 0.053550, -0.808958 (imaginary parts 0e+00);  det -0.043320;  attracting
+      the three points lie in: L minus C', C, C'
+   s3 = (19.212912, 1.304927), (52.362602, 13.449038), (1.864181, 36.653822);  |f^3(z) - z| = 0.0e+00;  eigenvalues of Df^3: 2.384270, 0.068732 (imaginary parts 0e+00);  det 0.163877;  saddle
+      the three points lie in: L minus C', C, C'
+   the unstable eigenvalue of Df^3 along s3 is positive: True
+
+4. Gamma: orbit of (30, 20), 200000 points after 100000 steps.
+   x in [12.2812, 30.7980], y in [8.5968, 21.5586], |z - p*| in [3.4853, 10.7596]
+   angle about p* advances by 1.47268 to 2.98822 rad per step (mod 2 pi); rotation number 0.387850 turns per step
+   points sorted by angle: largest angle gap 3.33e-04 rad, largest distance between consecutive points 0.0012, largest radius jump 0.0008; largest radius spread in 4000 equal angle sectors 0.0235
+   period up to 2000 (tolerance 1e-6): none
+   orbit of (25, 12): |z - p*| in [3.4853, 10.7596], rotation number 0.387850
+   Lyapunov exponents from (30.0, 20.0) (200000 steps after 20000): -5.14e-06, -0.01958
+   Lyapunov exponents from (21.2, 14.8) (200000 steps after 20000): 7.46e-06, -0.01959
+
+5. Basins: 101441 seeds on a 361 x 281 grid of [0, 90] x [0, 70] (spacing 0.25), 5000 steps: {'0': 1, 'Gamma': 37514, 'a3': 63926}
+
+6. Connections (fates after 10000 steps).
+   W^u(0), branch into the quadrant, 20001 points t v_u, t in [1e-07, lambda_u 1e-07]: {'Gamma': 7565, 'a3': 12436}
+   W^u(0), branch into the quadrant, 30001 points t v_u, t in [1e-09, lambda_u 1e-09]: {'Gamma': 11349, 'a3': 18652}
+   W^u(0), the other branch -t v_u, 200 points, 50 steps: {'escapes': 200}
+   W^u(s3[0]), branch +(unstable eigenvector [0.9944, 0.1058]), 2001 points: {'Gamma': 2001}
+   W^u(s3[0]), branch -(unstable eigenvector [0.9944, 0.1058]), 2001 points: {'a3': 2001}
+   W^u(s3[1]), branch +(unstable eigenvector [0.973, -0.2308]), 2001 points: {'a3': 2001}
+   W^u(s3[1]), branch -(unstable eigenvector [0.973, -0.2308]), 2001 points: {'Gamma': 2001}
+   W^u(s3[2]), branch +(unstable eigenvector [0.1728, -0.985]), 2001 points: {'Gamma': 2001}
+   W^u(s3[2]), branch -(unstable eigenvector [0.1728, -0.985]), 2001 points: {'a3': 2001}
+   360 points on each circle of radius 1e-6, 1e-3, 0.1, 1, 3 about p*, 30000 steps: {'1e-06': {'Gamma': 360}, '0.001': {'Gamma': 360}, '0.1': {'Gamma': 360}, '1.0': {'Gamma': 360}, '3.0': {'Gamma': 360}}

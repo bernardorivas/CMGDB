@@ -1,0 +1,60 @@
+script: leslie_origin.py
+CMGDB version: 1.5.3+fork.7.dev0   build tag: cmgdb-1.5.3_fork.7.dev0-0e21503
+Python 3.13.16 on Darwin arm64, numpy 2.5.3
+Df(0): unstable eigenvalue 20.412069, eigenvector (1, 0.034293); stable eigenvalue -0.812069, eigenvector (1, -0.861996)
+
+domain [-0.001, 90.0] x [-0.001, 70.0], uniform depth 14:
+   t v in [x_lo, inf) x [y_lo, inf) for t up to: +E^u all t >= 0, -E^u 0.001, +E^s 0.00116, -E^s 0.001
+   Morse set 5 contains 0: 1 cells in [-0.001, 0.702] x [-0.001, 0.546], touches the left or lower side: True
+   annotation ['0', '0', '0'];  ComputeConleyIndexForCells ['0', '0', '0']
+   exit set A = cover F(M) minus M: 33 cells in 1 component(s): ['33 cells in [0.702, 23.906] x [-0.001, 0.546]']
+   cell of 0: [-0.001, 0.702] x [-0.001, 0.546]
+   cells of A whose interiors meet -t v_u, 0 < t < 0.001: 0
+   point (0.9 x_c, 0) = (-0.0009, 0) in the interior of the cell of 0: True; f = (-0.017642, -0.000630), outside the domain: True
+
+domain [-0.001, 90.0] x [-1.0, 70.0], uniform depth 14:
+   t v in [x_lo, inf) x [y_lo, inf) for t up to: +E^u all t >= 0, -E^u 0.001, +E^s 1.16, -E^s 0.001
+   Morse set 3 contains 0: 1 cells in [-0.001, 0.702] x [-0.445, 0.109], touches the left or lower side: True
+   annotation ['0', '0', '0'];  ComputeConleyIndexForCells ['0', '0', '0']
+   exit set A = cover F(M) minus M: 43 cells in 1 component(s): ['43 cells in [-0.001, 15.468] x [-0.445, 0.664]']
+   cell of 0: [-0.001, 0.702] x [-0.445, 0.109]
+   cells of A whose interiors meet -t v_u, 0 < t < 0.001: 0
+   point (0.9 x_c, 0) = (-0.0009, 0) in the interior of the cell of 0: True; f = (-0.017642, -0.000630), outside the domain: True
+
+domain [-1.0, 90.0] x [-0.001, 70.0], uniform depth 14:
+   t v in [x_lo, inf) x [y_lo, inf) for t up to: +E^u all t >= 0, -E^u 0.02916, +E^s 0.00116, -E^s 1
+   Morse set 3 contains 0: 1 cells in [-0.289, 0.422] x [-0.001, 0.546], touches the left or lower side: True
+   annotation ['0', '0', '0'];  ComputeConleyIndexForCells ['0', '0', '0']
+   exit set A = cover F(M) minus M: 28 cells in 2 component(s): ['27 cells in [0.422, 19.617] x [-0.001, 0.546]', '1 cells in [-1.000, -0.289] x [-0.001, 0.546]']
+   cell of 0: [-0.289, 0.422] x [-0.001, 0.546]
+   cells of A whose interiors meet -t v_u, 0 < t < 0.02916: 0
+   point (0.9 x_c, 0) = (-0.260156, 0) in the interior of the cell of 0: True; f = (-5.233458, -0.182109), outside the domain: True
+
+domain [-1.0, 90.0] x [-0.05, 70.0], uniform depth 14:
+   t v in [x_lo, inf) x [y_lo, inf) for t up to: +E^u all t >= 0, -E^u 1, +E^s 0.058, -E^s 1
+   Morse set 3 contains 0: 1 cells in [-0.289, 0.422] x [-0.050, 0.497], touches the left or lower side: True
+   annotation ['0', 'x-1', '0'];  ComputeConleyIndexForCells ['0', 'x-1', '0']
+   exit set A = cover F(M) minus M: 27 cells in 2 component(s): ['26 cells in [0.422, 18.906] x [-0.050, 0.497]', '1 cells in [-1.000, -0.289] x [-0.050, 0.497]']
+   cell of 0: [-0.289, 0.422] x [-0.050, 0.497]
+   cells of A whose interiors meet -t v_u, 0 < t < 1: 1: [-1.000, -0.289] x [-0.050, 0.497]
+   point (0.9 x_c, 0) = (-0.260156, 0) in the interior of the cell of 0: True; f = (-5.233458, -0.182109), outside the domain: True
+
+domain [-1.0, 90.0] x [-1.0, 70.0], uniform depth 14:
+   t v in [x_lo, inf) x [y_lo, inf) for t up to: +E^u all t >= 0, -E^u 1, +E^s 1.16, -E^s 1
+   Morse set 3 contains 0: 7 cells in [-1.000, 1.844] x [-1.000, 1.219], touches the left or lower side: True
+   annotation ['0', 'x-1', '0'];  ComputeConleyIndexForCells ['0', 'x-1', '0']
+   exit set A = cover F(M) minus M: 156 cells in 2 component(s): ['153 cells in [-1.000, 22.461] x [-1.000, 1.773]', '3 cells in [-1.000, 0.422] x [-1.000, 0.109]']
+   cell of 0: [-0.289, 0.422] x [-0.445, 0.109]
+   cells of A whose interiors meet -t v_u, 0 < t < 1: 1: [-1.000, -0.289] x [-0.445, 0.109]
+   point (0.9 x_c, 0) = (-0.260156, 0) in the interior of the cell of 0: True; f = (-5.233458, -0.182109), outside the domain: True
+
+domain [-5.0, 90.0] x [-5.0, 70.0], uniform depth 14:
+   t v in [x_lo, inf) x [y_lo, inf) for t up to: +E^u all t >= 0, -E^u 5, +E^s 5.8, -E^s 5
+   Morse set 2 contains 0: 14 cells in [-2.773, 3.164] x [-2.070, 2.031], touches the left or lower side: False
+   annotation ['0', 'x-1', '0'];  ComputeConleyIndexForCells ['0', 'x-1', '0']
+   exit set A = cover F(M) minus M: 261 cells in 2 component(s): ['219 cells in [-2.031, 23.203] x [-2.070, 2.617]', '42 cells in [-5.000, 1.680] x [-2.070, 2.031]']
+   cell of 0: [-0.547, 0.195] x [-0.312, 0.273]
+   cells of A whose interiors meet -t v_u, 0 < t < 5: 6: [-5.000, -4.258] x [-0.312, 0.273], [-4.258, -3.516] x [-0.312, 0.273], [-3.516, -2.773] x [-0.312, 0.273], [-2.773, -2.031] x [-0.312, 0.273], [-2.031, -1.289] x [-0.312, 0.273], [-1.289, -0.547] x [-0.312, 0.273]
+   point (0.9 x_c, 0) = (-0.492188, 0) in the interior of the cell of 0: True; f = (-10.133561, -0.344531), outside the domain: True
+
+corner 12/14 on Q: Morse set 1 = [0] contains 0; |X| = 22, |A| = 21 (depths {7: 1, 8: 1, 9: 1, 10: 1, 11: 2, 12: 15}) in 1 component(s); H_k(X, A; F_5) has ranks (0, 0, 0); annotation ['0', '0', '0']

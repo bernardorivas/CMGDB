@@ -1,0 +1,154 @@
+script: bounds_references.py
+CMGDB version: 1.5.3+fork.7.dev0   build tag: cmgdb-1.5.3_fork.7.dev0-0e21503
+Python 3.13.16 on Darwin arm64
+
+E1: f(x) = x/(2-x) on [0, 1.25], Model(4, 8, 0, 10000)
+  fixed point (0): eigenvalues of Df(p) 0.5; 0 expanding, sign +1; linearization ['x-1', '0']
+    Morse set 0 of the adaptive run, conditions (a) and (b) hold
+      axis 0: [0.000000, 0.078125], |f'| in [0.5000, 0.5415] (contracting), p_i on a face of the domain, face invariant and axis contracting
+  fixed point (1): eigenvalues of Df(p) 2; 1 expanding, sign +1; linearization ['0', 'x-1']
+    Morse set 1 of the adaptive run, conditions (a) and (b) hold
+      axis 0: [0.937500, 1.015625], |f'| in [1.7716, 2.0640] (expanding), p_i inside
+  uniform grid Model(4, 4, 4): 16 cells of depths [4], 5 Morse sets, 0 of 41 map evaluations not boxes of the bisection tree
+    fixed point (0): Morse set 0: ['x-1', '0']  (= linearization)
+    fixed point (1): Morse set 4: ['0', 'x-1']  (= linearization)
+    Morse set 0: 1 cell(s), hull [0.000000, 0.078125], annotation ['x-1', '0']
+    Morse set 1: 1 cell(s), hull [0.078125, 0.156250], annotation ['0', '0']
+    Morse set 2: 1 cell(s), hull [0.859375, 0.937500], annotation ['0', '0']
+    Morse set 3: 1 cell(s), hull [1.015625, 1.093750], annotation ['0', '0']
+    Morse set 4: 1 cell(s), hull [0.937500, 1.015625], annotation ['0', 'x-1']
+  uniform grid Model(8, 8, 8): 256 cells of depths [8], 5 Morse sets, 0 of 521 map evaluations not boxes of the bisection tree
+    fixed point (0): Morse set 0: ['x-1', '0']  (= linearization)
+    fixed point (1): Morse set 4: ['0', 'x-1']  (= linearization)
+    Morse set 0: 1 cell(s), hull [0.000000, 0.004883], annotation ['x-1', '0']
+    Morse set 1: 1 cell(s), hull [0.004883, 0.009766], annotation ['0', '0']
+    Morse set 2: 1 cell(s), hull [0.991211, 0.996094], annotation ['0', '0']
+    Morse set 3: 1 cell(s), hull [1.000977, 1.005859], annotation ['0', '0']
+    Morse set 4: 1 cell(s), hull [0.996094, 1.000977], annotation ['0', 'x-1']
+
+E2: f(x) = x/(2-x) on [0, 1.2], Model(4, 8, 0, 10000)
+  fixed point (0): eigenvalues of Df(p) 0.5; 0 expanding, sign +1; linearization ['x-1', '0']
+    Morse set 0 of the adaptive run, conditions (a) and (b) hold
+      axis 0: [0.000000, 0.075000], |f'| in [0.5000, 0.5397] (contracting), p_i on a face of the domain, face invariant and axis contracting
+  fixed point (1): eigenvalues of Df(p) 2; 1 expanding, sign +1; linearization ['0', 'x-1']
+    Morse set 1 of the adaptive run, conditions (a) and (b) hold
+      axis 0: [0.975000, 1.050000], |f'| in [1.9036, 2.2161] (expanding), p_i inside
+  uniform grid Model(4, 4, 4): 16 cells of depths [4], 5 Morse sets, 0 of 41 map evaluations not boxes of the bisection tree
+    fixed point (0): Morse set 0: ['x-1', '0']  (= linearization)
+    fixed point (1): Morse set 4: ['0', 'x-1']  (= linearization)
+    Morse set 0: 1 cell(s), hull [0.000000, 0.075000], annotation ['x-1', '0']
+    Morse set 1: 1 cell(s), hull [0.075000, 0.150000], annotation ['0', '0']
+    Morse set 2: 1 cell(s), hull [0.900000, 0.975000], annotation ['0', '0']
+    Morse set 3: 1 cell(s), hull [1.050000, 1.125000], annotation ['0', '0']
+    Morse set 4: 1 cell(s), hull [0.975000, 1.050000], annotation ['0', 'x-1']
+  uniform grid Model(8, 8, 8): 256 cells of depths [8], 5 Morse sets, 0 of 521 map evaluations not boxes of the bisection tree
+    fixed point (0): Morse set 0: ['x-1', '0']  (= linearization)
+    fixed point (1): Morse set 4: ['0', 'x-1']  (= linearization)
+    Morse set 0: 1 cell(s), hull [0.000000, 0.004687], annotation ['x-1', '0']
+    Morse set 1: 1 cell(s), hull [0.004687, 0.009375], annotation ['0', '0']
+    Morse set 2: 1 cell(s), hull [0.993750, 0.998437], annotation ['0', '0']
+    Morse set 3: 1 cell(s), hull [1.003125, 1.007812], annotation ['0', '0']
+    Morse set 4: 1 cell(s), hull [0.998437, 1.003125], annotation ['0', 'x-1']
+
+E3: f(x) = 3.2 x (1-x) on [0.1, 0.85], Model(4, 8, 0, 10000)
+  fixed point (0.6875): eigenvalues of Df(p) -1.2; 1 expanding, sign -1; linearization ['0', 'x+1']
+    Morse set 1 of the adaptive run, conditions (a) and (b) hold
+      axis 0: [0.662500, 0.709375], |f'| in [1.0400, 1.3400] (expanding), p_i inside
+  uniform grid Model(4, 4, 4): 16 cells of depths [4], 3 Morse sets, 0 of 44 map evaluations not boxes of the bisection tree
+    fixed point (0.6875): Morse set 2: ['0', 'x+1']  (= linearization)
+    Morse set 0: 4 cell(s), hull [0.475000, 0.803125], annotation ['x^2-1', '0']
+    Morse set 1: 2 cell(s), hull [0.615625, 0.756250], annotation ['0', '0']
+    Morse set 2: 1 cell(s), hull [0.662500, 0.709375], annotation ['0', 'x+1']
+  uniform grid Model(8, 8, 8): 256 cells of depths [8], 6 Morse sets, 0 of 530 map evaluations not boxes of the bisection tree
+    fixed point (0.6875): Morse set 5: ['0', 'x+1']  (= linearization)
+    Morse set 0: 4 cell(s), hull [0.510156, 0.800195], annotation ['x^2-1', '0']
+    Morse set 1: 2 cell(s), hull [0.674219, 0.700586], annotation ['0', '0']
+    Morse set 2: 2 cell(s), hull [0.677148, 0.697656], annotation ['0', '0']
+    Morse set 3: 2 cell(s), hull [0.680078, 0.694727], annotation ['0', '0']
+    Morse set 4: 2 cell(s), hull [0.683008, 0.691797], annotation ['0', '0']
+    Morse set 5: 1 cell(s), hull [0.685937, 0.688867], annotation ['0', 'x+1']
+
+E4: f(x) = x/(2-x) on [0, 1.25] x [0, 1.25], Model(8, 14, 4, 10000)
+  fixed point (0, 0): eigenvalues of Df(p) 0.5, 0.5; 0 expanding, sign +1; linearization ['x-1', '0', '0']
+    Morse set 0 of the adaptive run, conditions (a) and (b) hold
+      axis 0: [0.000000, 0.078125], |f'| in [0.5000, 0.5415] (contracting), p_i on a face of the domain, face invariant and axis contracting
+      axis 1: [0.000000, 0.078125], |f'| in [0.5000, 0.5415] (contracting), p_i on a face of the domain, face invariant and axis contracting
+  fixed point (0, 1): eigenvalues of Df(p) 0.5, 2; 1 expanding, sign +1; linearization ['0', 'x-1', '0']
+    Morse set 1 of the adaptive run, conditions (a) and (b) hold
+      axis 0: [0.000000, 0.078125], |f'| in [0.5000, 0.5415] (contracting), p_i on a face of the domain, face invariant and axis contracting
+      axis 1: [0.937500, 1.015625], |f'| in [1.7716, 2.0640] (expanding), p_i inside
+  fixed point (1, 0): eigenvalues of Df(p) 2, 0.5; 1 expanding, sign +1; linearization ['0', 'x-1', '0']
+    Morse set 2 of the adaptive run, conditions (a) and (b) hold
+      axis 0: [0.937500, 1.015625], |f'| in [1.7716, 2.0640] (expanding), p_i inside
+      axis 1: [0.000000, 0.078125], |f'| in [0.5000, 0.5415] (contracting), p_i on a face of the domain, face invariant and axis contracting
+  fixed point (1, 1): eigenvalues of Df(p) 2, 2; 2 expanding, sign +1; linearization ['0', '0', 'x-1']
+    Morse set 3 of the adaptive run, conditions (a) and (b) hold
+      axis 0: [0.937500, 1.015625], |f'| in [1.7716, 2.0640] (expanding), p_i inside
+      axis 1: [0.937500, 1.015625], |f'| in [1.7716, 2.0640] (expanding), p_i inside
+  uniform grid Model(8, 8, 8): 256 cells of depths [8], 25 Morse sets, 0 of 553 map evaluations not boxes of the bisection tree
+    fixed point (0, 0): Morse set 0: ['x-1', '0', '0']  (= linearization)
+    fixed point (0, 1): Morse set 7: ['0', 'x-1', '0']  (= linearization)
+    fixed point (1, 0): Morse set 13: ['0', 'x-1', '0']  (= linearization)
+    fixed point (1, 1): Morse set 24: ['0', '0', 'x-1']  (= linearization)
+  uniform grid Model(14, 14, 14): 16384 cells of depths [14], 25 Morse sets, 0 of 32809 map evaluations not boxes of the bisection tree
+    fixed point (0, 0): Morse set 0: ['x-1', '0', '0']  (= linearization)
+    fixed point (0, 1): Morse set 7: ['0', 'x-1', '0']  (= linearization)
+    fixed point (1, 0): Morse set 13: ['0', 'x-1', '0']  (= linearization)
+    fixed point (1, 1): Morse set 24: ['0', '0', 'x-1']  (= linearization)
+
+E5: f(x) = x/(2-x) on [0, 1.2] x [0, 1.2], Model(8, 12, 4, 10000)
+  fixed point (0, 0): eigenvalues of Df(p) 0.5, 0.5; 0 expanding, sign +1; linearization ['x-1', '0', '0']
+    Morse set 0 of the adaptive run, conditions (a) and (b) hold
+      axis 0: [0.000000, 0.075000], |f'| in [0.5000, 0.5397] (contracting), p_i on a face of the domain, face invariant and axis contracting
+      axis 1: [0.000000, 0.075000], |f'| in [0.5000, 0.5397] (contracting), p_i on a face of the domain, face invariant and axis contracting
+  fixed point (0, 1): eigenvalues of Df(p) 0.5, 2; 1 expanding, sign +1; linearization ['0', 'x-1', '0']
+    Morse set 1 of the adaptive run, conditions (a) and (b) hold
+      axis 0: [0.000000, 0.075000], |f'| in [0.5000, 0.5397] (contracting), p_i on a face of the domain, face invariant and axis contracting
+      axis 1: [0.975000, 1.050000], |f'| in [1.9036, 2.2161] (expanding), p_i inside
+  fixed point (1, 0): eigenvalues of Df(p) 2, 0.5; 1 expanding, sign +1; linearization ['0', 'x-1', '0']
+    Morse set 2 of the adaptive run, conditions (a) and (b) hold
+      axis 0: [0.975000, 1.050000], |f'| in [1.9036, 2.2161] (expanding), p_i inside
+      axis 1: [0.000000, 0.075000], |f'| in [0.5000, 0.5397] (contracting), p_i on a face of the domain, face invariant and axis contracting
+  fixed point (1, 1): eigenvalues of Df(p) 2, 2; 2 expanding, sign +1; linearization ['0', '0', 'x-1']
+    Morse set 3 of the adaptive run, conditions (a) and (b) hold
+      axis 0: [0.975000, 1.050000], |f'| in [1.9036, 2.2161] (expanding), p_i inside
+      axis 1: [0.975000, 1.050000], |f'| in [1.9036, 2.2161] (expanding), p_i inside
+  uniform grid Model(8, 8, 8): 256 cells of depths [8], 25 Morse sets, 0 of 553 map evaluations not boxes of the bisection tree
+    fixed point (0, 0): Morse set 0: ['x-1', '0', '0']  (= linearization)
+    fixed point (0, 1): Morse set 6: ['0', 'x-1', '0']  (= linearization)
+    fixed point (1, 0): Morse set 13: ['0', 'x-1', '0']  (= linearization)
+    fixed point (1, 1): Morse set 24: ['0', '0', 'x-1']  (= linearization)
+  uniform grid Model(12, 12, 12): 4096 cells of depths [12], 25 Morse sets, 0 of 8233 map evaluations not boxes of the bisection tree
+    fixed point (0, 0): Morse set 0: ['x-1', '0', '0']  (= linearization)
+    fixed point (0, 1): Morse set 6: ['0', 'x-1', '0']  (= linearization)
+    fixed point (1, 0): Morse set 13: ['0', 'x-1', '0']  (= linearization)
+    fixed point (1, 1): Morse set 24: ['0', '0', 'x-1']  (= linearization)
+
+E6: f(x) = x/(2-x) on [0, 1.2] x [0, 1.2], Model(6, 10, 4, 10000)
+  fixed point (0, 0): eigenvalues of Df(p) 0.5, 0.5; 0 expanding, sign +1; linearization ['x-1', '0', '0']
+    Morse set 0 of the adaptive run, conditions (a) and (b) hold
+      axis 0: [0.000000, 0.150000], |f'| in [0.5000, 0.5844] (contracting), p_i on a face of the domain, face invariant and axis contracting
+      axis 1: [0.000000, 0.150000], |f'| in [0.5000, 0.5844] (contracting), p_i on a face of the domain, face invariant and axis contracting
+  fixed point (0, 1): eigenvalues of Df(p) 0.5, 2; 1 expanding, sign +1; linearization ['0', 'x-1', '0']
+    Morse set 1 of the adaptive run, conditions (a) and (b) hold
+      axis 0: [0.000000, 0.150000], |f'| in [0.5000, 0.5844] (contracting), p_i on a face of the domain, face invariant and axis contracting
+      axis 1: [0.900000, 1.050000], |f'| in [1.6529, 2.2161] (expanding), p_i inside
+  fixed point (1, 0): eigenvalues of Df(p) 2, 0.5; 1 expanding, sign +1; linearization ['0', 'x-1', '0']
+    Morse set 2 of the adaptive run, conditions (a) and (b) hold
+      axis 0: [0.900000, 1.050000], |f'| in [1.6529, 2.2161] (expanding), p_i inside
+      axis 1: [0.000000, 0.150000], |f'| in [0.5000, 0.5844] (contracting), p_i on a face of the domain, face invariant and axis contracting
+  fixed point (1, 1): eigenvalues of Df(p) 2, 2; 2 expanding, sign +1; linearization ['0', '0', 'x-1']
+    Morse set 3 of the adaptive run, conditions (a) and (b) hold
+      axis 0: [0.900000, 1.050000], |f'| in [1.6529, 2.2161] (expanding), p_i inside
+      axis 1: [0.900000, 1.050000], |f'| in [1.6529, 2.2161] (expanding), p_i inside
+  uniform grid Model(6, 6, 6): 64 cells of depths [6], 36 Morse sets, 0 of 189 map evaluations not boxes of the bisection tree
+    fixed point (0, 0): Morse set 0: ['x-1', '0', '0']  (= linearization)
+    fixed point (0, 1): Morse set 9: ['0', 'x-1', '0']  (= linearization)
+    fixed point (1, 0): Morse set 17: ['0', 'x-1', '0']  (= linearization)
+    fixed point (1, 1): Morse set 35: ['0', '0', 'x-1']  (= linearization)
+  uniform grid Model(10, 10, 10): 1024 cells of depths [10], 25 Morse sets, 0 of 2089 map evaluations not boxes of the bisection tree
+    fixed point (0, 0): Morse set 0: ['x-1', '0', '0']  (= linearization)
+    fixed point (0, 1): Morse set 7: ['0', 'x-1', '0']  (= linearization)
+    fixed point (1, 0): Morse set 13: ['0', 'x-1', '0']  (= linearization)
+    fixed point (1, 1): Morse set 24: ['0', '0', 'x-1']  (= linearization)
+

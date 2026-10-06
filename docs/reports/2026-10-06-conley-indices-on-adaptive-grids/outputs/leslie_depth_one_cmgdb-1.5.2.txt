@@ -1,0 +1,53 @@
+script: leslie_depth_one.py
+CMGDB version: 1.5.2   build tag: cmgdb-1.5.2
+Python 3.13.16 on Darwin arm64, numpy 2.5.3
+L = [-0.0010, 44.9995] x [-0.0010, 70.0000],  C = [44.9995, 90.0000] x [-0.0010, 70.0000],  C' = [-0.0010, 44.9995] x [34.9995, 70.0000],  L_b = [-0.0010, 44.9995] x [-0.0010, 34.9995]
+
+1. Model(1, 1, lower, upper, corner box map): 2 cells
+   cell 0: depth 1, [-0.0010, 44.9995] x [-0.0010, 70.0000]
+      corner image [-0.0433, 9.7992] x [-0.0007, 31.4996];  hull of f(cell) [-0.0433, 87.1154] x [-0.0007, 31.4996]
+      padded image [-45.0438, 54.7997] x [-70.0017, 101.5007];  edges of the final graph -> [0]
+   cell 1: depth 1, [44.9995, 90.0000] x [-0.0010, 70.0000]
+      corner image [0.0004, 9.7992] x [31.4996, 63.0000];  hull of f(cell) [0.0004, 9.7992] x [31.4996, 63.0000]
+      padded image [-45.0001, 54.7997] x [-38.5014, 133.0010];  edges of the final graph -> [0]
+   Morse sets [[0]]
+
+1. Model(2, 2, lower, upper, corner box map): 3 cells
+   cell 0: depth 2, [-0.0010, 44.9995] x [-0.0010, 34.9995]
+      corner image [-0.0433, 25.0304] x [-0.0007, 31.4996];  hull of f(cell) [-0.0433, 87.1154] x [-0.0007, 31.4996]
+      padded image [-45.0438, 70.0309] x [-35.0012, 66.5001];  edges of the final graph -> [0]
+   cell 1: depth 2, [-0.0010, 44.9995] x [34.9995, 70.0000]
+      corner image [0.0257, 25.0304] x [-0.0007, 31.4996];  hull of f(cell) [0.0257, 25.0304] x [-0.0007, 31.4996]
+      padded image [-44.9748, 70.0309] x [-35.0012, 66.5001];  edges of the final graph -> [0]
+   cell 2: depth 1, [44.9995, 90.0000] x [-0.0010, 70.0000]
+      corner image [0.0004, 9.7992] x [31.4996, 63.0000];  hull of f(cell) [0.0004, 9.7992] x [31.4996, 63.0000]
+      padded image [-45.0001, 54.7997] x [-38.5014, 133.0010];  edges of the final graph -> [0, 1]
+   Morse sets [[0]]
+
+2. The image of L.
+   f(-0.001, -0.001) = (-0.0433, -0.0007)
+   f(-0.001, 70.0) = (1.5117, -0.0007)
+   f(44.9995, -0.001) = (9.7992, 31.4996)
+   f(44.9995, 70.0) = (0.0257, 31.4996)
+   corner image Phi(L) = [-0.0433, 9.7992] x [-0.0007, 31.4996]  (meets C: False)
+   padded image        = [-45.0438, 54.7997] x [-70.0017, 101.5007]  (meets C: True)
+   hull of f(L)        = [-0.0433, 87.1154] x [-0.0007, 31.4996]  (meets C: True)
+   max f1 on L = f1(-0.001, 10.000828) = 87.1154;  f(0, 10) = (87.1139, 0);  f(10, 0) = (72.1044, 7.0000), in C: True
+
+3. On C, s = a x + b y >= 881.967 > 10 b = 236.8 > 10 a = 196.0, so d f1/dx = (a - 0.1 s) e < 0 and d f1/dy = (b - 0.1 s) e < 0:
+   f1 decreases in x and in y on C, and the corner image of C, [0.0004, 9.7992] x [31.4996, 63.0000], is the hull of f(C), [0.0004, 9.7992] x [31.4996, 63.0000]
+
+4. Boxes of depth 0, ..., 12 that contain p = (7.7, 16.9); x-ranges of their images (corner: Phi(B), padded, and the hull of f(B)):
+   depth  0  [-0.0010, 90.0000] x [-0.0010, 70.0000]  corner [ -0.0433,   1.5117]  padded [ -90.0443,  91.5127]  hull [ -0.0433,  87.1154]  corner misses f(B)  
+   depth  1  [-0.0010, 44.9995] x [-0.0010, 70.0000]  corner [ -0.0433,   9.7992]  padded [ -45.0438,  54.7997]  hull [ -0.0433,  87.1154]  corner misses f(B)  corner image not inside the parent's  
+   depth  2  [-0.0010, 44.9995] x [-0.0010, 34.9995]  corner [ -0.0433,  25.0304]  padded [ -45.0438,  70.0309]  hull [ -0.0433,  87.1154]  corner misses f(B)  corner image not inside the parent's  
+   depth  3  [-0.0010, 22.4992] x [-0.0010, 34.9995]  corner [ -0.0433,  46.4851]  padded [ -22.5435,  68.9854]  hull [ -0.0433,  87.1154]  corner misses f(B)  corner image not inside the parent's  meets C
+   depth  4  [-0.0010, 22.4992] x [-0.0010, 17.4992]  corner [ -0.0433,  72.0180]  padded [ -22.5435,  94.5183]  hull [ -0.0433,  87.1154]  corner misses f(B)  corner image not inside the parent's  meets C
+   depth  5  [-0.0010, 11.2491] x [-0.0010, 17.4992]  corner [ -0.0433,  72.0180]  padded [ -11.2934,  83.2682]  hull [ -0.0433,  87.1154]  corner misses f(B)  meets C
+   depth  6  [-0.0010, 11.2491] x [8.7491, 17.4992]  corner [ 35.8225,  86.3732]  padded [  24.5723,  97.6233]  hull [ 35.8225,  87.1154]  corner misses f(B)  corner image not inside the parent's  meets C
+   depth  7  [5.6241, 11.2491] x [8.7491, 17.4992]  corner [ 35.8225,  75.4054]  padded [  30.1974,  81.0304]  hull [ 35.8225,  75.4054]  meets C
+   depth  8  [5.6241, 11.2491] x [13.1242, 17.4992]  corner [ 35.8225,  64.5756]  padded [  30.1974,  70.2007]  hull [ 35.8225,  64.5756]  meets C
+   depth  9  [5.6241, 8.4366] x [13.1242, 17.4992]  corner [ 43.3365,  64.5756]  padded [  40.5239,  67.3882]  hull [ 43.3365,  64.5756]  meets C
+   depth 10  [5.6241, 8.4366] x [15.3117, 17.4992]  corner [ 43.3365,  58.2720]  padded [  40.5239,  61.0846]  hull [ 43.3365,  58.2720]  meets C
+   depth 11  [7.0303, 8.4366] x [15.3117, 17.4992]  corner [ 43.3365,  53.5789]  padded [  41.9302,  54.9851]  hull [ 43.3365,  53.5789]  meets C
+   depth 12  [7.0303, 8.4366] x [16.4055, 17.4992]  corner [ 43.3365,  50.5137]  padded [  41.9302,  51.9200]  hull [ 43.3365,  50.5137]  meets C

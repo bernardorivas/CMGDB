@@ -1,0 +1,18 @@
+script: bounds_regression_tests.py
+CMGDB version: 1.5.3+fork.7.dev0   build tag: cmgdb-1.5.3_fork.7.dev0-0e21503
+Python 3.13.16 on Darwin arm64
+tests: tests/test_conley_geometry_regressions.py
+
+  FAILED test_hyperbolic_fixed_points_get_their_conley_index[1d-1.25-4-8-0]
+  FAILED test_hyperbolic_fixed_points_get_their_conley_index[1d-1.2-4-8-0]
+  FAILED test_hyperbolic_fixed_points_get_their_conley_index[2d-1.25-8-14-4]
+  FAILED test_hyperbolic_fixed_points_get_their_conley_index[2d-1.2-8-12-4]
+  FAILED test_conley_phase_evaluates_the_map_on_grid_boxes[1d-1.25-4-8-0]
+  FAILED test_conley_phase_evaluates_the_map_on_grid_boxes[1d-1.2-4-8-0]
+  FAILED test_conley_phase_evaluates_the_map_on_grid_boxes[2d-1.25-8-14-4]
+  FAILED test_conley_phase_evaluates_the_map_on_grid_boxes[2d-1.2-8-12-4]
+  FAILED test_conley_phase_evaluates_the_map_on_grid_boxes[2d-1.2-6-10-4]
+  FAILED test_precomputed_box_map_through_the_conley_phase[scalar]
+  FAILED test_precomputed_box_map_through_the_conley_phase[batch]
+
+summary: 11 failed

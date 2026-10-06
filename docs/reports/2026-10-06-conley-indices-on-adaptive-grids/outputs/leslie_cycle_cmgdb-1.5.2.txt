@@ -1,0 +1,41 @@
+script: leslie_cycle.py
+CMGDB version: 1.5.2   build tag: cmgdb-1.5.2
+Python 3.13.16 on Darwin arm64, numpy 2.5.3
+Model(12, 14, lower, upper, corner box map): 636 cells; M = Morse set 0 (contains p*), 525 cells; the origin is in Morse set 1
+C = cell 635, depth 1, [44.9995, 90.0000] x [-0.0010, 70.0000];  C' = cell 634, depth 2, [-0.0010, 44.9995] x [34.9995, 70.0000]
+cells that contain the points of a3 and s3 (cell, depth, Morse set or None): a3[0]: [(6, 7, None)]; a3[1]: [(635, 1, None)]; a3[2]: [(634, 2, None)]; s3[0]: [(27, 10, None)]; s3[1]: [(635, 1, None)]; s3[2]: [(634, 2, None)]
+
+1. X = cover F(M): 534 cells, M subset of X: True;  A = X minus M: 9 cells, depths {1: 1, 8: 1, 9: 1, 10: 1, 11: 2, 12: 3}
+   component of |A|: cells [8, 22, 23, 24, 38, 54, 55, 57] (depths [8, 9, 10, 11, 12, 11, 12, 12]), bounding box [5.62, 18.28] x [4.37, 13.12]
+      F(component) meets M in 0 cells, A in [635], and 0 cells outside X
+   component of |A|: cells [635] (depths [1]), bounding box [45.00, 90.00] x [-0.00, 70.00]
+      F(component) meets M in 6 cells, A in [], and 12 cells outside X
+   cells a of A with F(a) cap M nonempty: [635];  F(X minus A) subset X: True
+
+2. 28 cells of M map into C;  C maps into 6 cells of M: [177, 180, 182, 201, 203, 206], together [1.4053, 9.8429] x [30.6244, 31.7182]
+   F(C) also meets 12 cells outside X: [176, 178, 179, 181, 183, 184, 202, 204, 205, 207, 210, 634] (C' = 634)
+   p = (7.7, 16.9) lies in cell [12] of M, [7.0303, 8.4366] x [16.4055, 17.4992], corner image [43.3365, 50.5137] x [4.9212, 5.9056];  f(p) = (47.0842, 5.3900) lies in C: True
+   q = (45.2, 0.5) lies in C: True;  corner image of C [0.0004, 9.7992] x [31.4996, 63.0000];  f(q) = (9.2990, 31.6400) lies in cell [206] of M, [8.4366, 9.8429] x [30.6244, 31.7182]
+   q in |A| and f(q) in |X| minus |A| (f(q) lies in no cell of A: True), so f(|A|) cap |X| is not contained in |A|
+
+3. depth-12 squares of C whose corner image meets |M|: 23 of 2048, in [45.000, 46.406] x [-0.001, 25.156]
+
+4. Ranks over F_5 (degrees 0, 1, 2):
+   H(X) = (1, 0, 0),  H(A) = (2, 0, 0),  H(X, A) = (0, 1, 0)
+   F(A): 19 cells;  H(X cup F(A)) = (1, 1, 0),  H(A cup F(A)) = (2, 0, 0),  H(X cup F(A), A cup F(A)) = (0, 2, 0)
+   |X cup F(A)| = 546 cells, |A cup F(A)| = 27 cells; (X cup F(A)) minus (A cup F(A)) = M minus F(A) has 519 cells; F(A) cap M = [177, 180, 182, 201, 203, 206]
+   so the inclusion (X, A) -> (X cup F(A), A cup F(A)) does not induce an isomorphism in degree 1 (1 versus 2)
+
+5. annotation of M: ['0', 'x+1', '0'];  ComputeConleyIndexForCells(M): ['0', 'x+1', '0']
+
+6. the final cell graph has 1 strongly connected component(s) with a cycle; the one that contains M has 612 cells, depths {1: 1, 2: 1, 7: 2, 8: 5, 9: 7, 10: 10, 11: 15, 12: 571}
+   it contains C: True, C': True, the Morse sets [0, 1], and the points {'0': [True], 'p*': [True], 'a3': [True, True, True], 's3': [True, True, True]}
+   its pair: |X| = 612, |A| = 0, cells of A whose image meets it: none;  Betti numbers of its union (1, 3, 0);  ComputeConleyIndexForCells: ['x-1', '0', '0']
+   cells of the final grid whose corner image misses part of f(cell) (by more than 1e-8, relative): [(4, 9), (6, 7), (7, 7), (21, 8)] (cell, depth); in this component: [True, True, True, True]
+
+7. Model(16, 18, lower, upper, corner box map): 7059 cells
+   Morse set 0 (contains p*): 5570 cells, |X| = 5570, |A| = 0, cells of A whose image meets it: none, annotation ['x-1', '0', '0']
+   Morse set 1 (contains 0): 1 cells, |X| = 7, |A| = 6, cells of A whose image meets it: none, annotation ['0', '0', '0']
+   the final cell graph has 2 strongly connected components with a cycle, of sizes [472, 5570]; the one that contains the origin cell has 472 cells, depths {1: 1, 2: 1, 7: 2, 8: 5, 9: 7, 10: 10, 11: 15, 12: 45, 13: 117, 14: 114, 15: 129, 16: 26}
+   it contains C: True, C': True, and the points {'0': [True], 'p*': [False], 'a3': [True, True, True], 's3': [True, True, True]}
+   cells that contain the points of a3 and s3 (cell, depth, Morse set or None): a3[0]: [(10, 7, None)]; a3[1]: [(7058, 1, None)]; a3[2]: [(7057, 2, None)]; s3[0]: [(101, 10, None)]; s3[1]: [(7058, 1, None)]; s3[2]: [(7057, 2, None)]

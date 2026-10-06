@@ -1,0 +1,73 @@
+script: leslie_monotonicity.py
+CMGDB version: 1.5.3+fork.7.dev0   build tag: cmgdb-1.5.3_fork.7.dev0-0e21503
+Python 3.13.16 on Darwin arm64, numpy 2.5.3
+
+corner box map, Model(12, 14, lower, upper, F): 4811 calls, 4175 distinct boxes (2904 of depth > 12); final grid 636 cells; parents not evaluated: 0
+   boxes by depth {0: 1, 1: 2, 2: 2, 3: 2, 4: 4, 5: 8, 6: 16, 7: 30, 8: 54, 9: 94, 10: 168, 11: 310, 12: 580, 13: 1052, 14: 1852}
+   not outer (f(B) not inside Phi(B)): by more than 1e-08: 15 boxes, by depth {0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 2, 6: 2, 7: 3, 8: 2, 9: 1}, 4 of them cells of the final grid
+      by any positive amount: 15 boxes, by depth {0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 2, 6: 2, 7: 3, 8: 2, 9: 1}; largest excess 9.71e-01, largest at depth >= 10: 0.00e+00
+   not monotone (Phi(B) not inside Phi(parent)): by more than 1e-08: 10 boxes, by depth {1: 2, 2: 2, 3: 2, 4: 2, 6: 2}, 2 of them cells of the final grid
+      by any positive amount: 10 boxes, by depth {1: 2, 2: 2, 3: 2, 4: 2, 6: 2}; largest excess 4.69e-01, largest at depth >= 10: 0.00e+00
+      not outer, depth  8: B = [-0.0010, 5.6241] x [-0.0010, 4.3741], Phi(B) x-range [-0.0433, 78.6708], hull x-range [-0.0433, 78.9778]
+      not outer, depth  5: B = [-0.0010, 11.2491] x [-0.0010, 17.4992], Phi(B) x-range [-0.0433, 72.0180], hull x-range [-0.0433, 87.1154]
+      not outer, depth  4: B = [-0.0010, 22.4992] x [-0.0010, 17.4992], Phi(B) x-range [-0.0433, 72.0180], hull x-range [-0.0433, 87.1154]
+      not outer, depth  3: B = [-0.0010, 22.4992] x [-0.0010, 34.9995], Phi(B) x-range [-0.0433, 46.4851], hull x-range [-0.0433, 87.1154]
+      not outer, depth  2: B = [-0.0010, 44.9995] x [-0.0010, 34.9995], Phi(B) x-range [-0.0433, 25.0304], hull x-range [-0.0433, 87.1154]
+      not outer, depth  1: B = [-0.0010, 44.9995] x [-0.0010, 70.0000], Phi(B) x-range [-0.0433, 9.7992], hull x-range [-0.0433, 87.1154]
+      not outer, depth  0: B = [-0.0010, 90.0000] x [-0.0010, 70.0000], Phi(B) x-range [-0.0433, 1.5117], hull x-range [-0.0433, 87.1154]
+      not outer, depth  7 (final cell): B = [-0.0010, 5.6241] x [8.7491, 17.4992], Phi(B) x-range [51.9526, 86.3732], hull x-range [51.9526, 87.1154]
+      not outer, depth  6: B = [-0.0010, 11.2491] x [8.7491, 17.4992], Phi(B) x-range [35.8225, 86.3732], hull x-range [35.8225, 87.1154]
+      not outer, depth  9 (final cell): B = [2.8115, 5.6241] x [-0.0010, 4.3741], Phi(B) x-range [41.5865, 78.6708], hull x-range [41.5865, 78.9778]
+      not outer, depth  7 (final cell): B = [5.6241, 11.2491] x [-0.0010, 8.7491], Phi(B) x-range [57.8879, 75.4054], hull x-range [57.8879, 79.0685]
+      not outer, depth  8 (final cell): B = [11.2491, 16.8742] x [-0.0010, 4.3741], Phi(B) x-range [51.8802, 71.5860], hull x-range [51.8802, 71.7650]
+      not outer, depth  7: B = [11.2491, 16.8742] x [-0.0010, 8.7491], Phi(B) x-range [41.4864, 71.5860], hull x-range [41.4864, 71.7650]
+      not outer, depth  6: B = [11.2491, 22.4992] x [-0.0010, 8.7491], Phi(B) x-range [28.4830, 71.5860], hull x-range [28.4830, 71.7650]
+      not outer, depth  5: B = [11.2491, 22.4992] x [-0.0010, 17.4992], Phi(B) x-range [15.6690, 71.5860], hull x-range [15.6690, 71.7650]
+      not monotone, depth  6: B = [-0.0010, 11.2491] x [-0.0010, 8.7491], Phi(B) = [-0.0433, 86.3732] x [-0.0007, 7.8744], Phi(parent) = [-0.0433, 72.0180] x [-0.0007, 7.8744]
+      not monotone, depth  4: B = [-0.0010, 22.4992] x [-0.0010, 17.4992], Phi(B) = [-0.0433, 72.0180] x [-0.0007, 15.7495], Phi(parent) = [-0.0433, 46.4851] x [-0.0007, 15.7495]
+      not monotone, depth  3: B = [-0.0010, 22.4992] x [-0.0010, 34.9995], Phi(B) = [-0.0433, 46.4851] x [-0.0007, 15.7495], Phi(parent) = [-0.0433, 25.0304] x [-0.0007, 31.4996]
+      not monotone, depth  2: B = [-0.0010, 44.9995] x [-0.0010, 34.9995], Phi(B) = [-0.0433, 25.0304] x [-0.0007, 31.4996], Phi(parent) = [-0.0433, 9.7992] x [-0.0007, 31.4996]
+      not monotone, depth  1: B = [-0.0010, 44.9995] x [-0.0010, 70.0000], Phi(B) = [-0.0433, 9.7992] x [-0.0007, 31.4996], Phi(parent) = [-0.0433, 1.5117] x [-0.0007, 63.0000]
+      not monotone, depth  6: B = [-0.0010, 11.2491] x [8.7491, 17.4992], Phi(B) = [35.8225, 86.3732] x [-0.0007, 7.8744], Phi(parent) = [-0.0433, 72.0180] x [-0.0007, 7.8744]
+      not monotone, depth  4: B = [-0.0010, 22.4992] x [17.4992, 34.9995], Phi(B) = [4.0419, 72.0180] x [-0.0007, 15.7495], Phi(parent) = [-0.0433, 46.4851] x [-0.0007, 15.7495]
+      not monotone, depth  2: B = [-0.0010, 44.9995] x [34.9995, 70.0000], Phi(B) = [0.0257, 25.0304] x [-0.0007, 31.4996], Phi(parent) = [-0.0433, 9.7992] x [-0.0007, 31.4996]
+      not monotone, depth  3: B = [22.4992, 44.9995] x [-0.0010, 34.9995], Phi(B) = [0.5740, 46.4851] x [15.7495, 31.4996], Phi(parent) = [-0.0433, 25.0304] x [-0.0007, 31.4996]
+      not monotone, depth  1: B = [44.9995, 90.0000] x [-0.0010, 70.0000], Phi(B) = [0.0004, 9.7992] x [31.4996, 63.0000], Phi(parent) = [-0.0433, 1.5117] x [-0.0007, 63.0000]
+
+corner box map, Model(16, 18, lower, upper, F): 21180 calls, 14121 distinct boxes (4 of depth > 16); final grid 7059 cells; parents not evaluated: 0
+   boxes by depth {0: 1, 1: 2, 2: 2, 3: 2, 4: 4, 5: 8, 6: 16, 7: 30, 8: 54, 9: 94, 10: 168, 11: 310, 12: 580, 13: 1052, 14: 1852, 15: 3456, 16: 6486, 17: 2, 18: 2}
+   not outer (f(B) not inside Phi(B)): by more than 1e-08: 15 boxes, by depth {0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 2, 6: 2, 7: 3, 8: 2, 9: 1}, 4 of them cells of the final grid
+      by any positive amount: 15 boxes, by depth {0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 2, 6: 2, 7: 3, 8: 2, 9: 1}; largest excess 9.71e-01, largest at depth >= 10: 0.00e+00
+   not monotone (Phi(B) not inside Phi(parent)): by more than 1e-08: 10 boxes, by depth {1: 2, 2: 2, 3: 2, 4: 2, 6: 2}, 2 of them cells of the final grid
+      by any positive amount: 10 boxes, by depth {1: 2, 2: 2, 3: 2, 4: 2, 6: 2}; largest excess 4.69e-01, largest at depth >= 10: 0.00e+00
+
+padded box map, Model(12, 14, lower, upper, F): 10676 calls, 9203 distinct boxes (6258 of depth > 12); final grid 1473 cells; parents not evaluated: 0
+   boxes by depth {0: 1, 1: 2, 2: 4, 3: 8, 4: 16, 5: 28, 6: 48, 7: 80, 8: 138, 9: 232, 10: 406, 11: 720, 12: 1262, 13: 2258, 14: 4000}
+   not outer (f(B) not inside Phi(B)): by more than 1e-08: 4 boxes, by depth {1: 1, 2: 1, 3: 1, 5: 1}, 0 of them cells of the final grid
+      by any positive amount: 4 boxes, by depth {1: 1, 2: 1, 3: 1, 5: 1}; largest excess 3.15e-01, largest at depth >= 10: 0.00e+00
+   not monotone (Phi(B) not inside Phi(parent)): by more than 1e-08: 24 boxes, by depth {2: 2, 4: 2, 6: 2, 8: 2, 10: 4, 12: 6, 14: 6}, 8 of them cells of the final grid
+      by any positive amount: 24 boxes, by depth {2: 2, 4: 2, 6: 2, 8: 2, 10: 4, 12: 6, 14: 6}; largest excess 2.67e-01, largest at depth >= 10: 4.81e-03
+
+padded box map, Model(16, 18, lower, upper, F): 46060 calls, 31909 distinct boxes (3608 of depth > 16); final grid 14151 cells; parents not evaluated: 0
+   boxes by depth {0: 1, 1: 2, 2: 4, 3: 8, 4: 16, 5: 28, 6: 48, 7: 80, 8: 138, 9: 232, 10: 406, 11: 720, 12: 1262, 13: 2258, 14: 4000, 15: 7086, 16: 12012, 17: 1704, 18: 1904}
+   not outer (f(B) not inside Phi(B)): by more than 1e-08: 4 boxes, by depth {1: 1, 2: 1, 3: 1, 5: 1}, 0 of them cells of the final grid
+      by any positive amount: 4 boxes, by depth {1: 1, 2: 1, 3: 1, 5: 1}; largest excess 3.15e-01, largest at depth >= 10: 0.00e+00
+   not monotone (Phi(B) not inside Phi(parent)): by more than 1e-08: 44 boxes, by depth {2: 2, 4: 2, 6: 2, 8: 2, 10: 4, 12: 6, 14: 6, 16: 10, 18: 10}, 15 of them cells of the final grid
+      by any positive amount: 44 boxes, by depth {2: 2, 4: 2, 6: 2, 8: 2, 10: 4, 12: 6, 14: 6, 16: 10, 18: 10}; largest excess 2.67e-01, largest at depth >= 10: 4.81e-03
+
+hull box map, Model(12, 14, lower, upper, F): 7328 calls, 6255 distinct boxes (4110 of depth > 12); final grid 1073 cells; parents not evaluated: 0
+   boxes by depth {0: 1, 1: 2, 2: 4, 3: 6, 4: 10, 5: 18, 6: 30, 7: 54, 8: 96, 9: 172, 10: 292, 11: 538, 12: 922, 13: 1622, 14: 2488}
+   not outer (f(B) not inside Phi(B)): by more than 1e-08: 0 boxes, by depth {}, 0 of them cells of the final grid
+      by any positive amount: 0 boxes, by depth {}; largest excess 0.00e+00, largest at depth >= 10: 0.00e+00
+   not monotone (Phi(B) not inside Phi(parent)): by more than 1e-08: 0 boxes, by depth {}, 0 of them cells of the final grid
+      by any positive amount: 0 boxes, by depth {}; largest excess 0.00e+00, largest at depth >= 10: 0.00e+00
+
+hull box map, Model(16, 18, lower, upper, F): 27292 calls, 18533 distinct boxes (1044 of depth > 16); final grid 8759 cells; parents not evaluated: 0
+   boxes by depth {0: 1, 1: 2, 2: 4, 3: 6, 4: 10, 5: 18, 6: 30, 7: 54, 8: 96, 9: 172, 10: 292, 11: 538, 12: 922, 13: 1622, 14: 2488, 15: 4230, 16: 7004, 17: 524, 18: 520}
+   not outer (f(B) not inside Phi(B)): by more than 1e-08: 0 boxes, by depth {}, 0 of them cells of the final grid
+      by any positive amount: 0 boxes, by depth {}; largest excess 0.00e+00, largest at depth >= 10: 0.00e+00
+   not monotone (Phi(B) not inside Phi(parent)): by more than 1e-08: 0 boxes, by depth {}, 0 of them cells of the final grid
+      by any positive amount: 0 boxes, by depth {}; largest excess 0.00e+00, largest at depth >= 10: 0.00e+00
+
+hull box map:
+   closed-form hull against f1 on 3000 random boxes (widths 1e-3 to 1e2): largest excess of a sampled value over the hull 0.0e+00 (relative); largest gap between the hull and the sampled maximum 1.4e-06 (relative)

@@ -1,0 +1,70 @@
+script: bounds_annotations.py
+CMGDB version: 1.3.3+fork.6   build tag: cmgdb-1.3.3_fork.6
+Python 3.13.16 on Darwin arm64
+box map: CMGDB.BoxMap(f, rect, padding=False)
+
+E1: f(x) = x/(2-x) on [0, 1.25], Model(4, 8, 0, 10000)
+  final grid: 19 cells of depths [3, 4, 5, 6, 7]; 2 Morse sets; Morse graph edges [(1, 0)]
+  ComputeConleyMorseGraph: returned
+  box map evaluations: 96, of which 7 are not boxes of the bisection tree
+  Morse set 0: 1 cell(s) of depth [4], hull [0.000000, 0.078125], annotation ['x-1', '0']
+  Morse set 1: 1 cell(s) of depth [4], hull [0.937500, 1.015625], annotation ['0', '0']
+  fixed point (0): eigenvalues 0.5, linearization ['x-1', '0']; Morse set 0: ['x-1', '0']
+  fixed point (1): eigenvalues 2, linearization ['0', 'x-1']; Morse set 1: ['0', '0']   <-- differs
+
+E2: f(x) = x/(2-x) on [0, 1.2], Model(4, 8, 0, 10000)
+  final grid: 18 cells of depths [3, 4, 5, 6]; 2 Morse sets; Morse graph edges [(1, 0)]
+  ComputeConleyMorseGraph: raised RuntimeError: Morse-reduced fiber preboundary failed boundary validation
+  box map evaluations: 77, of which 7 are not boxes of the bisection tree
+  Morse set 0: 1 cell(s) of depth [4], hull [0.000000, 0.075000], annotation (no annotation, exception)
+  Morse set 1: 1 cell(s) of depth [4], hull [0.975000, 1.050000], annotation (no annotation, exception)
+  fixed point (0): eigenvalues 0.5, linearization ['x-1', '0']; Morse set 0: None   <-- differs
+  fixed point (1): eigenvalues 2, linearization ['0', 'x-1']; Morse set 1: None   <-- differs
+
+E3: f(x) = 3.2 x (1-x) on [0.1, 0.85], Model(4, 8, 0, 10000)
+  final grid: 22 cells of depths [2, 3, 4, 6, 7]; 2 Morse sets; Morse graph edges [(1, 0)]
+  ComputeConleyMorseGraph: returned
+  box map evaluations: 157, of which 7 are not boxes of the bisection tree
+  Morse set 0: 4 cell(s) of depth [4], hull [0.475000, 0.803125], annotation ['x^2-1', '0']
+  Morse set 1: 1 cell(s) of depth [4], hull [0.662500, 0.709375], annotation ['0', '0']
+  fixed point (0.6875): eigenvalues -1.2, linearization ['0', 'x+1']; Morse set 1: ['0', '0']   <-- differs
+
+E4: f(x) = x/(2-x) on [0, 1.25] x [0, 1.25], Model(8, 14, 4, 10000)
+  final grid: 192 cells of depths [5, 6, 7, 8, 9, 10, 11, 12, 13, 14]; 4 Morse sets; Morse graph edges [(1, 0), (2, 0), (3, 1), (3, 2)]
+  ComputeConleyMorseGraph: returned
+  box map evaluations: 780, of which 55 are not boxes of the bisection tree
+  Morse set 0: 1 cell(s) of depth [8], hull [0.000000, 0.078125] x [0.000000, 0.078125], annotation ['x-1', '0', '0']
+  Morse set 1: 1 cell(s) of depth [8], hull [0.000000, 0.078125] x [0.937500, 1.015625], annotation ['0', '0', '0']
+  Morse set 2: 1 cell(s) of depth [8], hull [0.937500, 1.015625] x [0.000000, 0.078125], annotation ['0', 'x-1', '0']
+  Morse set 3: 1 cell(s) of depth [8], hull [0.937500, 1.015625] x [0.937500, 1.015625], annotation ['0', '0', '0']
+  fixed point (0, 0): eigenvalues 0.5, 0.5, linearization ['x-1', '0', '0']; Morse set 0: ['x-1', '0', '0']
+  fixed point (0, 1): eigenvalues 0.5, 2, linearization ['0', 'x-1', '0']; Morse set 1: ['0', '0', '0']   <-- differs
+  fixed point (1, 0): eigenvalues 2, 0.5, linearization ['0', 'x-1', '0']; Morse set 2: ['0', 'x-1', '0']
+  fixed point (1, 1): eigenvalues 2, 2, linearization ['0', '0', 'x-1']; Morse set 3: ['0', '0', '0']   <-- differs
+
+E5: f(x) = x/(2-x) on [0, 1.2] x [0, 1.2], Model(8, 12, 4, 10000)
+  final grid: 174 cells of depths [5, 6, 7, 8, 9, 10, 11, 12]; 4 Morse sets; Morse graph edges [(1, 0), (2, 0), (3, 1), (3, 2)]
+  ComputeConleyMorseGraph: raised RuntimeError: Morse-reduced fiber preboundary failed boundary validation
+  box map evaluations: 435, of which 4 are not boxes of the bisection tree
+  Morse set 0: 1 cell(s) of depth [8], hull [0.000000, 0.075000] x [0.000000, 0.075000], annotation (no annotation, exception)
+  Morse set 1: 1 cell(s) of depth [8], hull [0.000000, 0.075000] x [0.975000, 1.050000], annotation (no annotation, exception)
+  Morse set 2: 1 cell(s) of depth [8], hull [0.975000, 1.050000] x [0.000000, 0.075000], annotation (no annotation, exception)
+  Morse set 3: 1 cell(s) of depth [8], hull [0.975000, 1.050000] x [0.975000, 1.050000], annotation (no annotation, exception)
+  fixed point (0, 0): eigenvalues 0.5, 0.5, linearization ['x-1', '0', '0']; Morse set 0: None   <-- differs
+  fixed point (0, 1): eigenvalues 0.5, 2, linearization ['0', 'x-1', '0']; Morse set 1: None   <-- differs
+  fixed point (1, 0): eigenvalues 2, 0.5, linearization ['0', 'x-1', '0']; Morse set 2: None   <-- differs
+  fixed point (1, 1): eigenvalues 2, 2, linearization ['0', '0', 'x-1']; Morse set 3: None   <-- differs
+
+E6: f(x) = x/(2-x) on [0, 1.2] x [0, 1.2], Model(6, 10, 4, 10000)   (control)
+  final grid: 124 cells of depths [5, 6, 7, 8, 9, 10]; 4 Morse sets; Morse graph edges [(1, 0), (2, 0), (3, 1), (3, 2)]
+  ComputeConleyMorseGraph: returned
+  box map evaluations: 512, of which 55 are not boxes of the bisection tree
+  Morse set 0: 1 cell(s) of depth [6], hull [0.000000, 0.150000] x [0.000000, 0.150000], annotation ['x-1', '0', '0']
+  Morse set 1: 1 cell(s) of depth [6], hull [0.000000, 0.150000] x [0.900000, 1.050000], annotation ['0', 'x-1', '0']
+  Morse set 2: 1 cell(s) of depth [6], hull [0.900000, 1.050000] x [0.000000, 0.150000], annotation ['0', 'x-1', '0']
+  Morse set 3: 1 cell(s) of depth [6], hull [0.900000, 1.050000] x [0.900000, 1.050000], annotation ['0', '0', 'x-1']
+  fixed point (0, 0): eigenvalues 0.5, 0.5, linearization ['x-1', '0', '0']; Morse set 0: ['x-1', '0', '0']
+  fixed point (0, 1): eigenvalues 0.5, 2, linearization ['0', 'x-1', '0']; Morse set 1: ['0', 'x-1', '0']
+  fixed point (1, 0): eigenvalues 2, 0.5, linearization ['0', 'x-1', '0']; Morse set 2: ['0', 'x-1', '0']
+  fixed point (1, 1): eigenvalues 2, 2, linearization ['0', '0', 'x-1']; Morse set 3: ['0', '0', 'x-1']
+
