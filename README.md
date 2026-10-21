@@ -132,14 +132,12 @@ the native reachability queries, `ComputeConleyIndexForCells`, and
 Prebuilt wheels are attached to each
 [fork release](https://github.com/bernardorivas/CMGDB/releases) for CPython
 3.11-3.13 on manylinux x86_64 and macOS arm64. To install the most recent
-release, `1.3.3+fork.6`:
+release, `1.5.3+fork.7`:
 
-	pip install cmgdb==1.3.3+fork.6 \
-	  --find-links https://github.com/bernardorivas/CMGDB/releases/expanded_assets/v1.3.3%2Bfork.6
+	pip install cmgdb==1.5.3+fork.7 \
+	  --find-links https://github.com/bernardorivas/CMGDB/releases/expanded_assets/v1.5.3%2Bfork.7
 
-The version pin is what selects this fork; `--find-links` only tells pip where
-to look. Release `1.3.3+fork.6` predates the merge with upstream v1.5.2; until
-a newer release is published, build from source to get the upstream features.
+The version pin is what selects this fork; `--find-links` only tells pip where to look. Release `1.5.3+fork.7` includes the merge with upstream v1.5.2 and its `PlotMorseSets3D` function.
 
 To build the current tree from source you need a C++17 compiler and
 [Boost](https://www.boost.org/) 1.66 or later (chrono, thread and
