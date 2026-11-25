@@ -18,6 +18,7 @@
 #include "chomp/Generators.h"
 #include "chomp/Closure.h"
 #include "chomp/FiberComplex.h"
+#include "chomp/RectangularFiber.h"
 #include "chomp/RelativePair.h"
 
 
@@ -55,21 +56,17 @@ RelativeMapHomology (RelativeMapHomology_t * output,
   clock_t total_time_start = clock ();
   clock_t construction_time_start = clock ();
 
-  // Create the Relative Complexes
   RelativePair domain_pair;
   RelativePair codomain_pair;
-  // Determine depth.
-  // TODO: determine it, don't ask for it as input
-  source . relativeComplex ( &domain_pair, XE, AE, depth );
-  // TODO: don't repeat work here
-  target . relativeComplex ( &codomain_pair, YE, BE, depth );
-  
-  //PRINT "RMH: Constructed relative complexes\n";
-  
-  CubicalComplex & full_domain = domain_pair . base ();
-  CubicalComplex & full_codomain = codomain_pair . base ();
-  BitmapSubcomplex & domain = domain_pair . pair ();
-  BitmapSubcomplex & codomain = codomain_pair . pair ();
+  const bool self_map = &source == &target && &XE == &YE && &AE == &BE;
+  source.relativeComplex(&domain_pair, XE, AE, depth);
+  if (!self_map) target.relativeComplex(&codomain_pair, YE, BE, depth);
+  RelativePair& target_pair = self_map ? domain_pair : codomain_pair;
+
+  CubicalComplex& full_domain = domain_pair.base();
+  CubicalComplex& full_codomain = target_pair.base();
+  BitmapSubcomplex& domain = domain_pair.pair();
+  BitmapSubcomplex& codomain = target_pair.pair();
   BitmapSubcomplex & DomainA = domain_pair . relative ();
 
     int D = full_domain . dimension ();
@@ -80,13 +77,13 @@ RelativeMapHomology (RelativeMapHomology_t * output,
   
   PRINT "RMH: (X, A) size = (" << domain_pair.pair().size() << ", " 
         << domain_pair . relative () . size () << ")\n";
-  PRINT "RMH: (Y, B) size = (" << codomain_pair.pair().size() << ", " 
-        << codomain_pair . relative () . size () << ")\n";
+  PRINT "RMH: (Y, B) size = (" << target_pair.pair().size() << ", "
+        << target_pair . relative () . size () << ")\n";
 
   PRINT "RMH: (X, A) top size = (" << domain_pair.pair().size(D) << ", "
         << domain_pair . relative () . size (D) << ")\n";
-  PRINT "RMH: (Y, B) top size = (" << codomain_pair.pair().size(D) << ", "
-        << codomain_pair . relative () . size (D) << ")\n";
+  PRINT "RMH: (Y, B) top size = (" << target_pair.pair().size(D) << ", "
+        << target_pair . relative () . size (D) << ")\n";
 
   /// Memoized map evaluations on the top cells of the domain complex.
   /// Every fiber built below evaluates the map only on top cells of
@@ -101,6 +98,8 @@ RelativeMapHomology (RelativeMapHomology_t * output,
   /// evaluated in a single call through F.images, which uses the map's
   /// batched evaluator when it has one.
   std::unordered_map < uint64_t, std::vector < uint64_t > > F_top;
+  const bool rectangular_fibers = !full_codomain.hasPeriodicAxis();
+  std::unordered_map<Index, std::optional<FiberBox>> box_images;
   /// The cover of an image, projected onto the phase space first when
   /// project_images is set. In a direction where the image misses the
   /// phase space, the projected interval is the center of the outermost
@@ -150,112 +149,54 @@ RelativeMapHomology (RelativeMapHomology_t * output,
       }
       std::vector < Rect > images = F . images ( geometries );
       for ( size_t k = 0; k < missing . size (); ++ k ) {
-        F_top [ missing [ k ] ] = cover_image ( images [ k ] );
+        auto& row = F_top[missing[k]];
+        row = cover_image(images[k]);
+        if (rectangular_fibers)
+          box_images.emplace(missing[k], CompleteFiberBox(full_codomain, row));
       }
     };
 
-  /// Generate "domain_GridElements_X" and "domain_GridElements_A" tables
-  /// These are for determining which top cells are involved in
-  /// constructing a fiber (and which are relative)
-  std::vector < std::vector < boost::unordered_set < Index > > > 
-  domain_GridElements_X ( D + 1 );
-  std::vector < std::vector < boost::unordered_set < Index > > > 
-  domain_GridElements_A ( D + 1 );
-  
-  
-  PRINT "Computing domain grid elements \n";
-
-  for ( int d = 0; d <= D; ++ d ) {
-    domain_GridElements_X [ d ] . resize ( full_domain . size ( d ) );
-    domain_GridElements_A [ d ] . resize ( full_domain . size ( d ) );
-  }
-  
-  Index N;
-  N = full_domain . size (D);
-  for ( Index i = 0; i < N; ++ i ) {
-    //PRINT " index = " << i << "\n";
-    std::vector < boost::unordered_set < Index > > closure_of_i ( D + 1 );
-    closure_of_i [ D ] . insert ( i );
-    closure ( closure_of_i, full_domain );
-    for ( int d = 0; d <= D; ++ d ) {
-      //PRINT " d = " << d << "\n";
-      BOOST_FOREACH ( Index j, closure_of_i [ d ] ) {
-        domain_GridElements_X [ d ] [ j ] . insert ( i );
-      }
+  // Only cells reached by the chain lift need incident top cubes.
+  // The orders here match the former eager incidence tables.
+  using CubeSet = boost::unordered_set<Index>;
+  auto neighbors = [&](Index cell, int degree) {
+    CubeSet x, a;
+    std::vector<Index> exit_indices;
+    const auto exit_size = DomainA.size(D);
+    for (Index cube : full_domain.incidentTopCubes(cell, degree)) {
+      x.insert(cube);
+      if (exit_size == 0) continue;
+      const auto index = DomainA.cellToIndex(cube, D);
+      if (index < exit_size) exit_indices.push_back(index);
     }
-  }
-  
-  PRINT "Computing domain grid elements 2\n";
-  N = DomainA . size (D);
-  for ( Index k = 0; k < N; ++ k ) {
-    Index i = DomainA . indexToCell ( k, D );
-    //PRINT " index = " << i << "\n";
-    std::vector < boost::unordered_set < Index > > closure_of_i ( D + 1 );
-    closure_of_i [ D ] . insert ( i );
-    closure ( closure_of_i, full_domain );
-    for ( int d = 0; d <= D; ++ d ) {
-      //PRINT " d = " << d << "\n";
-      BOOST_FOREACH ( Index j, closure_of_i [ d ] ) {
-        domain_GridElements_A [ d ] [ j ] . insert ( i );
-      }
-    }
-  }
-  
-  PRINT "computed domain_GridElements_X and _A\n";
-  double construction_time = ((double)(clock()-construction_time_start)/(double)CLOCKS_PER_SEC);
-
+    std::sort(exit_indices.begin(), exit_indices.end());
+    for (Index index : exit_indices) a.insert(DomainA.indexToCell(index, D));
+    return std::make_pair(std::move(x), std::move(a));
+  };
+  auto certify_fiber = [&](const CubeSet& x, const CubeSet& a) {
+    if (rectangular_fibers) return CommonFiberVertex(x, a, F_top, box_images);
+    return std::optional<RectangularFiber>{};
+  };
+  double construction_time = static_cast<double>(clock() - construction_time_start) / CLOCKS_PER_SEC;
   PRINT "RMH: Time Elapsed (construction) = " << construction_time << "\n";
 
-  // DEBUG //////////////////////////////////
-//  for ( int d = 0; d <= D; ++ d ) {
-//    std::cout << "The number of " << d << "-cells in domain_GridElements_X is " << 
-//    domain_GridElements_X [ d ] . size () << "\n";
-//    std::cout << "The number of " << d << "-cells in domain_GridElements_A is " << 
-//    domain_GridElements_A [ d ] . size () << "\n";    
-//  }
-//  MorseComplex debugcomplex ( domain );
-//  MorseSanity ( debugcomplex );
-  //////////////////////////////////////////
-  
   int cutoff_dimension = full_domain . dimension ();
 #ifdef CONLEYINDEXCUTOFF
   cutoff_dimension = CONLEYINDEXCUTOFF;
 #endif
   // Compute the homology generators
   clock_t homology_time_start = clock ();
-  PRINT "RMH: Computing Domain Generators with MorseGenerators\n";
-  Generators_t domain_gen = MorseGenerators ( domain, cutoff_dimension );
-  PRINT "RMH: Computing Morse Complex of Codomain (codomain_morse)\n";
-  MorseComplex codomain_morse ( codomain );
-  PRINT "RMH: Computing Generators of codomain_morse\n";
-  Generators_t codomain_morse_gen = SmithGenerators ( codomain_morse, cutoff_dimension );
-
-  // DEBUG
-
-  // Concern: Are the lifted smith generators in codomain_morse the same as the domain_gen
-  //          generators of domain_gen? For a Conley Index computation, we depend on this.
-  //          This debug code will check this explicitly.
-  /*
-  std::cout << "Domain generator basis: \n";
-  for ( int d = 0; d < domain_gen . size (); ++ d ) {
-    std::cout << "Dimension " << d << "\n";
-    for ( int gen = 0; gen < domain_gen [ d ] . size (); ++ gen ) {
-      Chain c = domain_gen [ d ] [ gen ] . first;
-      std::cout << "Domain chain " << gen << " = " << c << "\n";
-    }
+  MorseComplex codomain_morse(codomain);
+  Generators_t codomain_morse_gen = SmithGenerators(codomain_morse, cutoff_dimension);
+  Generators_t domain_gen;
+  if (self_map) {
+    domain_gen.resize(domain.dimension() + 1);
+    for (size_t d = 0; d < codomain_morse_gen.size(); ++d)
+      for (const auto& generator : codomain_morse_gen[d])
+        domain_gen[d].emplace_back(codomain_morse.lift(generator.first), generator.second);
+  } else {
+    domain_gen = MorseGenerators(domain, cutoff_dimension);
   }
-
-  std::cout << "Codomain generator basis: \n";
-  for ( int d = 0; d < codomain_morse_gen . size (); ++ d ) {
-    std::cout << "Dimension " << d << "\n";
-    for ( int gen = 0; gen < codomain_morse_gen [ d ] . size (); ++ gen ) {
-      Chain c = codomain_morse_gen [ d ] [ gen ] . first;
-      Chain lift = codomain_morse . lift ( c );
-      std::cout << "Codomain chain " << gen << " = " << lift << "\n";
-    }
-  }
-  */
-  // END DEBUG
 
   // Compute the cycles projected into the codomain through the graph 
   std::vector < std::vector < Chain > > codomain_cycles ( D + 1 );
@@ -327,49 +268,31 @@ RelativeMapHomology (RelativeMapHomology_t * output,
 
         //std::cout << "Dealing with fiber (" << t . index () << ", " << d << ") (*)\n";
         //std::cout << "   Term is " << t << "\n";
-        // Determine fiber
-        boost::unordered_set < Index > X_nbs, A_nbs;
-        
-        //std::cout << "domain_GridElements_X [ " << d << " ] . size () = " <<
-        //domain_GridElements_X [ d ] . size () << "\n";
-        
-        //std::cout << "domain_GridElements_A [ " << d << " ] . size () = " <<
-        //domain_GridElements_A [ d ] . size () << "\n";
-        
-        X_nbs = domain_GridElements_X [ d ] [ t . index () ];
-        A_nbs = domain_GridElements_A [ d ] [ t . index () ];    
-        
-        //std::cout << "CHECKPOINT X2\n";
-
-        // DEBUG ///////////////////////
-        //std::cout << "   X_nbs . size () = " << X_nbs . size () << "\n";
-        //std::cout << "   A_nbs . size () = " << A_nbs . size () << "\n";
-        ////////////////////////////////
-        
-        materialize_fiber_images ( X_nbs, A_nbs );
-        FiberComplex fiber ( X_nbs, A_nbs, full_domain, full_codomain, F_top );
-        //std::cout << "CHECKPOINT Y\n";
-
-
-        if ( fiber . size () == 0 ) {
-#ifdef CMG_VERBOSE
-          std::cout << "UNEXPECTED: CANT LIFT CHAIN DUE TO EMPTY FIBER.\n";
-#endif
-          acyclic_map = false;
-          break;
+        auto [X_nbs, A_nbs] = neighbors(t.index(), d);
+        materialize_fiber_images(X_nbs, A_nbs);
+        const auto rectangular = certify_fiber(X_nbs, A_nbs);
+        Index choice = full_codomain.size(0);
+        if (rectangular && !rectangular->relative()) {
+          const auto address = full_codomain.cubeToAddress(rectangular->anchor);
+          choice = full_codomain.cellToIndex(address, 0);
         }
-
+        if (choice >= full_codomain.size(0)) {
+          FiberComplex fiber(X_nbs, A_nbs, full_domain, full_codomain, F_top);
+          if (fiber.size() == 0) {
+            acyclic_map = false;
+            break;
+          }
 #ifndef CONLEY_INDEX_NO_ACYCLIC_CHECKS
-        if ( not fiber . acyclic () ) {
-          acyclic_map = false;
-          break;
-        }
+          if (!fiber.acyclic()) {
+            acyclic_map = false;
+            break;
+          }
 #endif
-        ++ number_of_analyzed_fibers; // run statistics
-        explored_graph_complex += fiber . size (); // run statistics
+          explored_graph_complex += fiber.size();
+          choice = fiber.choose();
+        }
+        ++number_of_analyzed_fibers;
 
-        // Choose a vertex in fiber
-        Index choice = fiber . choose ();
         if ( d == 0 ) answer += Term ( choice, t . coef () );
         Chain bd = full_domain . boundary ( t . index (), d );
         BOOST_FOREACH ( const Term & s, bd () ) {
@@ -392,92 +315,50 @@ RelativeMapHomology (RelativeMapHomology_t * output,
           //std::cout << "Dealing with fiber (" << fiberchain . first << ", " << fd << ")\n";
           //std::cout << "   Chain is " << fiberchain . second << "\n";
           chain_memory += fiberchain . second () . size ();
-          // Determine fiber
-          boost::unordered_set < Index > X_nbs, A_nbs;
-          X_nbs = domain_GridElements_X [ fd ] [ fiberchain . first ];
-          A_nbs = domain_GridElements_A [ fd ] [ fiberchain . first ];
-          materialize_fiber_images ( X_nbs, A_nbs );
-          FiberComplex fiber ( X_nbs, A_nbs, full_domain, full_codomain, F_top );
-          
-          // TODO: option to turn this check off.
+          auto [X_nbs, A_nbs] = neighbors(fiberchain.first, fd);
+          materialize_fiber_images(X_nbs, A_nbs);
+          const auto rectangular = certify_fiber(X_nbs, A_nbs);
+          std::optional<Chain> filled;
+          if (rectangular)
+            filled = RectangularPreboundary(*rectangular, full_codomain, fiberchain.second);
+          if (!filled) {
+            FiberComplex fiber(X_nbs, A_nbs, full_domain, full_codomain, F_top, true);
+            std::optional<MorseComplex> reduction;
 #ifndef CONLEY_INDEX_NO_ACYCLIC_CHECKS
-          if ( not fiber . acyclic_or_trivial () ) {
-            acyclic_map = false;
-            break;
-          }
+            if (!rectangular) {
+              reduction.emplace(fiber);
+              if (!FiberComplex::acyclic_or_trivial(*reduction)) {
+                acyclic_map = false;
+                break;
+              }
+            }
 #endif
-          
-          ++ number_of_analyzed_fibers; // run statistics
-          explored_graph_complex += fiber . size (); // run statistics
-          // Determine chain in fiber
-          Chain projected = fiber . project ( fiberchain . second );
-          // Work out the preboundary. A fiber chain with no preboundary
-          // means that the graph fails the fiber condition there. Over
-          // cl(A) this happens when the images of the cubes of A around the
-          // cell are clipped away, which leaves the fiber without its
-          // relative part (see ConleyIndex). Report it, rather than
-          // returning a silently unvalidated solve or aborting the whole
-          // computation.
-          Chain preboundary;
-          try {
-            preboundary = fiber . preboundary ( projected );
-          } catch ( std::runtime_error const& ) {
-            return 2;
+            explored_graph_complex += fiber.size();
+            Chain projected = simplify(fiber.project(fiberchain.second));
+            if (projected().empty()) {
+              filled.emplace();
+              filled->dimension() = projected.dimension() + 1;
+            } else {
+              if (!reduction) reduction.emplace(fiber);
+              // Preserve the retry for a fiber chain whose boundary equation
+              // fails, including when an exit image misses the phase space.
+              try {
+                filled = fiber.include(fiber.preboundary(projected, *reduction));
+              } catch (const std::runtime_error&) {
+                return 2;
+              }
+            }
           }
-          // Include the preboundary back into the codomain
-          Chain included_preboundary = fiber . include ( preboundary );
+          ++number_of_analyzed_fibers;
+          const Chain& included_preboundary = *filled;
 
-          // DEBUG///////////////////////////////////////////////////////////////////////
-#if 0
-
-          std::cout << "   A_nbs . size () = " << A_nbs . size () << "\n";
-          std::cout << "   Projected Chain is " << projected << "\n";
-          std::cout << "   Preboundary Chain is " << preboundary << "\n";
-          std::cout << "   Included Chain is " << included_preboundary << "\n";
-
-          Chain reboundary = fiber . boundary ( preboundary );
-          std::cout << "   bd(preboundary) = " << simplify(reboundary) << "\n";
-
-          Chain increboundary = full_codomain . boundary ( included_preboundary );
-          std::cout << "   bd(included) = " << simplify(increboundary) << "\n";
-          
-          Chain leftover = simplify ( projected - reboundary );
-          if ( not leftover () . empty () ) {
-            std::cout << "   left over = " << simplify(projected - reboundary) << "\n";
-            exit ( 1 );
-          }
-
-          MorseComplex morse ( fiber );
-          std::cout << "\n Number of Cells = " << fiber . size () << ": ";
-          for ( int dd = 0; dd <= fiber . dimension (); ++ dd ) 
-            std::cout << fiber . size ( dd ) << " ";
-          std::cout << "\n Number of Critical Cells = " << morse . size () << ": ";
-          for ( int dd = 0; dd <= morse . dimension (); ++ dd ) 
-            std::cout << morse . size ( dd ) << " ";
-          
-          {
-          ComplexVisualization * cv = new ComplexVisualization ( "Fiber Picture." );
-            std::cout << "About to draw complex.\n";
-          cv -> drawComplex ( fiber, 100 );
-            std::cout << "The complex was drawn.\n";
-            std::cout << projected . dimension () << "\n";
-          cv -> drawChain ( fiber, projected, 200 );
-            std::cout << "The projected chain drew.\n";
-          cv -> drawChain ( fiber, preboundary, 200 );
-          // explore a minute here
-          cv -> explore ();
-          delete cv;
-          }
-#endif
-
-          ///////////////////////////////////////////////////////////////////////////////
-          
           // If this is a zero-dim fiber, add to answer
           if ( fd == 0 ) answer -= included_preboundary;
           // Add preboundary to adjacent fibers
           Chain bd = full_domain . boundary (fiberchain . first, fd );
           Ring grade;
           if ( fd % 2 ) grade = Ring ( -1 ); else grade = Ring ( 1 );
+          // Keep slots for zero chains so every face in the lift is checked.
           BOOST_FOREACH ( const Term & s, bd () ) {
             graph_boundary [fd-1] [ s . index () ] . dimension () = d - fd;
             graph_boundary [fd-1] [ s . index () ] -= included_preboundary * 
@@ -552,9 +433,7 @@ RelativeMapHomology (RelativeMapHomology_t * output,
 #endif
     for ( Index i = 0; i < full_domain . size ( d ); ++ i ) {
       if ( rand () % 10 != 0 ) continue;
-      boost::unordered_set < Index > X_nbs, A_nbs;
-      X_nbs = domain_GridElements_X [ d ] [ i ];
-      A_nbs = domain_GridElements_A [ d ] [ i ];
+      auto [X_nbs, A_nbs] = neighbors(i, d);
       materialize_fiber_images ( X_nbs, A_nbs );
       FiberComplex fiber ( X_nbs, A_nbs, full_domain, full_codomain, F_top );
       graph_size += 10 * fiber . size ();

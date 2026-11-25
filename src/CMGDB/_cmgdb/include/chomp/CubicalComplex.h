@@ -5,11 +5,13 @@
 #ifndef CHOMP_CUBICALCOMPLEX_H
 #define CHOMP_CUBICALCOMPLEX_H
 
+#include <algorithm>
 #include <iostream>
 #include <cstdlib>
 #include <vector>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <stack>
 #include <set>
 #include <stdint.h>
@@ -128,6 +130,9 @@ namespace chomp {
     std::vector<uint64_t> indexToCube ( Index i ) const;
     std::vector<uint64_t> addressToCube ( uint64_t address ) const;
     uint64_t cubeToAddress ( const std::vector<uint64_t> & cube ) const;
+    bool hasPeriodicAxis () const;
+    // Top cubes incident to a cell, in increasing complex index order.
+    std::vector<Index> incidentTopCubes ( Index cell, int degree ) const;
 
     /// low-level interface
     bool bitmap ( const uint64_t address ) const;
@@ -171,9 +176,14 @@ namespace chomp {
     std::vector<uint64_t> dimension_sizes_; 
     std::vector<uint64_t> jump_values_; 
     boost::unordered_set < uint64_t > cells_;
+    std::vector<uint32_t> dense_cell_indices_;
+    bool index_matches_cells_ = false;
+    static constexpr uint32_t missing_dense_cell = std::numeric_limits<uint32_t>::max();
     std::vector<bool> periodic_;
     //boost::unordered_map < uint64_t, uint64_t > periodic_alias_;
     uint64_t alias ( uint64_t address ) const;
+    uint64_t neighborAddress ( uint64_t address, int axis, bool upper ) const;
+    Index presentCellIndex ( uint64_t address, int degree ) const;
     uint64_t mask_;
     Rect bounds_;
     //std::vector<bool> bitmap_;
@@ -235,17 +245,71 @@ namespace chomp {
   /// in a non-periodic dimension, we use addresses from 1 <= . <= user_dim_sizes
   /// in a periodic dimension, we again use addresses from 1 <= . <= user_dim_sizes 
   inline uint64_t CubicalComplex::alias ( uint64_t address ) const {
-    /// convert to cube coordinates
-    std::vector < uint64_t > cube = addressToCube ( address );
-    ///
-    uint64_t result = cubeToAddress ( cube ) + (address & mask_);
+    uint64_t position = address >> dimension ();
     for ( int d = 0; d < dimension (); ++ d ) {
-      //std::cout << "cube[" << d << "] = " << cube [ d ] << "\n";
-      if ( cube [ d ] == dimension_sizes_ [ d ] ) result = 0;
+      const auto size = dimension_sizes_[d];
+      const auto digit = position % size;
+      position /= size;
+      const auto period = ((size - 2) * jump_values_[d]) << dimension ();
+      if (digit == 0) {
+        if (!periodic_[d]) return 0;
+        address += period;
+      } else if (periodic_[d] && digit == size - 1) {
+        address -= period;
+      }
     }
-    /// keep piece number, change position.
-    //std::cout << "alias(" << address << ") = " << result << "\n";
-    return result;
+    return address;
+  }
+
+  inline uint64_t CubicalComplex::neighborAddress (
+      uint64_t address, int axis, bool upper ) const {
+    const auto jump = jump_values_[axis];
+    const auto stride = jump << dimension ();
+    const auto neighbor = upper ? address + stride : address - stride;
+    if (!periodic_[axis]) return neighbor;
+    // Only the stepped axis can hit a buffer in a canonical cell address.
+    const auto size = dimension_sizes_[axis];
+    const auto digit = ((neighbor >> dimension ()) / jump) % size;
+    const auto period = (size - 2) * stride;
+    if (digit == 0) return neighbor + period;
+    if (digit == size - 1) return neighbor - period;
+    return neighbor;
+  }
+
+  inline bool CubicalComplex::hasPeriodicAxis () const {
+    return std::any_of(periodic_.begin(), periodic_.end(), [](bool axis) { return axis; });
+  }
+
+  inline std::vector<Index> CubicalComplex::incidentTopCubes ( Index cell, int degree ) const {
+    const auto address = indexToCell(cell, degree);
+    const int D = dimension();
+    std::vector<uint64_t> candidates{address | mask_};
+    for (int axis = 0; axis < D; ++axis) {
+      if (address & (uint64_t{1} << axis)) continue;
+      const auto count = candidates.size();
+      for (size_t i = 0; i < count; ++i) {
+        const auto neighbor = neighborAddress(candidates[i], axis, false);
+        if (neighbor != candidates[i]) candidates.push_back(neighbor);
+      }
+    }
+    std::vector<Index> cubes;
+    const auto top_size = size(D);
+    for (auto candidate : candidates) {
+      const auto index = presentCellIndex(candidate, D);
+      if (index < top_size) cubes.push_back(index);
+    }
+    std::sort(cubes.begin(), cubes.end());
+    return cubes;
+  }
+
+  inline Index CubicalComplex::presentCellIndex ( uint64_t address, int degree ) const {
+    if (!dense_cell_indices_.empty()) {
+      if (address < dense_cell_indices_.size() && dense_cell_indices_[address] != missing_dense_cell)
+        return dense_cell_indices_[address];
+      return size(degree);
+    }
+    if (!index_matches_cells_ && !bitmap(address)) return size(degree);
+    return cellToIndex(address, degree);
   }
   
   inline void CubicalComplex::boundary ( Chain * output, const Index input, int dim ) const {
@@ -266,14 +330,16 @@ namespace chomp {
       /* Alter address to refer to a boundary in the current full cube */
       address = address ^ work_bit;
       /* Insert the piece in the current full cube */
-      if ( bitmap ( address ) )
-        (*output) += Term ( cellToIndex ( address, bd_dim ), sign ? positive : negative );
+      const auto lower = presentCellIndex(address, bd_dim);
+      if (lower < size(bd_dim))
+        (*output) += Term(lower, sign ? positive : negative);
       /* Insert the piece in the appropriate neighboring full cube */
       // periodicity requires we convert to periodic alias (i.e. see if jumped past edge)
-      uint64_t offset_address = alias ( address + ( jump_values_ [ d ] << dimension () ) );
+      uint64_t offset_address = neighborAddress ( address, d, true );
       //if ( offset_address == 0 ) std::cout << "Alias returned 0!\n";
-      if ( bitmap ( offset_address ) )
-        (*output) += Term ( cellToIndex ( offset_address, bd_dim ), sign ? negative : positive );
+      const auto upper = presentCellIndex(offset_address, bd_dim);
+      if (upper < size(bd_dim))
+        (*output) += Term(upper, sign ? negative : positive);
       /* Recover original address */
       address = address ^ work_bit; 
     } /* for */
@@ -299,11 +365,13 @@ namespace chomp {
         continue;
       }
       address = address ^ work_bit;
-      if ( bitmap ( address ) )
-        (*output) += Term ( cellToIndex ( address, cbd_dim ), sign ? positive : negative );
-      uint64_t offset_address = alias ( address - ( jump_values_ [ d ] << dimension () ) );
-      if ( bitmap ( offset_address ) )
-        (*output) += Term ( cellToIndex ( offset_address, cbd_dim ), sign ? negative : positive );
+      const auto upper = presentCellIndex(address, cbd_dim);
+      if (upper < size(cbd_dim))
+        (*output) += Term(upper, sign ? positive : negative);
+      uint64_t offset_address = neighborAddress ( address, d, false );
+      const auto lower = presentCellIndex(offset_address, cbd_dim);
+      if (lower < size(cbd_dim))
+        (*output) += Term(lower, sign ? negative : positive);
       address = address ^ work_bit; 
     } /* for */
   } /* CubicalComplex::coboundary */
@@ -441,6 +509,8 @@ namespace chomp {
   
   
   inline void CubicalComplex::initialize ( const std::vector<uint64_t> & user_dimension_sizes ) {
+    dense_cell_indices_.clear();
+    index_matches_cells_ = false;
     dimension () = user_dimension_sizes . size ();
     periodic_ . resize ( dimension (), false );
     dimension_sizes_ . resize ( dimension (), 0 );
@@ -531,11 +601,12 @@ namespace chomp {
     std::vector < std::vector < Index > > result ( dimension () + 1 );
     BOOST_FOREACH ( Cell address, cubecells ) {
       int dim = __builtin_popcount ( mask_ & address );
-      if ( bitmap ( address ) == false ) {
+      const auto index = presentCellIndex(address, dim);
+      if (index >= size(dim)) {
         std::cout << "The address " << address << " does not hold a cell.\n";
         exit ( 1 );
       }
-      result [ dim ] . push_back ( cellToIndex ( address, dim ) );
+      result[dim].push_back(index);
     }
     return result;
   }
@@ -546,21 +617,38 @@ namespace chomp {
     //BOOST_FOREACH ( uint64_t x, cube_coordinates ) std::cout << x << " ";
     //std::cout << "\n";
     std::vector < CubicalComplex::Cell > full_cube_cells = fullCube ( cube_coordinates );
+    dense_cell_indices_.clear();
+    index_matches_cells_ = false;
     BOOST_FOREACH ( const Cell & cell, full_cube_cells ) {
     //std::cout << "   addFullCube: adding " << cell << "\n";
-    insert ( cell );
+      cells_.insert(cell);
     }
   } /* CubicalComplex::addFullCube */
   
   inline void CubicalComplex::removeFullCube ( const std::vector<uint64_t> & cube_coordinates ) {
     std::vector < CubicalComplex::Cell > full_cube_cells = fullCube ( cube_coordinates );
-      BOOST_FOREACH ( const Cell & cell, full_cube_cells ) erase ( cell );
+    dense_cell_indices_.clear();
+    index_matches_cells_ = false;
+    for (Cell cell : full_cube_cells) cells_.erase(cell);
   } /* CubicalComplex::removeFullCube */
   
   inline void CubicalComplex::finalize ( void ) {
-    BOOST_FOREACH ( uint64_t address, cells_ ) {
-      int d = __builtin_popcount ( ( uint64_t) ( address & mask_ ) );
-      insertCell ( address, d );
+    uint64_t last_address = 0;
+    for (uint64_t address : cells_) {
+      insertCell(address, __builtin_popcount(address & mask_));
+      last_address = std::max(last_address, address);
+    }
+    index_matches_cells_ = size() == cells_.size();
+    // Dense grids trade a bounded address table for hash lookups in
+    // every boundary and coboundary call. Sparse grids keep the hash index.
+    constexpr uint64_t max_dense_entries = uint64_t{64} * 1024 * 1024;
+    if (last_address < max_dense_entries && last_address / 8 < cells_.size() &&
+        size() < missing_dense_cell) {
+      dense_cell_indices_.assign(last_address + 1, missing_dense_cell);
+      for (uint64_t address : cells_) {
+        const int degree = __builtin_popcount(address & mask_);
+        dense_cell_indices_[address] = static_cast<uint32_t>(cellToIndex(address, degree));
+      }
     }
   } /* CubicalComplex::finalize */
   
@@ -569,10 +657,14 @@ namespace chomp {
     return false;
   }
   inline void CubicalComplex::insert ( const uint64_t address ) {
+    dense_cell_indices_.clear();
+    index_matches_cells_ = false;
     cells_ . insert ( address );
   }
   
   inline void CubicalComplex::erase ( const uint64_t address ) {
+    dense_cell_indices_.clear();
+    index_matches_cells_ = false;
     cells_ . erase ( address );
   }
   
@@ -647,8 +739,8 @@ namespace chomp {
        std::cout << geo << "\n";
       */
       
-      if ( not bitmap ( address ) ) return;
-      * ii ++ = cellToIndex ( address, dimension () );
+      const auto index = presentCellIndex(address, dimension());
+      if (index < size(dimension())) *ii++ = index;
       return;
     }
     -- d;

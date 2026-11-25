@@ -32,24 +32,25 @@ public:
 CHOMP_COMPLEX(Index)
 private:
   CubicalComplex * supercomplex_;
-  Index choose_;
-  std::vector < boost::unordered_set<Index> > data_;
-  bool query ( const Index i, int d ) const {
-    return ( data_ [ d ] . count ( i ) );
-  }
+  Index choose_ = 0;
+  void buildForFilling ( const boost::unordered_set<Index>& X_nbs,
+                         const boost::unordered_set<Index>& A_nbs,
+                         const std::unordered_map<Index, std::vector<Index>>& images );
 public:
   template < class RectMap >
-  FiberComplex ( const boost::unordered_set < Index > & X_nbs, 
+  FiberComplex ( const boost::unordered_set < Index > & X_nbs,
                  const boost::unordered_set < Index > & A_nbs,
                  const CubicalComplex & domain,
                  CubicalComplex & codomain, 
                  const RectMap & F );
 
+  // When used for filling, build only the quotient needed by the solver.
   FiberComplex ( const boost::unordered_set < Index > & X_nbs, 
                  const boost::unordered_set < Index > & A_nbs,
                  const CubicalComplex & domain,
                  CubicalComplex & codomain, 
-                 const std::unordered_map < uint64_t, std::vector < uint64_t > > & F );
+                 const std::unordered_map < uint64_t, std::vector < uint64_t > > & F,
+                 bool for_filling = false );
 
   virtual ~FiberComplex ( void ) {}; 
   
@@ -72,8 +73,10 @@ public:
   bool acyclic ( void ) /* const */;
   bool trivial ( void ) /* const */;
   bool acyclic_or_trivial ( void ) /* const */;
+  static bool acyclic_or_trivial ( MorseComplex& reduction );
   
   Chain preboundary ( const Chain & input ) /* const */;
+  Chain preboundary ( const Chain& input, MorseComplex& reduction );
   
   //convenience
   Chain include ( const Chain & input ) const {
@@ -163,20 +166,12 @@ inline FiberComplex::FiberComplex
   }
   //std::cout << "CHOOSE PICKED\n";
   // Initialize bitmap.
-  data_ . resize ( D + 1 );
   for ( int d = 0; d <= D; ++ d ) {
-    BOOST_FOREACH ( Index i, X_image [ d ] ) data_ [d] . insert ( i );
-    BOOST_FOREACH ( Index i, A_image [ d ] ) data_ [d] . erase ( i );
+    boost::unordered_set<Index> relative_cells;
+    for (Index i : X_image[d]) relative_cells.insert(i);
+    for (Index i : A_image[d]) relative_cells.erase(i);
+    for (Index i : relative_cells) insertCell(i, d);
   }
-  
-  // Initialize complex
-  //startInserting ();
-  for ( int d = 0; d <= D; ++ d ) {
-    BOOST_FOREACH ( Index i, data_[d] ) { 
-      insertCell ( i, d );
-    }
-  }
-  //finishedInserting ();
   
 }
 
@@ -185,10 +180,15 @@ inline FiberComplex::FiberComplex
   const boost::unordered_set < Index > & A_nbs,
   const CubicalComplex & domain,
   CubicalComplex & codomain,
-  const std::unordered_map < uint64_t, std::vector < uint64_t > > & F ) {
+  const std::unordered_map < uint64_t, std::vector < uint64_t > > & F,
+  bool for_filling ) {
   // Construct the fiber
   supercomplex_ = & codomain;
   int D = supercomplex_ -> dimension ();
+  if (for_filling && !A_nbs.empty() && !codomain.hasPeriodicAxis()) {
+    buildForFilling(X_nbs, A_nbs, F);
+    return;
+  }
 
   // Determine Images
 
@@ -235,20 +235,53 @@ inline FiberComplex::FiberComplex
   }
   // std::cout << "CHOOSE PICKED\n";
   // Initialize bitmap
-  data_ . resize ( D + 1 );
   for ( int d = 0; d <= D; ++ d ) {
-    BOOST_FOREACH ( Index i, X_image [ d ] ) data_ [d] . insert ( i );
-    BOOST_FOREACH ( Index i, A_image [ d ] ) data_ [d] . erase ( i );
+    boost::unordered_set<Index> relative_cells;
+    for (Index i : X_image[d]) relative_cells.insert(i);
+    for (Index i : A_image[d]) relative_cells.erase(i);
+    for (Index i : relative_cells) insertCell(i, d);
   }
+}
 
-  // Initialize complex
-  // startInserting ();
-  for ( int d = 0; d <= D; ++ d ) {
-    BOOST_FOREACH ( Index i, data_[d] ) {
-      insertCell ( i, d );
-    }
+inline void FiberComplex::buildForFilling (
+    const boost::unordered_set<Index>& X_nbs, const boost::unordered_set<Index>& A_nbs,
+    const std::unordered_map<Index, std::vector<Index>>& images ) {
+  const auto& target = *supercomplex_;
+  const int D = target.dimension();
+  // cl(X) minus cl(A) equals cl(X minus A) minus cl(A). Only faces
+  // incident to a surviving top cube can contribute to the quotient.
+  boost::unordered_set<uint64_t> exit_cubes;
+  for (Index i : A_nbs)
+    for (Index j : images.at(i)) exit_cubes.insert(target.indexToCell(j, D));
+  std::vector<boost::unordered_set<Index>> surviving(D + 1);
+  for (Index i : X_nbs)
+    for (Index j : images.at(i))
+      if (!exit_cubes.count(target.indexToCell(j, D))) surviving[D].insert(j);
+  if (surviving[D].empty()) return;
+  closure(surviving, target);
+
+  std::vector<uint64_t> step(D), origin(D, 0);
+  const auto origin_address = target.cubeToAddress(origin);
+  for (int d = 0; d < D; ++d) {
+    origin[d] = 1;
+    step[d] = target.cubeToAddress(origin) - origin_address;
+    origin[d] = 0;
   }
-  // finishedInserting ();
+  const auto top_axes = (uint64_t{1} << D) - 1;
+  auto in_exit = [&](uint64_t address) {
+    const auto fixed_axes = top_axes & ~address;
+    // The nonperiodic lower buffer cannot contain an exit cube.
+    for (auto subset = fixed_axes; ; subset = (subset - 1) & fixed_axes) {
+      auto candidate = address | top_axes;
+      for (int d = 0; d < D; ++d)
+        if (subset & (uint64_t{1} << d)) candidate -= step[d];
+      if (exit_cubes.count(candidate)) return true;
+      if (subset == 0) return false;
+    }
+  };
+  for (int d = 0; d <= D; ++d)
+    for (Index cell : surviving[d])
+      if (!in_exit(target.indexToCell(cell, d))) insertCell(cell, d);
 }
 
 inline void FiberComplex::include ( Chain * output, 
@@ -265,10 +298,8 @@ inline void FiberComplex::project ( Chain * output,
                                  const Chain & input ) const {
   int dim = input . dimension ();
   BOOST_FOREACH ( Term term, input () ) {
-    if ( query ( term . index (), dim ) ) {
-      term . index () = cellToIndex ( term . index (), dim );
-      (*output) += term;
-    }
+    const auto index = cellToIndex(term.index(), dim);
+    if (index < size(dim)) (*output) += Term(index, term.coef());
   }
   output -> dimension () = dim;
 }
@@ -316,22 +347,24 @@ inline void FiberComplex::project ( Chain * output,
   }
   
   inline bool FiberComplex::acyclic_or_trivial ( void ) /* const */ {
-    Generators_t gen = MorseGenerators ( *this );
-    //std::cout << "acyclic:\n";
-    //std::cout << gen . size () << " and " << dimension () << "\n";
-    assert ( (int) gen . size () == dimension () + 1 );
-    if ( gen . size () == 0 ) return true;
-    if ( gen [ 0 ] . size () > 1 ) return false;
-    for ( int d = 1; d <= dimension (); ++ d ) {
-      if ( gen [ d ] . size () > 0 ) return false;
-    }
-    return true;
+    MorseComplex reduction(*this);
+    return acyclic_or_trivial(reduction);
+  }
+
+  inline bool FiberComplex::acyclic_or_trivial ( MorseComplex& reduction ) {
+    const auto groups = SmithGenerators(reduction, reduction.dimension());
+    return groups.empty() || (groups[0].size() <= 1 &&
+        std::all_of(groups.begin() + 1, groups.end(), [](const auto& degree) { return degree.empty(); }));
   }
   
 inline Chain FiberComplex::preboundary
 ( const Chain & input ) /* const */ {
   //std::cout << "FiberComplex preboundary, dim = " << input . dimension () <<"\n";
   MorseComplex reduction ( *this );
+  return preboundary(input, reduction);
+}
+
+inline Chain FiberComplex::preboundary ( const Chain& input, MorseComplex& reduction ) {
   Chain canon;
   Chain gamma;
   reduction . flow ( &canon, &gamma, input );
@@ -363,18 +396,12 @@ inline Chain FiberComplex::preboundary
 
 inline void FiberComplex::boundary 
 ( Chain * output, const Index input, int dim ) const {
-  Chain input_chain;
-  input_chain += Term ( input, Ring ( 1 ) );
-  input_chain . dimension () = dim;
-  boundary ( output, input_chain );
+  project(output, supercomplex_->boundary(indexToCell(input, dim), dim));
 }
 
 inline void FiberComplex::coboundary 
 ( Chain * output, const Index input, int dim ) const {
-  Chain input_chain;
-  input_chain += Term ( input, Ring ( 1 ) );
-  input_chain . dimension () = dim;
-  coboundary ( output, input_chain );
+  project(output, supercomplex_->coboundary(indexToCell(input, dim), dim));
 }
 
 inline void FiberComplex::boundary 
