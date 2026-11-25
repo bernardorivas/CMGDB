@@ -9,7 +9,7 @@ name = "CMGDB"
 # local label marks these artifacts as this fork's: upstream can never
 # publish a +fork.N version, so an ==X+fork.N pin stays unambiguous.
 # Between releases master carries X+fork.N.dev0.
-version = "1.5.3+fork.7"
+version = "1.5.3+fork.8"
 description = "CMGDB (Conley Morse Graph Database) Python Extension"
 readme = "README.md"
 # The extension compiles in the header-only sdsl-lite v3 (BSD-3-Clause),
